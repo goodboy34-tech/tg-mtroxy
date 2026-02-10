@@ -97,6 +97,8 @@ bot.help(async (ctx) => {
     '/links <node\\_id> - получить все ссылки\n' +
     '/add\\_secret <node\\_id> - добавить секрет\n' +
     '/add\\_socks5 <node\\_id> - добавить SOCKS5 аккаунт\n\n' +
+    '*Локальный прокси:*\n' +
+    '/local - управление локальным прокси\n\n' +
     '*Подписки:*\n' +
     '/create\\_subscription <название> - создать подписку\n' +
     '/subscriptions - список всех подписок\n' +
@@ -110,6 +112,45 @@ bot.help(async (ctx) => {
     '/update\\_node <id> - обновить конфиг',
     { parse_mode: 'Markdown' }
   );
+});
+
+// ═══════════════════════════════════════════════
+// ЛОКАЛЬНЫЙ ПРОКСИ
+// ═══════════════════════════════════════════════
+
+bot.command('local', async (ctx) => {
+  const localEnabled = process.env.LOCAL_PROXY_ENABLED === 'true';
+  
+  if (!localEnabled) {
+    await ctx.reply(
+      '❌ Локальный прокси отключен\n\n' +
+      'Чтобы включить, установите в .env:\n' +
+      'LOCAL_PROXY_ENABLED=true\n\n' +
+      'И перезапустите систему:\n' +
+      './scripts/manage.sh restart'
+    );
+    return;
+  }
+
+  // Получаем IP сервера (из первой ноды или используем локальный)
+  const nodes = queries.getAllNodes.all([]) as any[];
+  const serverIP = nodes[0]?.ip || 'YOUR_SERVER_IP';
+  
+  const port = process.env.LOCAL_MTPROTO_PORT || '8443';
+  const socks5Port = process.env.LOCAL_SOCKS5_PORT || '1081';
+  
+  // Получаем секрет из docker logs (если есть)
+  let message = '🏠 *Локальный прокси на сервере панели*\n\n';
+  message += `📡 IP сервера: \`${serverIP}\`\n`;
+  message += `🔌 MTProto порт: \`${port}\`\n`;
+  message += `🔌 SOCKS5 порт: \`${socks5Port}\`\n\n`;
+  message += `⚠️ *Получение ссылок:*\n`;
+  message += `На сервере выполните:\n`;
+  message += `\`\`\`\ndocker logs mtproxy-local | grep "t.me/proxy"\n\`\`\`\n\n`;
+  message += `Или проверьте логи:\n`;
+  message += `\`\`\`\ndocker compose logs local-mtproxy\n\`\`\``;
+
+  await ctx.reply(message, { parse_mode: 'Markdown' });
 });
 
 // ═══════════════════════════════════════════════
@@ -1075,4 +1116,9 @@ export function startBot() {
   // Graceful stop
   process.once('SIGINT', () => bot.stop('SIGINT'));
   process.once('SIGTERM', () => bot.stop('SIGTERM'));
+}
+
+// Автозапуск при прямом вызове
+if (require.main === module) {
+  startBot();
 }

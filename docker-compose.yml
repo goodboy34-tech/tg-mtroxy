@@ -1,8 +1,8 @@
 services:
   control-panel:
     build:
-      context: .
-      dockerfile: Dockerfile.control
+      context: ./control-panel
+      dockerfile: Dockerfile
     container_name: mtproxy-control
     restart: unless-stopped
     environment:

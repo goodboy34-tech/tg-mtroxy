@@ -7,7 +7,7 @@ const DB_PATH = path.join(__dirname, '..', 'data', 'proxy.db');
 import fs from 'fs';
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-const db = new Database(DB_PATH);
+const db: InstanceType<typeof Database> = new Database(DB_PATH);
 
 // WAL mode — быстрее для чтения, безопаснее
 db.pragma('journal_mode = WAL');
@@ -48,7 +48,7 @@ db.exec(`
 
 // ─── Подготовленные запросы ───
 
-export const queries = {
+export const queries: Record<string, any> = {
   // Пользователи
   getUser: db.prepare(`SELECT * FROM users WHERE telegram_id = ?`),
   getUserBySecret: db.prepare(`SELECT * FROM users WHERE secret = ?`),

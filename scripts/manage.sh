@@ -43,7 +43,7 @@ case "${1:-}" in
     echo ""
     echo "📈 Использование ресурсов:"
     docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" \
-      mtproxy-control mtproxy-local mtproxy-local-socks5 2>/dev/null || docker stats --no-stream
+      $(docker ps --format '{{.Names}}' | grep mtproxy) 2>/dev/null || docker stats --no-stream
     ;;
     
   update)

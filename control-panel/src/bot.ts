@@ -237,22 +237,13 @@ bot.command('add_node', async (ctx) => {
   userStates.set(ctx.from.id, { action: 'add_node' });
   
   await ctx.reply(
-    '➕ *Добавление новой ноды*\n\n' +
+    '➕ Добавление новой ноды\n\n' +
     'Отправьте данные ноды в формате:\n\n' +
-    '```\n' +
-    'name: My Node 1\n' +
-    'domain: proxy1.example.com\n' +
+    'name: Node-Moscow\n' +
     'ip: 1.2.3.4\n' +
-    'api_url: https://proxy1.example.com:8080\n' +
-    'mtproto_port: 443\n' +
-    'socks5_port: 1080\n' +
-    'workers: 4\n' +
-    'cpu_cores: 4\n' +
-    'ram_mb: 2048\n' +
-    '```\n\n' +
-    'API токен будет сгенерирован автоматически.\n\n' +
-    'Отправьте /cancel для отмены.',
-    { parse_mode: 'Markdown' }
+    'api_key: ваш_api_key_с_сервера\n\n' +
+    'Бот настроит прокси автоматически через API!\n\n' +
+    'Отправьте /cancel для отмены.'
   );
 });
 
@@ -1115,8 +1106,8 @@ bot.on(message('text'), async (ctx) => {
         data[cleanKey] = value;
       }
 
-      // Валидация обязательных полей
-      const required = ['name', 'domain', 'ip', 'api_url'];
+      // Валидация обязательных полей (только 3 поля!)
+      const required = ['name', 'ip', 'api_key'];
       const missing = required.filter(field => !data[field]);
       
       if (missing.length > 0) {
@@ -1127,51 +1118,65 @@ bot.on(message('text'), async (ctx) => {
         return;
       }
 
-      // Генерация API токена
-      const apiToken = crypto.randomBytes(32).toString('hex');
+      // Проверяем доступность API ноды
+      await ctx.reply('⏳ Подключаюсь к ноде...');
+      
+      const apiUrl = `http://${data.ip}:3000`;
+      
+      // Создаем клиента для проверки
+      const testClient = new NodeApiClient(apiUrl, data.api_key);
+      
+      try {
+        // Проверяем подключение
+        const health = await testClient.getHealth();
+        
+        // Добавляем ноду в БД
+        const result = queries.insertNode.run({
+          name: data.name,
+          domain: data.ip, // Используем IP как домен
+          ip: data.ip,
+          api_url: apiUrl,
+          api_token: data.api_key,
+          mtproto_port: 443,
+          socks5_port: 1080,
+          workers: 2,
+          cpu_cores: health.system?.cpuCores || 2,
+          ram_mb: health.system?.ramMb || 2048,
+          status: 'online',
+        });
 
-      // Добавляем ноду в БД
-      const result = queries.insertNode.run({
-        name: data.name,
-        domain: data.domain,
-        ip: data.ip,
-        api_url: data.api_url,
-        api_token: apiToken,
-        mtproto_port: parseInt(data.mtproto_port) || 443,
-        socks5_port: parseInt(data.socks5_port) || 1080,
-        workers: parseInt(data.workers) || 2,
-        cpu_cores: parseInt(data.cpu_cores) || 2,
-        ram_mb: parseInt(data.ram_mb) || 2048,
-        status: 'pending',
-      });
+        const nodeId = (result as any).lastInsertRowid;
 
-      const nodeId = (result as any).lastInsertRowid;
+        // Регистрируем клиента
+        nodeClients.set(nodeId, testClient);
 
-      // Очищаем состояние
-      userStates.delete(userId);
+        // Очищаем состояние
+        userStates.delete(userId);
 
-      // Экранируем данные для Markdown
-      const safeName = escapeMarkdown(data.name);
-      const safeDomain = escapeMarkdown(data.domain);
-      const safeIp = escapeMarkdown(data.ip);
-      const safeApiUrl = escapeMarkdown(data.api_url);
+        await ctx.reply(
+          `✅ Нода успешно добавлена!\n\n` +
+          `🆔 ID: ${nodeId}\n` +
+          `📛 Имя: ${data.name}\n` +
+          `📡 IP: ${data.ip}\n` +
+          `� API URL: ${apiUrl}\n` +
+          `✅ Статус: Онлайн\n\n` +
+          `Теперь настройте прокси через:\n` +
+          `/add_secret ${nodeId} - добавить MTProxy\n` +
+          `/add_socks5 ${nodeId} - добавить SOCKS5\n\n` +
+          `Просмотр: /node ${nodeId}`
+        );
 
-      await ctx.reply(
-        '✅ *Нода успешно добавлена\\!*\n\n' +
-        `🆔 ID: \`${nodeId}\`\n` +
-        `📛 Имя: ${safeName}\n` +
-        `🌐 Домен: ${safeDomain}\n` +
-        `📡 IP: ${safeIp}\n` +
-        `🔗 API URL: ${safeApiUrl}\n` +
-        `🔑 API токен: \`${apiToken}\`\n\n` +
-        `⚠️ *Сохраните API токен\\!* Он нужен для установки node\\-agent на сервере\\.\n\n` +
-        `Для установки ноды:\n` +
-        `1\\. Скопируйте установочный скрипт из репозитория\n` +
-        `2\\. Установите переменную API\\_TOKEN\\=${apiToken}\n` +
-        `3\\. Запустите docker\\-compose на ноде\n\n` +
-        `Проверить статус: /node ${nodeId}`,
-        { parse_mode: 'Markdown' }
-      );
+      } catch (apiErr: any) {
+        await ctx.reply(
+          `❌ Не удалось подключиться к ноде:\n${apiErr.message}\n\n` +
+          `Проверьте:\n` +
+          `- Нода запущена\n` +
+          `- Порт 3000 открыт\n` +
+          `- API KEY правильный\n\n` +
+          `Попробуйте снова или /cancel`
+        );
+        return;
+      }
 
     } catch (err: any) {
       await ctx.reply(`❌ Ошибка при добавлении ноды: ${err.message}`);

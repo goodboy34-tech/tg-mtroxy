@@ -164,71 +164,22 @@ echo "  Настройка ноды"
 echo "════════════════════════════════════════════════════"
 echo ""
 
-# Запрос данных у пользователя
-read -p "Введите имя ноды (например: Node-Moscow): " NODE_NAME
-NODE_NAME=${NODE_NAME:-"Node-$(hostname)"}
-
-read -p "Введите домен или IP [$EXTERNAL_IP]: " DOMAIN
-DOMAIN=${DOMAIN:-$EXTERNAL_IP}
-
-echo ""
+# Генерация API ключа для авторизации
 echo "Генерация API ключа..."
 API_KEY=$(openssl rand -hex 32)
 echo "🔑 API Key: $API_KEY"
 
 echo ""
-echo "Генерация MTProxy секрета..."
-SECRET=$(openssl rand -hex 16)
-echo "🔐 Secret: $SECRET"
-
-echo ""
-read -p "Введите количество воркеров (1-16, рекомендуется 2-4): " WORKERS
-WORKERS=${WORKERS:-2}
-
-echo ""
-read -p "Введите количество CPU ядер [2]: " CPU_CORES
-CPU_CORES=${CPU_CORES:-2}
-
-echo ""
-read -p "Введите объём RAM в MB [2048]: " RAM_MB
-RAM_MB=${RAM_MB:-2048}
-
-# Определение NAT
-INTERNAL_IP=$(hostname -I | awk '{print $1}')
-NAT=""
-if [ "$INTERNAL_IP" != "$EXTERNAL_IP" ]; then
-    echo ""
-    echo "🔧 Обнаружен NAT (внутренний IP: $INTERNAL_IP)"
-    NAT="$INTERNAL_IP:$EXTERNAL_IP"
-fi
-
-# Создание .env для node-agent
-echo ""
 echo "📝 Создание конфигурации node-agent..."
 
+# Минимальная конфигурация - всё остальное настраивается через API
 cat > node-agent/.env <<EOF
-# Node Configuration
-NODE_NAME=$NODE_NAME
-DOMAIN=$DOMAIN
+# API Configuration
 API_KEY=$API_KEY
+API_PORT=3000
 
-# Ports
-MTPROTO_PORT=443
-SOCKS5_PORT=1080
-API_PORT=3001
-
-# MTProxy Settings
-WORKERS=$WORKERS
-SECRET=$SECRET
-
-# Network
-NAT=$NAT
-
-# Optional: Fake-TLS Domain
-FAKE_TLS_DOMAIN=www.google.com
-
-# API Token (добавится после регистрации в боте)
-# API_TOKEN=
+# Node Environment
+NODE_ENV=production
 EOF
 
 echo "✅ Конфигурация создана: node-agent/.env"
@@ -238,12 +189,9 @@ echo ""
 echo "📝 Создание .env для docker-compose..."
 
 cat > .env <<EOF
-# Переменные из node-agent/.env для docker-compose
-SECRET=$SECRET
-WORKERS=$WORKERS
-MTPROTO_PORT=443
-SOCKS5_PORT=1080
-API_PORT=3001
+# API Configuration
+API_KEY=$API_KEY
+API_PORT=3000
 EOF
 
 echo "✅ .env создан"
@@ -265,48 +213,10 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data
-      - ./certs:/app/certs:ro
     ports:
-      - "${API_PORT:-3001}:3001"
+      - "${API_PORT:-3000}:3000"
     networks:
       - mtproxy-network
-    depends_on:
-      - mtproxy
-      - socks5
-
-  mtproxy:
-    image: telegrammessenger/proxy:latest
-    container_name: mtproxy
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - SECRET=${SECRET}
-      - SECRET_COUNT=1
-      - WORKERS=${WORKERS:-2}
-    volumes:
-      - mtproxy-config:/data
-    ports:
-      - "${MTPROTO_PORT:-443}:443"
-      - "2398:2398"
-    networks:
-      - mtproxy-network
-
-  socks5:
-    image: tarampampam/3proxy:latest
-    container_name: mtproxy-socks5
-    restart: unless-stopped
-    env_file:
-      - .env
-    volumes:
-      - ./socks5/3proxy.cfg:/etc/3proxy/3proxy.cfg:ro
-    ports:
-      - "${SOCKS5_PORT:-1080}:1080"
-    networks:
-      - mtproxy-network
-
-volumes:
-  mtproxy-config:
 
 networks:
   mtproxy-network:
@@ -314,27 +224,6 @@ networks:
 COMPOSE_EOF
 
 echo "✅ docker-compose.yml создан"
-
-# Создание конфигурации SOCKS5
-echo ""
-echo "📝 Создание конфигурации SOCKS5..."
-mkdir -p socks5
-
-cat > socks5/3proxy.cfg <<'SOCKS5_EOF'
-nserver 1.1.1.1
-nserver 8.8.8.8
-
-nscache 65536
-timeouts 1 5 30 60 180 1800 15 60
-
-auth none
-
-allow *
-
-proxy -p1080 -n -a
-SOCKS5_EOF
-
-echo "✅ Конфигурация SOCKS5 создана"
 
 # Настройка firewall
 echo ""
@@ -345,23 +234,23 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     if command -v ufw &>/dev/null; then
         ufw allow 443/tcp comment "MTProxy"
         ufw allow 1080/tcp comment "SOCKS5"
-        ufw allow 3001/tcp comment "Node API"
+        ufw allow 3000/tcp comment "Node API"
         echo "✅ Правила UFW добавлены"
     elif command -v firewall-cmd &>/dev/null; then
         firewall-cmd --permanent --add-port=443/tcp
         firewall-cmd --permanent --add-port=1080/tcp
-        firewall-cmd --permanent --add-port=3001/tcp
+        firewall-cmd --permanent --add-port=3000/tcp
         firewall-cmd --reload
         echo "✅ Правила FirewallD добавлены"
     else
         echo "⚠️  Firewall не обнаружен, настройте вручную:"
-        echo "   Порты: 443, 1080, 3001"
+        echo "   Порты: 443, 1080, 3000"
     fi
 else
     echo "⚠️  Не забудьте открыть порты вручную:"
     echo "   443/tcp  - MTProxy"
     echo "   1080/tcp - SOCKS5"
-    echo "   3001/tcp - Node API"
+    echo "   3000/tcp - Node API"
 fi
 
 # Запуск контейнеров

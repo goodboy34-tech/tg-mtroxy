@@ -233,6 +233,21 @@ EOF
 
 echo "✅ Конфигурация создана: node-agent/.env"
 
+# Создание .env в корне для docker-compose
+echo ""
+echo "📝 Создание .env для docker-compose..."
+
+cat > .env <<EOF
+# Переменные из node-agent/.env для docker-compose
+SECRET=$SECRET
+WORKERS=$WORKERS
+MTPROTO_PORT=443
+SOCKS5_PORT=1080
+API_PORT=3001
+EOF
+
+echo "✅ .env создан"
+
 # Создание docker-compose для standalone ноды
 echo ""
 echo "📝 Создание docker-compose.yml..."
@@ -263,6 +278,8 @@ services:
     image: telegrammessenger/proxy:latest
     container_name: mtproxy
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       - SECRET=${SECRET}
       - SECRET_COUNT=1
@@ -279,6 +296,8 @@ services:
     image: tarampampam/3proxy:latest
     container_name: mtproxy-socks5
     restart: unless-stopped
+    env_file:
+      - .env
     volumes:
       - ./socks5/3proxy.cfg:/etc/3proxy/3proxy.cfg:ro
     ports:

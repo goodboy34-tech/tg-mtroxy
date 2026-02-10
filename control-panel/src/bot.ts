@@ -183,10 +183,18 @@ bot.command('node', async (ctx) => {
         const health = await client.getHealth();
         const stats = await client.getStats();
         
+        const cpuUsage = health.system.cpuUsage.toFixed(1);
+        const ramUsage = health.system.ramUsage.toFixed(1);
+        const uptimeHours = Math.floor(health.uptime / 3600);
+        const uptimeMinutes = Math.floor((health.uptime % 3600) / 60);
+        
         healthInfo = `\n*Статус:* ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
-                     `*Uptime:* ${Math.floor(health.uptime / 3600)}ч ${Math.floor((health.uptime % 3600) / 60)}м\n` +
-                     `*CPU:* ${health.system.cpuUsage.toFixed(1)}%\n` +
-                     `*RAM:* ${health.system.ramUsage.toFixed(1)}%\n`;
+                     `*Uptime:* ${uptimeHours}ч ${uptimeMinutes}м\n` +
+                     `*CPU:* ${cpuUsage}%\n` +
+                     `*RAM:* ${ramUsage}%\n`;
+        
+        const inMb = stats.network.inMb.toFixed(2);
+        const outMb = stats.network.outMb.toFixed(2);
         
         statsInfo = `\n*MTProto:*\n` +
                     `  Подключений: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
@@ -194,18 +202,18 @@ bot.command('node', async (ctx) => {
                     `*SOCKS5:*\n` +
                     `  Подключений: ${stats.socks5.connections}\n` +
                     `*Трафик:*\n` +
-                    `  ⬇️ ${stats.network.inMb.toFixed(2)} MB\n` +
-                    `  ⬆️ ${stats.network.outMb.toFixed(2)} MB\n`;
+                    `  ⬇️ ${inMb} MB\n` +
+                    `  ⬆️ ${outMb} MB\n`;
       }
     } catch (err: any) {
-      healthInfo = `\n⚠️ Не удалось получить статус: ${err.message}\n`;
+      healthInfo = `\n⚠️ Не удалось получить статус: ${escapeMarkdown(err.message)}\n`;
     }
 
-    await ctx.reply(
-      `📡 *Нода: ${node.name}*\n\n` +
+    const nodeInfo = 
+      `📡 *Нода: ${escapeMarkdown(node.name)}*\n\n` +
       `*ID:* \`${node.id}\`\n` +
-      `*Домен:* \`${node.domain}\`\n` +
-      `*IP:* \`${node.ip}\`\n` +
+      `*Домен:* \`${escapeMarkdown(node.domain)}\`\n` +
+      `*IP:* \`${escapeMarkdown(node.ip)}\`\n` +
       `*MTProto порт:* ${node.mtproto_port}\n` +
       `*SOCKS5 порт:* ${node.socks5_port}\n` +
       `*Воркеры:* ${node.workers}\n` +
@@ -214,11 +222,11 @@ bot.command('node', async (ctx) => {
       healthInfo +
       statsInfo +
       `\n*Команды:*\n` +
-      `/links ${node.id} - получить ссылки\n` +
-      `/restart_node ${node.id} - перезапустить\n` +
-      `/logs ${node.id} - показать логи`,
-      { parse_mode: 'Markdown' }
-    );
+      `/links ${node.id} \\- получить ссылки\n` +
+      `/restart_node ${node.id} \\- перезапустить\n` +
+      `/logs ${node.id} \\- показать логи`;
+
+    await ctx.reply(nodeInfo, { parse_mode: 'MarkdownV2' });
   } catch (err: any) {
     await ctx.reply(`❌ Ошибка при получении информации о ноде: ${err.message}`);
   }

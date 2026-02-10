@@ -2,15 +2,57 @@
 set -e
 
 echo "════════════════════════════════════════════════════"
-echo "  MTProxy Node - Быстрая установка"
+echo "  MTProxy Node - Установка"
 echo "════════════════════════════════════════════════════"
 echo ""
 
 # Проверка root
 if [ "$EUID" -ne 0 ]; then 
     echo "❌ Запустите скрипт с правами root:"
-    echo "   curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh | sudo bash"
+    echo "   sudo bash install-node.sh"
     exit 1
+fi
+
+# Функция для настройки после установки
+setup_api_token() {
+    echo ""
+    echo "════════════════════════════════════════════════════"
+    echo "  Добавление API TOKEN от бота"
+    echo "════════════════════════════════════════════════════"
+    echo ""
+    
+    read -p "Введите API TOKEN от бота: " API_TOKEN
+    
+    if [ -z "$API_TOKEN" ]; then
+        echo "❌ API TOKEN не может быть пустым!"
+        return 1
+    fi
+    
+    # Добавляем API_TOKEN в .env
+    if grep -q "^API_TOKEN=" node-agent/.env 2>/dev/null; then
+        sed -i "s/^API_TOKEN=.*/API_TOKEN=$API_TOKEN/" node-agent/.env
+        echo "✅ API TOKEN обновлён"
+    else
+        echo "API_TOKEN=$API_TOKEN" >> node-agent/.env
+        echo "✅ API TOKEN добавлен"
+    fi
+    
+    # Перезапускаем node-agent
+    echo ""
+    echo "🔄 Перезапуск node-agent..."
+    docker compose restart node-agent
+    
+    echo ""
+    echo "✅ Готово! Проверьте подключение:"
+    echo "   docker compose logs -f node-agent"
+    echo ""
+}
+
+# Проверяем аргументы командной строки
+if [ "$1" = "setup" ]; then
+    cd /opt/mtproxy-node 2>/dev/null || cd "$(pwd)"
+    setup_api_token
+    exit 0
 fi
 
 # Установка Docker
@@ -54,6 +96,11 @@ if [ -d "$INSTALL_DIR" ]; then
     else
         cd "$INSTALL_DIR"
         git pull
+        echo ""
+        echo "Репозиторий обновлён."
+        echo "Для добавления API TOKEN запустите:"
+        echo "   sudo bash install-node.sh setup"
+        exit 0
     fi
 fi
 
@@ -92,6 +139,14 @@ echo ""
 read -p "Введите количество воркеров (1-16, рекомендуется 2-4): " WORKERS
 WORKERS=${WORKERS:-2}
 
+echo ""
+read -p "Введите количество CPU ядер [2]: " CPU_CORES
+CPU_CORES=${CPU_CORES:-2}
+
+echo ""
+read -p "Введите объём RAM в MB [2048]: " RAM_MB
+RAM_MB=${RAM_MB:-2048}
+
 # Определение NAT
 INTERNAL_IP=$(hostname -I | awk '{print $1}')
 NAT=""
@@ -125,6 +180,9 @@ NAT=$NAT
 
 # Optional: Fake-TLS Domain
 FAKE_TLS_DOMAIN=www.google.com
+
+# API Token (добавится после регистрации в боте)
+# API_TOKEN=
 EOF
 
 echo "✅ Конфигурация создана: node-agent/.env"
@@ -215,21 +273,30 @@ echo "✅ Конфигурация SOCKS5 создана"
 
 # Настройка firewall
 echo ""
-echo "🔥 Настройка firewall..."
-if command -v ufw &>/dev/null; then
-    ufw allow 443/tcp comment "MTProxy"
-    ufw allow 1080/tcp comment "SOCKS5"
-    ufw allow 3001/tcp comment "Node API"
-    echo "✅ Правила UFW добавлены"
-elif command -v firewall-cmd &>/dev/null; then
-    firewall-cmd --permanent --add-port=443/tcp
-    firewall-cmd --permanent --add-port=1080/tcp
-    firewall-cmd --permanent --add-port=3001/tcp
-    firewall-cmd --reload
-    echo "✅ Правила FirewallD добавлены"
+read -p "Настроить firewall автоматически? (y/n): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "🔥 Настройка firewall..."
+    if command -v ufw &>/dev/null; then
+        ufw allow 443/tcp comment "MTProxy"
+        ufw allow 1080/tcp comment "SOCKS5"
+        ufw allow 3001/tcp comment "Node API"
+        echo "✅ Правила UFW добавлены"
+    elif command -v firewall-cmd &>/dev/null; then
+        firewall-cmd --permanent --add-port=443/tcp
+        firewall-cmd --permanent --add-port=1080/tcp
+        firewall-cmd --permanent --add-port=3001/tcp
+        firewall-cmd --reload
+        echo "✅ Правила FirewallD добавлены"
+    else
+        echo "⚠️  Firewall не обнаружен, настройте вручную:"
+        echo "   Порты: 443, 1080, 3001"
+    fi
 else
-    echo "⚠️  Firewall не обнаружен, настройте вручную:"
-    echo "   Порты: 443, 1080, 3001"
+    echo "⚠️  Не забудьте открыть порты вручную:"
+    echo "   443/tcp  - MTProxy"
+    echo "   1080/tcp - SOCKS5"
+    echo "   3001/tcp - Node API"
 fi
 
 # Запуск контейнеров
@@ -254,19 +321,15 @@ SECRET_LINE=$(docker logs mtproxy 2>&1 | grep -E "tg://|t.me/proxy" | head -1 ||
 
 echo ""
 echo "════════════════════════════════════════════════════"
-echo "  ✅ MTProxy Node успешно установлен!"
+echo "  ✅ MTProxy Node установлен!"
 echo "════════════════════════════════════════════════════"
 echo ""
-echo "📋 Информация для добавления в Control Panel:"
+echo "📋 ШАГ 1: Добавьте ноду в Control Panel через бота"
 echo ""
-echo "   Имя: $NODE_NAME"
-echo "   Домен: $DOMAIN"
-echo "   IP: $EXTERNAL_IP"
-echo "   API URL: http://$EXTERNAL_IP:3001"
-echo "   API Key: $API_KEY"
+echo "В Telegram боте отправьте команду /add_node"
+echo "Затем отправьте эти данные:"
 echo ""
-echo "🤖 В боте отправьте /add_node и укажите:"
-echo ""
+echo "─────────────────────────────────────────────────────"
 echo "name: $NODE_NAME"
 echo "domain: $DOMAIN"
 echo "ip: $EXTERNAL_IP"
@@ -274,33 +337,38 @@ echo "api_url: http://$EXTERNAL_IP:3001"
 echo "mtproto_port: 443"
 echo "socks5_port: 1080"
 echo "workers: $WORKERS"
-echo "cpu_cores: 2"
-echo "ram_mb: 2048"
+echo "cpu_cores: $CPU_CORES"
+echo "ram_mb: $RAM_MB"
+echo "─────────────────────────────────────────────────────"
 echo ""
-echo "Затем в боте получите API TOKEN и добавьте в node-agent/.env:"
-echo "   echo 'API_TOKEN=YOUR_TOKEN_FROM_BOT' >> node-agent/.env"
+echo "🔑 Сохраните API Key: $API_KEY"
+echo "   (может понадобиться для прямых запросов к API)"
 echo ""
-echo "🔗 MTProxy ссылка:"
+echo "📋 ШАГ 2: После добавления ноды бот выдаст API TOKEN"
+echo ""
+echo "Скопируйте API TOKEN и выполните на сервере:"
+echo ""
+echo "   sudo bash $INSTALL_DIR/install-node.sh setup"
+echo ""
+echo "Или вручную:"
+echo ""
+echo "   echo 'API_TOKEN=ваш_токен' >> $INSTALL_DIR/node-agent/.env"
+echo "   cd $INSTALL_DIR"
+echo "   docker compose restart node-agent"
+echo ""
+echo "🔗 MTProxy ссылка (для проверки):"
 if [ -n "$SECRET_LINE" ]; then
     echo "   $SECRET_LINE"
 else
-    echo "   Смотрите логи: docker logs mtproxy | grep 't.me/proxy'"
+    echo "   docker logs mtproxy | grep 't.me/proxy'"
 fi
 echo ""
-echo "📊 Проверка статуса:"
-echo "   docker compose ps"
-echo ""
-echo "📜 Просмотр логов:"
-echo "   docker compose logs -f"
-echo ""
-echo "🔄 Перезапуск:"
-echo "   cd $INSTALL_DIR"
-echo "   docker compose restart"
-echo ""
-echo "🛑 Остановка:"
-echo "   docker compose down"
+echo "📊 Полезные команды:"
+echo "   docker compose ps              - статус контейнеров"
+echo "   docker compose logs -f         - логи всех сервисов"
+echo "   docker compose logs -f node-agent  - логи только агента"
+echo "   docker compose restart         - перезапуск"
+echo "   docker compose down            - остановка"
 echo ""
 echo "════════════════════════════════════════════════════"
-echo ""
-echo "⚠️  СОХРАНИТЕ API KEY! Он нужен для добавления ноды в Control Panel."
 echo ""

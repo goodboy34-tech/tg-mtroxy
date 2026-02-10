@@ -210,10 +210,10 @@ bot.command('node', async (ctx) => {
     }
 
     const nodeInfo = 
-      `📡 *Нода: ${escapeMarkdown(node.name)}*\n\n` +
-      `*ID:* \`${node.id}\`\n` +
-      `*Домен:* \`${escapeMarkdown(node.domain)}\`\n` +
-      `*IP:* \`${escapeMarkdown(node.ip)}\`\n` +
+      `📡 *Нода:* ${escapeMarkdown(node.name)}\n\n` +
+      `*ID:* ${node.id}\n` +
+      `*Домен:* ${escapeMarkdown(node.domain)}\n` +
+      `*IP:* ${escapeMarkdown(node.ip)}\n` +
       `*MTProto порт:* ${node.mtproto_port}\n` +
       `*SOCKS5 порт:* ${node.socks5_port}\n` +
       `*Воркеры:* ${node.workers}\n` +
@@ -224,7 +224,8 @@ bot.command('node', async (ctx) => {
       `\n*Команды:*\n` +
       `/links ${node.id} \\- получить ссылки\n` +
       `/restart_node ${node.id} \\- перезапустить\n` +
-      `/logs ${node.id} \\- показать логи`;
+      `/logs ${node.id} \\- показать логи\n` +
+      `/remove_node ${node.id} \\- удалить ноду`;
 
     await ctx.reply(nodeInfo, { parse_mode: 'MarkdownV2' });
   } catch (err: any) {

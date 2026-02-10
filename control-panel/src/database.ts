@@ -128,8 +128,8 @@ export const queries: Queries = {
   getNodeByDomain: db.prepare(`SELECT * FROM nodes WHERE domain = ?`),
   
   insertNode: db.prepare(`
-    INSERT INTO nodes (name, domain, ip, api_url, api_token, mtproto_port, socks5_port, workers, cpu_cores, ram_mb)
-    VALUES (@name, @domain, @ip, @api_url, @api_token, @mtproto_port, @socks5_port, @workers, @cpu_cores, @ram_mb)
+    INSERT INTO nodes (name, domain, ip, api_url, api_token, mtproto_port, socks5_port, workers, cpu_cores, ram_mb, status)
+    VALUES (@name, @domain, @ip, @api_url, @api_token, @mtproto_port, @socks5_port, @workers, @cpu_cores, @ram_mb, @status)
   `),
   
   updateNode: db.prepare(`

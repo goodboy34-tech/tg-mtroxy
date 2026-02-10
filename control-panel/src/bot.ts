@@ -24,6 +24,14 @@ const bot = new Telegraf(BOT_TOKEN);
 // Хранилище клиентов для нод (кэш)
 const nodeClients = new Map<number, NodeApiClient>();
 
+// Хранилище состояний пользователей (для диалогов)
+interface UserState {
+  action: 'add_node' | 'add_secret' | 'add_socks5' | null;
+  nodeId?: number;
+  data?: any;
+}
+const userStates = new Map<number, UserState>();
+
 /**
  * Получить клиент для ноды
  */
@@ -201,6 +209,9 @@ bot.command('node', async (ctx) => {
 });
 
 bot.command('add_node', async (ctx) => {
+  // Устанавливаем состояние ожидания данных ноды
+  userStates.set(ctx.from.id, { action: 'add_node' });
+  
   await ctx.reply(
     '➕ *Добавление новой ноды*\n\n' +
     'Отправьте данные ноды в формате:\n\n' +
@@ -215,11 +226,10 @@ bot.command('add_node', async (ctx) => {
     'cpu_cores: 4\n' +
     'ram_mb: 2048\n' +
     '```\n\n' +
-    'API токен будет сгенерирован автоматически.',
+    'API токен будет сгенерирован автоматически.\n\n' +
+    'Отправьте /cancel для отмены.',
     { parse_mode: 'Markdown' }
   );
-  
-  // TODO: Реализовать conversation handler для добавления ноды
 });
 
 bot.command('remove_node', async (ctx) => {
@@ -996,6 +1006,107 @@ bot.action(/^sub_delete_confirm_(\d+)$/, async (ctx) => {
 
   } catch (err: any) {
     await ctx.answerCbQuery(`Ошибка: ${err.message}`);
+  }
+});
+
+// ═══════════════════════════════════════════════
+// ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ (для диалогов)
+// ═══════════════════════════════════════════════
+
+bot.command('cancel', async (ctx) => {
+  const userId = ctx.from.id;
+  const state = userStates.get(userId);
+  
+  if (state && state.action) {
+    userStates.delete(userId);
+    await ctx.reply('❌ Действие отменено.');
+  } else {
+    await ctx.reply('Нет активных действий для отмены.');
+  }
+});
+
+bot.on(message('text'), async (ctx) => {
+  const userId = ctx.from.id;
+  const state = userStates.get(userId);
+  
+  if (!state || !state.action) {
+    return; // Игнорируем обычные сообщения
+  }
+
+  const text = ctx.message.text;
+
+  // ─── Добавление ноды ───
+  if (state.action === 'add_node') {
+    try {
+      // Парсим данные из сообщения
+      const data: any = {};
+      const lines = text.split('\n');
+      
+      for (const line of lines) {
+        const [key, ...valueParts] = line.split(':');
+        if (!key || valueParts.length === 0) continue;
+        
+        const value = valueParts.join(':').trim();
+        const cleanKey = key.trim().toLowerCase().replace(/\s+/g, '_');
+        data[cleanKey] = value;
+      }
+
+      // Валидация обязательных полей
+      const required = ['name', 'domain', 'ip', 'api_url'];
+      const missing = required.filter(field => !data[field]);
+      
+      if (missing.length > 0) {
+        await ctx.reply(
+          `❌ Не хватает полей: ${missing.join(', ')}\n\n` +
+          'Отправьте данные снова или /cancel для отмены.'
+        );
+        return;
+      }
+
+      // Генерация API токена
+      const apiToken = crypto.randomBytes(32).toString('hex');
+
+      // Добавляем ноду в БД
+      const result = queries.insertNode.run({
+        name: data.name,
+        domain: data.domain,
+        ip: data.ip,
+        api_url: data.api_url,
+        api_token: apiToken,
+        mtproto_port: parseInt(data.mtproto_port) || 443,
+        socks5_port: parseInt(data.socks5_port) || 1080,
+        workers: parseInt(data.workers) || 2,
+        cpu_cores: parseInt(data.cpu_cores) || 2,
+        ram_mb: parseInt(data.ram_mb) || 2048,
+        status: 'pending',
+      });
+
+      const nodeId = (result as any).lastInsertRowid;
+
+      // Очищаем состояние
+      userStates.delete(userId);
+
+      await ctx.reply(
+        '✅ *Нода успешно добавлена!*\n\n' +
+        `🆔 ID: \`${nodeId}\`\n` +
+        `📛 Имя: ${data.name}\n` +
+        `🌐 Домен: ${data.domain}\n` +
+        `📡 IP: ${data.ip}\n` +
+        `🔗 API URL: ${data.api_url}\n` +
+        `🔑 API токен: \`${apiToken}\`\n\n` +
+        `⚠️ *Сохраните API токен!* Он нужен для установки node-agent на сервере.\n\n` +
+        `Для установки ноды:\n` +
+        `1. Скопируйте установочный скрипт из репозитория\n` +
+        `2. Установите переменную API_TOKEN=${apiToken}\n` +
+        `3. Запустите docker-compose на ноде\n\n` +
+        `Проверить статус: /node ${nodeId}`,
+        { parse_mode: 'Markdown' }
+      );
+
+    } catch (err: any) {
+      await ctx.reply(`❌ Ошибка при добавлении ноды: ${err.message}`);
+      userStates.delete(userId);
+    }
   }
 });
 

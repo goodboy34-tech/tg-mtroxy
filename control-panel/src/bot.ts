@@ -113,7 +113,7 @@ bot.help(async (ctx) => {
 // ═══════════════════════════════════════════════
 
 bot.command('nodes', async (ctx) => {
-  const nodes = queries.getAllNodes.all() as any[];
+  const nodes = queries.getAllNodes.all([]) as any[];
   
   if (nodes.length === 0) {
     return ctx.reply('📭 Нет добавленных нод.\n\nИспользуйте /add_node для добавления.');
@@ -525,8 +525,8 @@ bot.action(/^add_socks5_confirm_(\d+)_([^_]+)_([^_]+)$/, async (ctx) => {
 // ═══════════════════════════════════════════════
 
 bot.command('stats', async (ctx) => {
-  const nodes = queries.getActiveNodes.all() as any[];
-  const allStats = queries.getAllNodesLatestStats.all() as any[];
+  const nodes = queries.getActiveNodes.all([]) as any[];
+  const allStats = queries.getAllNodesLatestStats.all([]) as any[];
   
   let text = '📊 *Общая статистика*\n\n';
   text += `Нод активно: ${nodes.length}\n\n`;
@@ -552,7 +552,7 @@ bot.command('stats', async (ctx) => {
 });
 
 bot.command('health', async (ctx) => {
-  const nodes = queries.getActiveNodes.all() as any[];
+  const nodes = queries.getActiveNodes.all([]) as any[];
   
   let text = '🏥 *Здоровье нод*\n\n';
 
@@ -705,7 +705,7 @@ bot.command('create_subscription', async (ctx) => {
   const name = args.join(' ') || 'Новая подписка';
 
   // Получаем список активных нод для выбора
-  const nodes = queries.getActiveNodes.all() as any[];
+  const nodes = queries.getActiveNodes.all([]) as any[];
   
   if (nodes.length === 0) {
     await ctx.reply('⚠️ Нет активных нод. Сначала добавьте хотя бы одну ноду.');
@@ -737,7 +737,7 @@ bot.command('create_subscription', async (ctx) => {
  * Список всех подписок
  */
 bot.command('subscriptions', async (ctx) => {
-  const subscriptions = queries.getAllSubscriptions.all() as any[];
+  const subscriptions = queries.getAllSubscriptions.all([]) as any[];
 
   if (subscriptions.length === 0) {
     await ctx.reply('📭 Нет созданных подписок.\n\nИспользуйте /create_subscription для создания.');
@@ -1001,7 +1001,7 @@ bot.action(/^sub_delete_confirm_(\d+)$/, async (ctx) => {
 cron.schedule('*/5 * * * *', async () => {
   console.log('[Cron] Проверка здоровья нод...');
   
-  const nodes = queries.getActiveNodes.all() as any[];
+  const nodes = queries.getActiveNodes.all([]) as any[];
 
   for (const node of nodes) {
     const client = getNodeClient(node.id);
@@ -1051,8 +1051,8 @@ cron.schedule('*/5 * * * *', async () => {
 // Раз в день — очистка старых данных
 cron.schedule('0 3 * * *', async () => {
   console.log('[Cron] Очистка старых данных...');
-  queries.cleanOldStats.run();
-  queries.cleanOldLogs.run();
+  queries.cleanOldStats.run([]);
+  queries.cleanOldLogs.run([]);
   console.log('[Cron] Очистка завершена');
 });
 

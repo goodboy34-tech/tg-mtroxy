@@ -8,13 +8,16 @@ WORKDIR /app
 
 # Копируем package.json и устанавливаем зависимости
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
 # Копируем исходный код
 COPY . .
 
 # Компилируем TypeScript
 RUN npm run build
+
+# Удаление dev-зависимостей для уменьшения размера образа
+RUN npm prune --production
 
 # Создаем директорию для данных
 RUN mkdir -p /app/data

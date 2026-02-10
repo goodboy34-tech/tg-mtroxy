@@ -63,9 +63,10 @@ function isAdmin(userId: number): boolean {
 
 /**
  * Экранирование специальных символов Markdown
+ * Не экранируем: . (точка) - она используется в доменах и IP
  */
 function escapeMarkdown(text: string): string {
-  return text.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+  return text.replace(/[_*[\]()~`>#+\-=|{}!\\]/g, '\\$&');
 }
 
 /**
@@ -158,61 +159,69 @@ bot.command('nodes', async (ctx) => {
 });
 
 bot.command('node', async (ctx) => {
-  const nodeId = parseInt(ctx.message.text.split(' ')[1]);
-  if (!nodeId) {
-    return ctx.reply('Использование: /node <id>');
-  }
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    return ctx.reply('❌ Нода не найдена');
-  }
-
-  const client = getNodeClient(nodeId);
-  let healthInfo = '';
-  let statsInfo = '';
-
   try {
-    if (client) {
-      const health = await client.getHealth();
-      const stats = await client.getStats();
-      
-      healthInfo = `\n*Статус:* ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
-                   `*Uptime:* ${Math.floor(health.uptime / 3600)}ч ${Math.floor((health.uptime % 3600) / 60)}м\n` +
-                   `*CPU:* ${health.system.cpuUsage.toFixed(1)}%\n` +
-                   `*RAM:* ${health.system.ramUsage.toFixed(1)}%\n`;
-      
-      statsInfo = `\n*MTProto:*\n` +
-                  `  Подключений: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
-                  `  Telegram серверов: ${stats.mtproto.activeTargets}/${stats.mtproto.readyTargets}\n` +
-                  `*SOCKS5:*\n` +
-                  `  Подключений: ${stats.socks5.connections}\n` +
-                  `*Трафик:*\n` +
-                  `  ⬇️ ${stats.network.inMb.toFixed(2)} MB\n` +
-                  `  ⬆️ ${stats.network.outMb.toFixed(2)} MB\n`;
+    const args = ctx.message.text.split(' ');
+    const nodeId = parseInt(args[1]);
+    
+    if (!nodeId || isNaN(nodeId)) {
+      await ctx.reply('Использование: /node <id>');
+      return;
     }
-  } catch (err: any) {
-    healthInfo = `\n⚠️ Не удалось получить статус: ${err.message}\n`;
-  }
 
-  await ctx.reply(
-    `📡 *Нода: ${node.name}*\n\n` +
-    `*ID:* \`${node.id}\`\n` +
-    `*Домен:* \`${node.domain}\`\n` +
-    `*IP:* \`${node.ip}\`\n` +
-    `*MTProto порт:* ${node.mtproto_port}\n` +
-    `*SOCKS5 порт:* ${node.socks5_port}\n` +
-    `*Воркеры:* ${node.workers}\n` +
-    `*CPU ядер:* ${node.cpu_cores}\n` +
-    `*RAM:* ${node.ram_mb} MB\n` +
-    healthInfo +
-    statsInfo +
-    `\n*Команды:*\n` +
-    `/links ${node.id} - получить ссылки\n` +
-    `/restart_node ${node.id} - перезапустить\n` +
-    `/logs ${node.id} - показать логи`,
-    { parse_mode: 'Markdown' }
-  );
+    const node = queries.getNodeById.get(nodeId) as any;
+    if (!node) {
+      await ctx.reply('❌ Нода не найдена');
+      return;
+    }
+
+    const client = getNodeClient(nodeId);
+    let healthInfo = '';
+    let statsInfo = '';
+
+    try {
+      if (client) {
+        const health = await client.getHealth();
+        const stats = await client.getStats();
+        
+        healthInfo = `\n*Статус:* ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
+                     `*Uptime:* ${Math.floor(health.uptime / 3600)}ч ${Math.floor((health.uptime % 3600) / 60)}м\n` +
+                     `*CPU:* ${health.system.cpuUsage.toFixed(1)}%\n` +
+                     `*RAM:* ${health.system.ramUsage.toFixed(1)}%\n`;
+        
+        statsInfo = `\n*MTProto:*\n` +
+                    `  Подключений: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
+                    `  Telegram серверов: ${stats.mtproto.activeTargets}/${stats.mtproto.readyTargets}\n` +
+                    `*SOCKS5:*\n` +
+                    `  Подключений: ${stats.socks5.connections}\n` +
+                    `*Трафик:*\n` +
+                    `  ⬇️ ${stats.network.inMb.toFixed(2)} MB\n` +
+                    `  ⬆️ ${stats.network.outMb.toFixed(2)} MB\n`;
+      }
+    } catch (err: any) {
+      healthInfo = `\n⚠️ Не удалось получить статус: ${err.message}\n`;
+    }
+
+    await ctx.reply(
+      `📡 *Нода: ${node.name}*\n\n` +
+      `*ID:* \`${node.id}\`\n` +
+      `*Домен:* \`${node.domain}\`\n` +
+      `*IP:* \`${node.ip}\`\n` +
+      `*MTProto порт:* ${node.mtproto_port}\n` +
+      `*SOCKS5 порт:* ${node.socks5_port}\n` +
+      `*Воркеры:* ${node.workers}\n` +
+      `*CPU ядер:* ${node.cpu_cores}\n` +
+      `*RAM:* ${node.ram_mb} MB\n` +
+      healthInfo +
+      statsInfo +
+      `\n*Команды:*\n` +
+      `/links ${node.id} - получить ссылки\n` +
+      `/restart_node ${node.id} - перезапустить\n` +
+      `/logs ${node.id} - показать логи`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err: any) {
+    await ctx.reply(`❌ Ошибка при получении информации о ноде: ${err.message}`);
+  }
 });
 
 bot.command('add_node', async (ctx) => {

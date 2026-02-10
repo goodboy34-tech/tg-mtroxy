@@ -6,3 +6,13 @@ data/
 *.db-journal
 *.db-wal
 .idea
+.vscode
+logs/
+certs/*.key
+certs/*.crt
+certs/*.csr
+certs/*.srl
+!certs/.gitkeep
+socks5/*.conf
+!socks5/.gitkeep
+*.log

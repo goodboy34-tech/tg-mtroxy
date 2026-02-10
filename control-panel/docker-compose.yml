@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  control-panel:
+    build: .
+    container_name: mtproxy-control-panel
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "3000:3000"  # Если добавите веб-интерфейс
+    networks:
+      - mtproxy-network
+
+networks:
+  mtproxy-network:
+    driver: bridge

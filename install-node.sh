@@ -50,7 +50,13 @@ setup_api_token() {
 
 # Проверяем аргументы командной строки
 if [ "$1" = "setup" ]; then
-    cd /opt/mtproxy-node 2>/dev/null || cd "$(pwd)"
+    # Если запущен из произвольной директории, переходим в install dir
+    if [ -d "/opt/mtproxy-node" ]; then
+        cd /opt/mtproxy-node
+    else
+        echo "❌ Node не установлен в /opt/mtproxy-node"
+        exit 1
+    fi
     setup_api_token
     exit 0
 fi
@@ -97,8 +103,13 @@ if [ -d "$INSTALL_DIR" ]; then
         cd "$INSTALL_DIR"
         git pull
         echo ""
-        echo "Репозиторий обновлён."
+        echo "✅ Репозиторий обновлён"
+        echo ""
         echo "Для добавления API TOKEN запустите:"
+        echo "   mtproxy-node setup"
+        echo ""
+        echo "Или перейдите в директорию:"
+        echo "   cd $INSTALL_DIR"
         echo "   sudo bash install-node.sh setup"
         exit 0
     fi
@@ -454,8 +465,6 @@ esac
 NODE_SCRIPT_EOF
 
 chmod +x /usr/local/bin/mtproxy-node
-
-echo "✅ Команда 'mtproxy-node' создана"
 
 echo "✅ Команда 'mtproxy-node' создана"
 

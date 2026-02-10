@@ -60,6 +60,26 @@ if [ -d "$INSTALL_DIR" ]; then
         git pull
         echo ""
         echo "✅ Репозиторий обновлён"
+        echo ""
+        
+        # Показываем существующий API KEY
+        if [ -f "node-agent/.env" ]; then
+            API_KEY=$(grep "^API_KEY=" node-agent/.env | cut -d '=' -f2)
+            if [ -n "$API_KEY" ]; then
+                echo "📋 Ваш API KEY:"
+                echo "$API_KEY"
+                echo ""
+                echo "Используйте его для добавления ноды в бот:"
+                echo ""
+                echo "name: Node-1"
+                echo "ip: $(curl -s ifconfig.me)"
+                echo "api_key: $API_KEY"
+                echo ""
+            else
+                echo "⚠️  API KEY не найден в конфигурации"
+                echo "Запустите переустановку для создания нового ключа"
+            fi
+        fi
         exit 0
     fi
 fi

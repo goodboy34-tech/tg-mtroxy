@@ -5,6 +5,10 @@ import { NodeApiClient, ProxyLinkGenerator, SecretGenerator } from './node-clien
 import { SubscriptionManager, SubscriptionFormatter } from './subscription-manager';
 import cron from 'node-cron';
 import crypto from 'crypto';
+import dotenv from 'dotenv';
+
+// Загрузка переменных окружения из .env файла
+dotenv.config();
 
 // ─── Конфиг ───
 const BOT_TOKEN = process.env.BOT_TOKEN!;

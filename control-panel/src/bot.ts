@@ -666,6 +666,46 @@ bot.command('logs', async (ctx) => {
   }
 });
 
+bot.command('restart_node', async (ctx) => {
+  const nodeId = parseInt(ctx.message.text.split(' ')[1]);
+  
+  if (!nodeId) {
+    return ctx.reply('Использование: /restart_node <node_id>');
+  }
+
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    return ctx.reply('❌ Нода не найдена');
+  }
+
+  const client = getNodeClient(nodeId);
+  if (!client) {
+    return ctx.reply('❌ Не удалось подключиться к ноде');
+  }
+
+  try {
+    await ctx.reply('⏳ Перезапуск прокси-сервисов...');
+    
+    // Перезапускаем MTProxy
+    await client.restartMtProto();
+    
+    // Перезапускаем SOCKS5
+    await client.restartSocks5();
+    
+    await ctx.reply(`✅ Прокси на ноде "${node.name}" успешно перезапущены`);
+    
+    queries.insertLog.run({
+      node_id: nodeId,
+      level: 'info',
+      message: 'Proxies restarted',
+      details: `Admin ID: ${ctx.from.id}`,
+    });
+
+  } catch (err: any) {
+    await ctx.reply(`❌ Ошибка при перезапуске: ${err.message}`);
+  }
+});
+
 bot.command('set_workers', async (ctx) => {
   const args = ctx.message.text.split(' ').slice(1);
   const nodeId = parseInt(args[0]);

@@ -62,11 +62,10 @@ function isAdmin(userId: number): boolean {
 }
 
 /**
- * Экранирование специальных символов Markdown
- * Не экранируем: . (точка) - она используется в доменах и IP
+ * Экранирование специальных символов для MarkdownV2
  */
 function escapeMarkdown(text: string): string {
-  return text.replace(/[_*[\]()~`>#+\-=|{}!\\]/g, '\\$&');
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
 }
 
 /**

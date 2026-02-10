@@ -319,6 +319,146 @@ echo "🔍 Получение MTProxy ссылки..."
 sleep 3
 SECRET_LINE=$(docker logs mtproxy 2>&1 | grep -E "tg://|t.me/proxy" | head -1 || echo "")
 
+# Создание глобальной команды управления
+echo ""
+echo "🔧 Создание глобальной команды 'mtproxy-node'..."
+
+cat > /usr/local/bin/mtproxy-node <<'NODE_SCRIPT_EOF'
+#!/bin/bash
+
+INSTALL_DIR="/opt/mtproxy-node"
+
+if [ ! -d "$INSTALL_DIR" ]; then
+    echo "❌ Node не установлен в $INSTALL_DIR"
+    exit 1
+fi
+
+cd "$INSTALL_DIR"
+
+case "$1" in
+    start)
+        echo "🚀 Запуск Node..."
+        docker compose up -d
+        ;;
+    stop)
+        echo "🛑 Остановка Node..."
+        docker compose down
+        ;;
+    restart)
+        echo "🔄 Перезапуск Node..."
+        docker compose restart
+        ;;
+    logs)
+        if [ -n "$2" ]; then
+            docker compose logs -f "$2"
+        else
+            docker compose logs -f
+        fi
+        ;;
+    status)
+        echo "📊 Статус Node:"
+        docker compose ps
+        echo ""
+        echo "📈 Использование ресурсов:"
+        docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" \
+          $(docker compose ps -q) 2>/dev/null || echo "Контейнеры не запущены"
+        ;;
+    update)
+        echo "📦 Обновление Node..."
+        docker compose down
+        git pull
+        docker compose up -d --build
+        echo "✅ Обновлено"
+        ;;
+    rebuild)
+        echo "🔨 Пересборка Node..."
+        docker compose down
+        docker compose build --no-cache
+        docker compose up -d
+        echo "✅ Пересобрано"
+        ;;
+    setup)
+        echo ""
+        echo "════════════════════════════════════════════════════"
+        echo "  Добавление API TOKEN от бота"
+        echo "════════════════════════════════════════════════════"
+        echo ""
+        
+        read -p "Введите API TOKEN от бота: " API_TOKEN
+        
+        if [ -z "$API_TOKEN" ]; then
+            echo "❌ API TOKEN не может быть пустым!"
+            exit 1
+        fi
+        
+        if grep -q "^API_TOKEN=" node-agent/.env 2>/dev/null; then
+            sed -i "s/^API_TOKEN=.*/API_TOKEN=$API_TOKEN/" node-agent/.env
+            echo "✅ API TOKEN обновлён"
+        else
+            echo "API_TOKEN=$API_TOKEN" >> node-agent/.env
+            echo "✅ API TOKEN добавлен"
+        fi
+        
+        echo ""
+        echo "🔄 Перезапуск node-agent..."
+        docker compose restart node-agent
+        
+        echo ""
+        echo "✅ Готово! Проверьте подключение:"
+        echo "   mtproxy-node logs node-agent"
+        ;;
+    config)
+        if [ -f "node-agent/.env" ]; then
+            echo "📄 Конфигурация Node:"
+            cat node-agent/.env | grep -v "^#" | grep -v "^$"
+        else
+            echo "❌ Файл конфигурации не найден"
+        fi
+        ;;
+    shell)
+        if [ -n "$2" ]; then
+            docker compose exec "$2" sh
+        else
+            docker compose exec node-agent sh
+        fi
+        ;;
+    proxy-link)
+        echo "🔗 MTProxy ссылка:"
+        docker logs mtproxy 2>&1 | grep -E "tg://|t.me/proxy" | head -1
+        ;;
+    *)
+        echo "MTProxy Node - Управление"
+        echo ""
+        echo "Использование: mtproxy-node <команда> [опции]"
+        echo ""
+        echo "Команды:"
+        echo "  start       - Запустить Node"
+        echo "  stop        - Остановить Node"
+        echo "  restart     - Перезапустить Node"
+        echo "  logs [сервис] - Показать логи (Ctrl+C для выхода)"
+        echo "  status      - Показать статус и ресурсы"
+        echo "  update      - Обновить из GitHub и перезапустить"
+        echo "  rebuild     - Пересобрать с нуля"
+        echo "  setup       - Добавить/обновить API TOKEN от бота"
+        echo "  config      - Показать текущую конфигурацию"
+        echo "  shell [сервис] - Открыть shell в контейнере"
+        echo "  proxy-link  - Показать MTProxy ссылку"
+        echo ""
+        echo "Примеры:"
+        echo "  mtproxy-node status"
+        echo "  mtproxy-node logs node-agent"
+        echo "  mtproxy-node setup"
+        echo "  mtproxy-node proxy-link"
+        ;;
+esac
+NODE_SCRIPT_EOF
+
+chmod +x /usr/local/bin/mtproxy-node
+
+echo "✅ Команда 'mtproxy-node' создана"
+
+echo "✅ Команда 'mtproxy-node' создана"
+
 echo ""
 echo "════════════════════════════════════════════════════"
 echo "  ✅ MTProxy Node установлен!"
@@ -346,29 +486,27 @@ echo "   (может понадобиться для прямых запросо
 echo ""
 echo "📋 ШАГ 2: После добавления ноды бот выдаст API TOKEN"
 echo ""
-echo "Скопируйте API TOKEN и выполните на сервере:"
+echo "Выполните команду для добавления токена:"
 echo ""
-echo "   sudo bash $INSTALL_DIR/install-node.sh setup"
-echo ""
-echo "Или вручную:"
-echo ""
-echo "   echo 'API_TOKEN=ваш_токен' >> $INSTALL_DIR/node-agent/.env"
-echo "   cd $INSTALL_DIR"
-echo "   docker compose restart node-agent"
+echo "   mtproxy-node setup"
 echo ""
 echo "🔗 MTProxy ссылка (для проверки):"
 if [ -n "$SECRET_LINE" ]; then
     echo "   $SECRET_LINE"
 else
-    echo "   docker logs mtproxy | grep 't.me/proxy'"
+    echo "   mtproxy-node proxy-link"
 fi
 echo ""
-echo "📊 Полезные команды:"
-echo "   docker compose ps              - статус контейнеров"
-echo "   docker compose logs -f         - логи всех сервисов"
-echo "   docker compose logs -f node-agent  - логи только агента"
-echo "   docker compose restart         - перезапуск"
-echo "   docker compose down            - остановка"
+echo "� Управление из любой директории:"
+echo "   mtproxy-node status      - статус и ресурсы"
+echo "   mtproxy-node logs        - просмотр всех логов"
+echo "   mtproxy-node logs node-agent  - логи агента"
+echo "   mtproxy-node restart     - перезапуск"
+echo "   mtproxy-node setup       - добавить API TOKEN"
+echo "   mtproxy-node config      - показать конфигурацию"
+echo "   mtproxy-node update      - обновление"
+echo ""
+echo "📂 Директория установки: $INSTALL_DIR"
 echo ""
 echo "════════════════════════════════════════════════════"
 echo ""

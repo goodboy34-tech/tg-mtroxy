@@ -34,8 +34,8 @@ tg-mtproxy/
 sudo apt update && sudo apt upgrade -y
 
 # Клонируйте репозиторий
-git clone https://github.com/yourusername/tg-mtproxy.git
-cd tg-mtproxy
+git clone https://github.com/goodboy34-tech/eeee.git
+cd eeee
 ```
 
 ### Шаг 2: Установка Node Agent
@@ -45,14 +45,24 @@ cd node-agent
 sudo bash scripts/install.sh
 ```
 
-**Что нужно ввести:**
-- Имя ноды: `Node1`
-- Домен: ваш домен или IP
-- Количество воркеров: `4`
+**Что нужно сделать ДО установки:**
+```bash
+# 1. Скопировать .env.example в .env
+cp .env.example .env
 
-**Что получите:**
-- API Key - сохраните его!
-- Команду для добавления в Control Panel
+# 2. Сгенерировать ключи
+openssl rand -hex 32  # API Key - сохраните!
+openssl rand -hex 16  # MTProxy Secret
+
+# 3. Отредактировать .env
+nano .env
+# Заполните: NODE_NAME, DOMAIN, API_KEY, SECRET, WORKERS
+
+# 4. Только теперь запускать установку
+sudo bash scripts/install.sh
+```
+
+**Подробнее:** [ENV-SETUP.md](./ENV-SETUP.md)
 
 ### Шаг 3: Установка Control Panel
 
@@ -61,17 +71,24 @@ cd ../control-panel
 sudo bash scripts/install.sh
 ```
 
-**Что нужно:**
-1. **Bot Token** - получите у @BotFather:
-   - Откройте @BotFather в Telegram
-   - Отправьте `/newbot`
-   - Придумайте имя и username
-   - Скопируйте токен
+**Что нужно сделать ДО установки:**
+```bash
+# 1. Скопировать .env.example в .env
+cp .env.example .env
 
-2. **Admin ID** - получите у @userinfobot:
-   - Откройте @userinfobot в Telegram
-   - Отправьте `/start`
-   - Скопируйте ваш ID
+# 2. Получить Bot Token от @BotFather
+# 3. Получить свой Telegram ID от @userinfobot
+
+# 4. Отредактировать .env
+nano .env
+# BOT_TOKEN=ваш_токен
+# ADMIN_IDS=ваш_id
+
+# 5. Только теперь запускать установку
+sudo bash scripts/install.sh
+```
+
+**Подробнее:** [ENV-SETUP.md](./ENV-SETUP.md)
 
 ### Шаг 4: Подключение ноды
 
@@ -121,14 +138,19 @@ Control Panel Server    →   Node 1 Server
 
 ```bash
 # 1. Клонировать
-git clone https://github.com/yourusername/tg-mtproxy.git
-cd tg-mtproxy/control-panel
+git clone https://github.com/goodboy34-tech/eeee.git
+cd eeee/control-panel
 
-# 2. Установить
+# 2. Настроить .env
+cp .env.example .env
+nano .env
+# Укажите BOT_TOKEN и ADMIN_IDS (см. ENV-SETUP.md)
+
+# 3. Установить
 sudo bash scripts/install.sh
-
-# Ввести Bot Token и Admin IDs
 ```
+
+**Как получить токены - смотрите [ENV-SETUP.md](./ENV-SETUP.md)**
 
 ### Установка Node Agent на каждом сервере
 
@@ -136,19 +158,24 @@ sudo bash scripts/install.sh
 
 ```bash
 # 1. Клонировать
-git clone https://github.com/yourusername/tg-mtproxy.git
-cd tg-mtproxy/node-agent
+git clone https://github.com/goodboy34-tech/eeee.git
+cd eeee/node-agent
 
-# 2. Установить
+# 2. Сгенерировать ключи
+echo "API_KEY: $(openssl rand -hex 32)"
+echo "SECRET: $(openssl rand -hex 16)"
+# ⚠️ СОХРАНИТЕ API_KEY!
+
+# 3. Настроить .env
+cp .env.example .env
+nano .env
+# Заполните: NODE_NAME, DOMAIN, API_KEY, SECRET, WORKERS
+
+# 4. Установить
 sudo bash scripts/install.sh
-
-# Ввести:
-# - Имя: Node1, Node2, Node3...
-# - Домен: proxy1.example.com, proxy2.example.com...
-# - Воркеры: 4
-
-# 3. СОХРАНИТЬ API KEY из вывода!
 ```
+
+**Подробная инструкция - смотрите [ENV-SETUP.md](./ENV-SETUP.md)**
 
 ### Подключение всех нод
 

@@ -1,0 +1,25 @@
+﻿services:
+  control-panel:
+    build:
+      context: ./control-panel
+      dockerfile: Dockerfile
+    container_name: mtproxy-control
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_IDS=${ADMIN_IDS}
+    volumes:
+      - ./data:/app/data
+      - ./certs:/app/certs:ro
+    networks:
+      - mtproxy-network
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  mtproxy-network:
+    driver: bridge

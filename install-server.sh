@@ -21,6 +21,13 @@ fi
 
 echo "✅ .env файл найден"
 
+# Проверка обязательных переменных
+source .env
+if [ -z "$BOT_TOKEN" ] || [ -z "$ADMIN_IDS" ]; then
+    echo "❌ BOT_TOKEN и ADMIN_IDS обязательны в .env файле!"
+    exit 1
+fi
+
 # Создание необходимых директорий
 echo "📁 Создание директорий..."
 mkdir -p data
@@ -52,16 +59,17 @@ EOF
     echo "✅ Конфигурация SOCKS5 создана"
 fi
 
-# Остановка старых контейнеров
-echo "🛑 Остановка старых контейнеров..."
-docker compose down 2>/dev/null || true
+# Остановка и удаление старых контейнеров
+echo "🛑 Очистка старых контейнеров..."
+docker compose down -v 2>/dev/null || true
+docker rm -f mtproxy-control mtproxy-local mtproxy-local-socks5 2>/dev/null || true
 
 # Очистка Docker кэша
 echo "🧹 Очистка Docker кэша..."
 docker system prune -f
 
 # Сборка и запуск
-echo "🔨 Сборка контейнеров..."
+echo "🔨 Сборка контейнеров (это займёт несколько минут)..."
 docker compose build --no-cache
 
 echo "🚀 Запуск сервисов..."
@@ -69,7 +77,7 @@ docker compose up -d
 
 # Ожидание запуска
 echo "⏳ Ожидание запуска контейнеров..."
-sleep 5
+sleep 10
 
 # Проверка статуса
 echo ""
@@ -77,16 +85,19 @@ echo "📊 Статус контейнеров:"
 docker compose ps
 
 echo ""
-echo "📋 Логи бота:"
-docker compose logs control-panel | tail -20
+echo "📋 Последние логи бота:"
+docker compose logs control-panel --tail=30
 
 echo ""
 echo "✅ Установка завершена!"
 echo ""
-echo "Команды для управления:"
-echo "  docker compose ps              - статус контейнеров"
-echo "  docker compose logs -f         - логи всех сервисов"
-echo "  docker compose logs control-panel -f  - логи бота"
-echo "  docker compose restart         - перезапуск"
-echo "  docker compose down            - остановка"
+echo "🎮 Управление системой:"
+echo "  ./scripts/manage.sh start      - запустить"
+echo "  ./scripts/manage.sh stop       - остановить"
+echo "  ./scripts/manage.sh restart    - перезапустить"
+echo "  ./scripts/manage.sh logs       - логи всех сервисов"
+echo "  ./scripts/manage.sh status     - статус и ресурсы"
+echo "  ./scripts/manage.sh update     - обновить из GitHub"
+echo ""
+echo "📱 Напишите боту /start в Telegram"
 echo ""

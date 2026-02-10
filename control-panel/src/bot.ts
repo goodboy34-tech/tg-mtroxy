@@ -187,20 +187,20 @@ bot.command('node', async (ctx) => {
         const uptimeHours = Math.floor(health.uptime / 3600);
         const uptimeMinutes = Math.floor((health.uptime % 3600) / 60);
         
-        healthInfo = `\n*Статус:* ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
-                     `*Uptime:* ${uptimeHours}ч ${uptimeMinutes}м\n` +
-                     `*CPU:* ${cpuUsage}%\n` +
-                     `*RAM:* ${ramUsage}%\n`;
+        healthInfo = `\nСтатус: ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
+                     `Uptime: ${uptimeHours}ч ${uptimeMinutes}м\n` +
+                     `CPU: ${cpuUsage}%\n` +
+                     `RAM: ${ramUsage}%\n`;
         
         const inMb = stats.network.inMb.toFixed(2);
         const outMb = stats.network.outMb.toFixed(2);
         
-        statsInfo = `\n*MTProto:*\n` +
+        statsInfo = `\nMTProto:\n` +
                     `  Подключений: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
                     `  Telegram серверов: ${stats.mtproto.activeTargets}/${stats.mtproto.readyTargets}\n` +
-                    `*SOCKS5:*\n` +
+                    `SOCKS5:\n` +
                     `  Подключений: ${stats.socks5.connections}\n` +
-                    `*Трафик:*\n` +
+                    `Трафик:\n` +
                     `  ⬇️ ${inMb} MB\n` +
                     `  ⬆️ ${outMb} MB\n`;
       }
@@ -209,24 +209,24 @@ bot.command('node', async (ctx) => {
     }
 
     const nodeInfo = 
-      `📡 *Нода:* ${node.name}\n\n` +
-      `*ID:* ${node.id}\n` +
-      `*Домен:* ${node.domain}\n` +
-      `*IP:* ${node.ip}\n` +
-      `*MTProto порт:* ${node.mtproto_port}\n` +
-      `*SOCKS5 порт:* ${node.socks5_port}\n` +
-      `*Воркеры:* ${node.workers}\n` +
-      `*CPU ядер:* ${node.cpu_cores}\n` +
-      `*RAM:* ${node.ram_mb} MB\n` +
+      `📡 Нода: ${node.name}\n\n` +
+      `ID: ${node.id}\n` +
+      `Домен: ${node.domain}\n` +
+      `IP: ${node.ip}\n` +
+      `MTProto порт: ${node.mtproto_port}\n` +
+      `SOCKS5 порт: ${node.socks5_port}\n` +
+      `Воркеры: ${node.workers}\n` +
+      `CPU ядер: ${node.cpu_cores}\n` +
+      `RAM: ${node.ram_mb} MB\n` +
       healthInfo +
       statsInfo +
-      `\n*Команды:*\n` +
+      `\nКоманды:\n` +
       `/links ${node.id} - получить ссылки\n` +
       `/restart_node ${node.id} - перезапустить\n` +
       `/logs ${node.id} - показать логи\n` +
       `/remove_node ${node.id} - удалить ноду`;
 
-    await ctx.reply(nodeInfo, { parse_mode: 'Markdown' });
+    await ctx.reply(nodeInfo);
   } catch (err: any) {
     await ctx.reply(`❌ Ошибка при получении информации о ноде: ${err.message}`);
   }

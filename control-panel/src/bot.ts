@@ -205,14 +205,14 @@ bot.command('node', async (ctx) => {
                     `  ⬆️ ${outMb} MB\n`;
       }
     } catch (err: any) {
-      healthInfo = `\n⚠️ Не удалось получить статус: ${escapeMarkdown(err.message)}\n`;
+      healthInfo = `\n⚠️ Не удалось получить статус: ${err.message}\n`;
     }
 
     const nodeInfo = 
-      `📡 *Нода:* ${escapeMarkdown(node.name)}\n\n` +
+      `📡 *Нода:* ${node.name}\n\n` +
       `*ID:* ${node.id}\n` +
-      `*Домен:* ${escapeMarkdown(node.domain)}\n` +
-      `*IP:* ${escapeMarkdown(node.ip)}\n` +
+      `*Домен:* ${node.domain}\n` +
+      `*IP:* ${node.ip}\n` +
       `*MTProto порт:* ${node.mtproto_port}\n` +
       `*SOCKS5 порт:* ${node.socks5_port}\n` +
       `*Воркеры:* ${node.workers}\n` +
@@ -221,12 +221,12 @@ bot.command('node', async (ctx) => {
       healthInfo +
       statsInfo +
       `\n*Команды:*\n` +
-      `/links ${node.id} \\- получить ссылки\n` +
-      `/restart_node ${node.id} \\- перезапустить\n` +
-      `/logs ${node.id} \\- показать логи\n` +
-      `/remove_node ${node.id} \\- удалить ноду`;
+      `/links ${node.id} - получить ссылки\n` +
+      `/restart_node ${node.id} - перезапустить\n` +
+      `/logs ${node.id} - показать логи\n` +
+      `/remove_node ${node.id} - удалить ноду`;
 
-    await ctx.reply(nodeInfo, { parse_mode: 'MarkdownV2' });
+    await ctx.reply(nodeInfo, { parse_mode: 'Markdown' });
   } catch (err: any) {
     await ctx.reply(`❌ Ошибка при получении информации о ноде: ${err.message}`);
   }

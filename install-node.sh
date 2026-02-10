@@ -57,6 +57,15 @@ if [ "$1" = "setup" ]; then
         echo "❌ Node не установлен в /opt/mtproxy-node"
         exit 1
     fi
+    
+    # Проверяем наличие docker-compose.yml
+    if [ ! -f "docker-compose.yml" ]; then
+        echo "❌ docker-compose.yml не найден"
+        echo "   Запустите полную переустановку:"
+        echo "   curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh | sudo bash"
+        exit 1
+    fi
+    
     setup_api_token
     exit 0
 fi
@@ -105,12 +114,31 @@ if [ -d "$INSTALL_DIR" ]; then
         echo ""
         echo "✅ Репозиторий обновлён"
         echo ""
+        
+        # Проверяем структуру файлов
+        if [ ! -f "docker-compose.yml" ] || [ ! -f "node-agent/.env" ]; then
+            echo "⚠️  Обнаружена старая структура файлов"
+            echo ""
+            read -p "Хотите пересоздать конфигурацию? (y/n): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                echo ""
+                echo "Переустановка с сохранением данных..."
+                # Возвращаемся к началу скрипта для полной установки
+                exec "$0"
+            else
+                echo ""
+                echo "Для добавления API TOKEN запустите:"
+                echo "   mtproxy-node setup"
+                echo ""
+                echo "⚠️  Внимание: старая структура может не работать"
+                echo "   Рекомендуется полная переустановка"
+                exit 0
+            fi
+        fi
+        
         echo "Для добавления API TOKEN запустите:"
         echo "   mtproxy-node setup"
-        echo ""
-        echo "Или перейдите в директорию:"
-        echo "   cd $INSTALL_DIR"
-        echo "   sudo bash install-node.sh setup"
         exit 0
     fi
 fi

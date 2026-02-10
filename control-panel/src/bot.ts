@@ -62,6 +62,13 @@ function isAdmin(userId: number): boolean {
 }
 
 /**
+ * Экранирование специальных символов Markdown
+ */
+function escapeMarkdown(text: string): string {
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+}
+
+/**
  * Middleware для проверки админа
  */
 bot.use(async (ctx, next) => {
@@ -1086,19 +1093,25 @@ bot.on(message('text'), async (ctx) => {
       // Очищаем состояние
       userStates.delete(userId);
 
+      // Экранируем данные для Markdown
+      const safeName = escapeMarkdown(data.name);
+      const safeDomain = escapeMarkdown(data.domain);
+      const safeIp = escapeMarkdown(data.ip);
+      const safeApiUrl = escapeMarkdown(data.api_url);
+
       await ctx.reply(
-        '✅ *Нода успешно добавлена!*\n\n' +
+        '✅ *Нода успешно добавлена\\!*\n\n' +
         `🆔 ID: \`${nodeId}\`\n` +
-        `📛 Имя: ${data.name}\n` +
-        `🌐 Домен: ${data.domain}\n` +
-        `📡 IP: ${data.ip}\n` +
-        `🔗 API URL: ${data.api_url}\n` +
+        `📛 Имя: ${safeName}\n` +
+        `🌐 Домен: ${safeDomain}\n` +
+        `📡 IP: ${safeIp}\n` +
+        `🔗 API URL: ${safeApiUrl}\n` +
         `🔑 API токен: \`${apiToken}\`\n\n` +
-        `⚠️ *Сохраните API токен!* Он нужен для установки node-agent на сервере.\n\n` +
+        `⚠️ *Сохраните API токен\\!* Он нужен для установки node\\-agent на сервере\\.\n\n` +
         `Для установки ноды:\n` +
-        `1. Скопируйте установочный скрипт из репозитория\n` +
-        `2. Установите переменную API_TOKEN=${apiToken}\n` +
-        `3. Запустите docker-compose на ноде\n\n` +
+        `1\\. Скопируйте установочный скрипт из репозитория\n` +
+        `2\\. Установите переменную API\\_TOKEN\\=${apiToken}\n` +
+        `3\\. Запустите docker\\-compose на ноде\n\n` +
         `Проверить статус: /node ${nodeId}`,
         { parse_mode: 'Markdown' }
       );

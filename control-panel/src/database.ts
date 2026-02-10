@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import type { Statement } from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
@@ -114,7 +115,12 @@ db.exec(`
 
 // ─── Подготовленные запросы ───
 
-export const queries = {
+// Типизированный объект запросов
+type Queries = {
+  [key: string]: Statement<any>;
+};
+
+export const queries: Queries = {
   // ═══ Ноды ═══
   getAllNodes: db.prepare(`SELECT * FROM nodes ORDER BY created_at DESC`),
   getActiveNodes: db.prepare(`SELECT * FROM nodes WHERE is_active = 1 ORDER BY name`),

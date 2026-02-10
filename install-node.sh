@@ -107,7 +107,13 @@ if [ -d "$INSTALL_DIR" ]; then
     read -p "Переустановить? (y/n): " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "🗑️  Удаление старой установки..."
+        # Останавливаем контейнеры если они запущены
+        cd "$INSTALL_DIR" 2>/dev/null && docker compose down 2>/dev/null || true
+        # Переходим в безопасную директорию перед удалением
+        cd /tmp
         rm -rf "$INSTALL_DIR"
+        echo "✅ Старая установка удалена"
     else
         cd "$INSTALL_DIR"
         git pull
@@ -123,9 +129,12 @@ if [ -d "$INSTALL_DIR" ]; then
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
                 echo ""
-                echo "Переустановка с сохранением данных..."
-                # Возвращаемся к началу скрипта для полной установки
-                exec "$0"
+                echo "🗑️  Очистка старых файлов..."
+                docker compose down 2>/dev/null || true
+                cd /tmp
+                rm -rf "$INSTALL_DIR"
+                # Рекурсивно вызываем себя для чистой установки
+                exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh)"
             else
                 echo ""
                 echo "Для добавления API TOKEN запустите:"
@@ -143,11 +152,9 @@ if [ -d "$INSTALL_DIR" ]; then
     fi
 fi
 
-if [ ! -d "$INSTALL_DIR" ]; then
-    echo ""
-    echo "📥 Клонирование репозитория..."
-    git clone https://github.com/goodboy34-tech/eeee.git "$INSTALL_DIR"
-fi
+echo ""
+echo "📥 Клонирование репозитория..."
+git clone https://github.com/goodboy34-tech/eeee.git "$INSTALL_DIR"
 
 cd "$INSTALL_DIR"
 

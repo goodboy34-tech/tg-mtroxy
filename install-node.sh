@@ -81,8 +81,8 @@ Type=oneshot
 RemainAfterExit=yes
 User=root
 WorkingDirectory=$INSTALL_DIR
-ExecStart=/usr/bin/docker compose -f docker-compose.node.yml up -d
-ExecStop=/usr/bin/docker compose -f docker-compose.node.yml down
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
 TimeoutStartSec=300
 
 [Install]
@@ -100,7 +100,6 @@ create_mtproxy_command() {
 #!/bin/bash
 
 MT_PROXY_DIR="/opt/mtproxy-node"
-COMPOSE_FILE="docker-compose.node.yml"
 
 # Debug output
 echo "DEBUG: MT_PROXY_DIR='\$MT_PROXY_DIR'" >&2
@@ -126,144 +125,50 @@ perform_update() {
     echo "========================================================"
     echo ""
 
-    # Check if we're in a git repository
-    if [ -d ".git" ]; then
-        echo "* Fetching latest changes..."
-        git fetch origin master
+    # Backup all important files
+    echo "* Backing up configuration and data files..."
+    BACKUP_DIR="/tmp/mtproxy-backup-\$(date +%s)"
+    mkdir -p "\$BACKUP_DIR"
+    
+    # Backup .env files
+    [ -f "node-agent/.env" ] && cp "node-agent/.env" "\$BACKUP_DIR/node-agent.env"
+    [ -f ".env" ] && cp ".env" "\$BACKUP_DIR/root.env"
+    
+    # Backup data files
+    [ -d "node-data" ] && cp -r "node-data" "\$BACKUP_DIR/"
+    [ -f "socks5/sockd.passwd" ] && cp "socks5/sockd.passwd" "\$BACKUP_DIR/"
+    
+    echo "* Backup created in \$BACKUP_DIR"
 
-        # Get current and remote commits
-        LOCAL=\$(git rev-parse @)
-        REMOTE=\$(git rev-parse @{u})
+    # Download updated files (only code files, not configs)
+    REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master"
+    
+    echo "* Downloading updates..."
+    mkdir -p node-agent/src
+    
+    # Download node-agent files
+    curl -fsSL "\$REPO_URL/node-agent/package.json" -o "node-agent/package.json"
+    curl -fsSL "\$REPO_URL/node-agent/package-lock.json" -o "node-agent/package-lock.json"
+    curl -fsSL "\$REPO_URL/node-agent/tsconfig.json" -o "node-agent/tsconfig.json"
+    curl -fsSL "\$REPO_URL/node-agent/Dockerfile" -o "node-agent/Dockerfile"
+    curl -fsSL "\$REPO_URL/node-agent/src/api.ts" -o "node-agent/src/api.ts"
 
-        if [ "\$LOCAL" = "\$REMOTE" ]; then
-            echo "✓ Already up to date!"
-            return 0
-        fi
+    # Restore configuration files
+    echo "* Restoring configuration files..."
+    [ -f "\$BACKUP_DIR/node-agent.env" ] && cp "\$BACKUP_DIR/node-agent.env" "node-agent/.env"
+    [ -f "\$BACKUP_DIR/root.env" ] && cp "\$BACKUP_DIR/root.env" ".env"
+    [ -d "\$BACKUP_DIR/node-data" ] && cp -r "\$BACKUP_DIR/node-data/"* "node-data/" 2>/dev/null
+    [ -f "\$BACKUP_DIR/sockd.passwd" ] && cp "\$BACKUP_DIR/sockd.passwd" "socks5/"
+    
+    echo "* Configuration restored"
 
-        echo ""
-        echo "----------------------------------------"
-        echo "  Changes to be applied:"
-        echo "----------------------------------------"
-        
-        # Show commit log
-        git log HEAD..@{u} --pretty=format:"%C(yellow)%h%C(reset) %C(cyan)%ar%C(reset) %s" --abbrev-commit
-        
-        echo ""
-        echo ""
-        echo "----------------------------------------"
-        echo "  Detailed changes:"
-        echo "----------------------------------------"
-        
-        # Show diff for node-agent files only
-        git diff HEAD..@{u} --stat node-agent/
-        
-        echo ""
-        echo "----------------------------------------"
-        
-        # Ask for confirmation
-        read -p "Do you want to apply these updates? (y/n): " -n 1 -r
-        echo ""
-        
-        if [[ ! \$REPLY =~ ^[Yy]$ ]]; then
-            echo "* Update cancelled"
-            return 1
-        fi
+    echo "* Rebuilding container..."
+    docker compose build --no-cache
+    docker compose up -d
 
-        echo ""
-        echo "* Applying updates..."
-
-        # Backup all important configuration files
-        echo "* Backing up configuration files..."
-        BACKUP_DIR="/tmp/mtproxy-backup-\$(date +%s)"
-        mkdir -p "\$BACKUP_DIR"
-        
-        # Backup .env files
-        [ -f "node-agent/.env" ] && cp "node-agent/.env" "\$BACKUP_DIR/node-agent.env"
-        [ -f ".env" ] && cp ".env" "\$BACKUP_DIR/root.env"
-        
-        # Backup MTProxy secrets and SOCKS5 accounts
-        [ -f "node-data/mtproxy-secrets.json" ] && cp "node-data/mtproxy-secrets.json" "\$BACKUP_DIR/"
-        [ -f "node-data/socks5-accounts.json" ] && cp "node-data/socks5-accounts.json" "\$BACKUP_DIR/"
-        [ -f "socks5/sockd.passwd" ] && cp "socks5/sockd.passwd" "\$BACKUP_DIR/"
-        
-        echo "* Backup created in \$BACKUP_DIR"
-
-        # Pull changes (only code files, .env files are in .gitignore)
-        git pull origin master
-
-        # Restore configuration files
-        echo "* Restoring configuration files..."
-        [ -f "\$BACKUP_DIR/node-agent.env" ] && cp "\$BACKUP_DIR/node-agent.env" "node-agent/.env"
-        [ -f "\$BACKUP_DIR/root.env" ] && cp "\$BACKUP_DIR/root.env" ".env"
-        [ -f "\$BACKUP_DIR/mtproxy-secrets.json" ] && cp "\$BACKUP_DIR/mtproxy-secrets.json" "node-data/"
-        [ -f "\$BACKUP_DIR/socks5-accounts.json" ] && cp "\$BACKUP_DIR/socks5-accounts.json" "node-data/"
-        [ -f "\$BACKUP_DIR/sockd.passwd" ] && cp "\$BACKUP_DIR/sockd.passwd" "socks5/"
-        
-        echo "* Configuration restored"
-        
-        # Clean up old backup (keep only if needed for rollback)
-        # rm -rf "\$BACKUP_DIR"
-
-        echo "* Rebuilding containers..."
-        docker compose -f \$COMPOSE_FILE build --no-cache
-        docker compose -f \$COMPOSE_FILE up -d
-
-        echo ""
-        echo "✓ Update completed successfully!"
-        echo "  Backup kept in: \$BACKUP_DIR"
-        
-    else
-        # Fallback: download from GitHub directly (old method)
-        echo "* Not a git repository. Using direct download method..."
-        echo "! WARNING: This method doesn't show changes. Consider using git clone for updates."
-        
-        # Backup all important files
-        echo "* Backing up configuration and data files..."
-        BACKUP_DIR="/tmp/mtproxy-backup-\$(date +%s)"
-        mkdir -p "\$BACKUP_DIR"
-        
-        # Backup .env files
-        [ -f "node-agent/.env" ] && cp "node-agent/.env" "\$BACKUP_DIR/node-agent.env"
-        [ -f ".env" ] && cp ".env" "\$BACKUP_DIR/root.env"
-        
-        # Backup data files
-        [ -d "node-data" ] && cp -r "node-data" "\$BACKUP_DIR/"
-        [ -f "socks5/sockd.passwd" ] && cp "socks5/sockd.passwd" "\$BACKUP_DIR/"
-        
-        echo "* Backup created in \$BACKUP_DIR"
-
-        # Download updated files (only code files, not configs)
-        REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master"
-        
-        echo "* Downloading updates..."
-        mkdir -p node-agent/src
-        
-        # Download docker-compose.node.yml
-        curl -fsSL "\$REPO_URL/docker-compose.node.yml" -o "docker-compose.node.yml"
-        
-        # Download node-agent files
-        curl -fsSL "\$REPO_URL/node-agent/package.json" -o "node-agent/package.json"
-        curl -fsSL "\$REPO_URL/node-agent/package-lock.json" -o "node-agent/package-lock.json"
-        curl -fsSL "\$REPO_URL/node-agent/tsconfig.json" -o "node-agent/tsconfig.json"
-        curl -fsSL "\$REPO_URL/node-agent/Dockerfile" -o "node-agent/Dockerfile"
-        curl -fsSL "\$REPO_URL/node-agent/src/api.ts" -o "node-agent/src/api.ts"
-
-        # Restore configuration files
-        echo "* Restoring configuration files..."
-        [ -f "\$BACKUP_DIR/node-agent.env" ] && cp "\$BACKUP_DIR/node-agent.env" "node-agent/.env"
-        [ -f "\$BACKUP_DIR/root.env" ] && cp "\$BACKUP_DIR/root.env" ".env"
-        [ -d "\$BACKUP_DIR/node-data" ] && cp -r "\$BACKUP_DIR/node-data/"* "node-data/" 2>/dev/null
-        [ -f "\$BACKUP_DIR/sockd.passwd" ] && cp "\$BACKUP_DIR/sockd.passwd" "socks5/"
-        
-        echo "* Configuration restored"
-
-        echo "* Rebuilding container..."
-        docker compose -f \$COMPOSE_FILE build --no-cache
-        docker compose -f \$COMPOSE_FILE up -d
-
-        echo "✓ Update completed!"
-        echo "  Backup kept in: \$BACKUP_DIR"
-    fi
+    echo ""
+    echo "✓ Update completed!"
+    echo "  Backup kept in: \$BACKUP_DIR"
 }
 
 # ═══════════════════════════════════════════════
@@ -276,16 +181,16 @@ case "\$1" in
         systemctl status mtproxy-node --no-pager -l
         echo ""
         echo "* Container status:"
-        docker compose -f \$COMPOSE_FILE ps
+        docker compose ps
         echo ""
         echo "* Resources:"
         docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
         ;;
     logs)
         if [ -n "\$2" ]; then
-            docker compose -f \$COMPOSE_FILE logs -f "\$2"
+            docker compose logs -f "\$2"
         else
-            docker compose -f \$COMPOSE_FILE logs -f
+            docker compose logs -f
         fi
         ;;
     restart)
@@ -301,8 +206,8 @@ case "\$1" in
     rebuild)
         echo "* Rebuilding containers..."
         systemctl stop mtproxy-node
-        docker compose -f \$COMPOSE_FILE down
-        docker compose -f \$COMPOSE_FILE up -d --build
+        docker compose down
+        docker compose up -d --build
         systemctl start mtproxy-node
         echo "-> Rebuilt"
         ;;
@@ -332,11 +237,11 @@ case "\$1" in
         # Restart node-agent
         echo ""
         echo "* Restarting node-agent..."
-        docker compose -f \$COMPOSE_FILE restart node-agent
+        docker compose restart node-agent
 
         echo ""
         echo "-> Done! Check connection:"
-        echo "   docker compose -f \$COMPOSE_FILE logs -f node-agent"
+        echo "   docker compose logs -f node-agent"
         ;;
     config)
         echo "* Current configuration:"
@@ -357,10 +262,10 @@ case "\$1" in
         if [ -z "\$2" ]; then
             echo "Usage: mtproxy-node shell <service>"
             echo "Available services:"
-            docker compose -f \$COMPOSE_FILE ps --services
+            docker compose ps --services
             exit 1
         fi
-        docker compose -f \$COMPOSE_FILE exec "\$2" /bin/sh
+        docker compose exec "\$2" /bin/sh
         ;;
     proxy-link)
         echo "* MTProxy links:"
@@ -377,12 +282,12 @@ case "\$1" in
         echo "* Recreating SOCKS5 container..."
         
         # Stop and remove SOCKS5 container
-        docker compose -f \$COMPOSE_FILE stop socks5
-        docker compose -f \$COMPOSE_FILE rm -f socks5
+        docker compose stop socks5
+        docker compose rm -f socks5
         
         # Start with default credentials (will be updated via bot)
         echo "* Starting SOCKS5 container with GOST..."
-        docker compose -f \$COMPOSE_FILE up -d socks5
+        docker compose up -d socks5
         
         echo "-> SOCKS5 container recreated"
         echo "   Use bot to add SOCKS5 accounts"
@@ -628,7 +533,7 @@ perform_reinstall() {
         exit 0
     fi
     cd "$INSTALL_DIR"
-    docker compose -f docker-compose.node.yml down -v 2>/dev/null || true
+    docker compose down -v 2>/dev/null || true
     cd /
     rm -rf "$INSTALL_DIR"
     echo "-> Old installation removed"
@@ -666,32 +571,74 @@ perform_install() {
     echo "* External IP: $EXTERNAL_IP"
 
     echo ""
-    echo "* Cloning repository from GitHub..."
-    
-    # Clone entire repository to get git history
-    if [ -d "$INSTALL_DIR/.git" ]; then
-        echo "* Repository already exists, updating..."
-        cd "$INSTALL_DIR"
-        git fetch origin master
-        git reset --hard origin/master
-    else
-        # Clone repository with only node-agent related files
-        git clone --depth 1 https://github.com/goodboy34-tech/eeee.git "$INSTALL_DIR"
-        cd "$INSTALL_DIR"
-    fi
-    
-    echo "-> Repository cloned/updated"
+    echo "* Downloading node-agent..."
+    mkdir -p "$INSTALL_DIR/node-agent/src"
+    cd "$INSTALL_DIR"
 
-    # Use docker-compose.node.yml from repository
+    # Download node-agent files from GitHub
+    REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
+    
+    echo "Downloading files..."
+    curl -fsSL "$REPO_URL/package.json" -o "node-agent/package.json"
+    curl -fsSL "$REPO_URL/package-lock.json" -o "node-agent/package-lock.json"
+    curl -fsSL "$REPO_URL/tsconfig.json" -o "node-agent/tsconfig.json"
+    curl -fsSL "$REPO_URL/Dockerfile" -o "node-agent/Dockerfile"
+    curl -fsSL "$REPO_URL/.env.example" -o "node-agent/.env.example"
+    curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
+
+    echo "-> node-agent downloaded"
+
+    # Create docker-compose configuration
     echo ""
-    echo "* Using docker-compose.node.yml from repository..."
-    
-    if [ ! -f "docker-compose.node.yml" ]; then
-        echo "X docker-compose.node.yml not found in repository!"
-        exit 1
-    fi
-    
-    echo "-> docker-compose configuration ready"
+    echo "* Creating docker-compose configuration..."
+
+    cat > docker-compose.yml <<'DOCKER_COMPOSE_EOF'
+services:
+  node-agent:
+    build:
+      context: ./node-agent
+      dockerfile: Dockerfile
+    container_name: mtproxy-node-agent
+    restart: unless-stopped
+    env_file:
+      - ./node-agent/.env
+    environment:
+      - NODE_ENV=production
+      - API_PORT=3000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./node-data:/app/data
+    ports:
+      - "3000:3000"
+    networks:
+      - mtproxy-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  socks5:
+    image: ginuerzh/gost:latest
+    container_name: mtproxy-socks5
+    restart: unless-stopped
+    command: ["-L=socks5://testuser:testpass@:1080"]
+    ports:
+      - "1080:1080"
+    networks:
+      - mtproxy-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  mtproxy-network:
+    driver: bridge
+DOCKER_COMPOSE_EOF
+
+    echo "-> docker-compose.yml created"
 
     echo ""
     echo "========================================================"
@@ -855,16 +802,16 @@ case "$1" in
         systemctl status mtproxy-node --no-pager -l
         echo ""
         echo "* Container status:"
-        docker compose -f docker-compose.node.yml ps
+        docker compose ps
         echo ""
         echo "* Resources:"
         docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
         ;;
     logs)
         if [ -n "$2" ]; then
-            docker compose -f docker-compose.node.yml logs -f "$2"
+            docker compose logs -f "$2"
         else
-            docker compose -f docker-compose.node.yml logs -f
+            docker compose logs -f
         fi
         ;;
     restart)
@@ -880,8 +827,8 @@ case "$1" in
     rebuild)
         echo "* Rebuilding containers..."
         systemctl stop mtproxy-node
-        docker compose -f docker-compose.node.yml down
-        docker compose -f docker-compose.node.yml up -d --build
+        docker compose down
+        docker compose up -d --build
         systemctl start mtproxy-node
         echo "-> Rebuilt"
         ;;

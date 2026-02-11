@@ -26,8 +26,9 @@ const nodeClients = new Map<number, NodeApiClient>();
 
 // Хранилище состояний пользователей (для диалогов)
 interface UserState {
-  action: 'add_node' | 'add_secret' | 'add_socks5' | null;
+  action: 'add_node' | 'add_secret' | 'add_socks5' | 'add_secret_domain' | 'add_secret_ip' | null;
   nodeId?: number;
+  secret?: string;
   data?: any;
 }
 const userStates = new Map<number, UserState>();
@@ -833,6 +834,66 @@ bot.action(/^add_secret_(dd|normal)_(\d+)_([a-f0-9]{32})$/, async (ctx) => {
   });
 });
 
+// ─── ВЫБОР ДОМЕНА/IP ДЛЯ MTPROTO ───
+
+bot.action(/^add_secret_domain_(\d+)_([a-f0-9]{32})$/, async (ctx: any) => {
+  const nodeId = parseInt(ctx.match[1]);
+  const secret = ctx.match[2];
+  await ctx.answerCbQuery();
+
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  // Устанавливаем состояние ожидания домена
+  userStates.set(ctx.from!.id, { action: 'add_secret_domain', nodeId, secret });
+
+  await ctx.editMessageText(
+    `🌐 *Выбор домена для MTProto секрета*\n\n` +
+    `Нода: ${node.name}\n` +
+    `Секрет: \`${secret}\`\n\n` +
+    `Отправьте домен (например: example.com):\n\n` +
+    `Отправьте /cancel для отмены.`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [[{ text: '⬅️ Назад', callback_data: `add_secret_${nodeId}` }]]
+      }
+    }
+  );
+});
+
+bot.action(/^add_secret_ip_(\d+)_([a-f0-9]{32})$/, async (ctx: any) => {
+  const nodeId = parseInt(ctx.match[1]);
+  const secret = ctx.match[2];
+  await ctx.answerCbQuery();
+
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  // Устанавливаем состояние ожидания IP
+  userStates.set(ctx.from!.id, { action: 'add_secret_ip', nodeId, secret });
+
+  await ctx.editMessageText(
+    `🖥️ *Выбор IP адреса для MTProto секрета*\n\n` +
+    `Нода: ${node.name}\n` +
+    `Секрет: \`${secret}\`\n\n` +
+    `Отправьте IP адрес (например: 1.2.3.4):\n\n` +
+    `Отправьте /cancel для отмены.`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [[{ text: '⬅️ Назад', callback_data: `add_secret_${nodeId}` }]]
+      }
+    }
+  );
+});
+
 // ─── SOCKS5 ───
 
 bot.command('add_socks5', async (ctx) => {
@@ -1560,6 +1621,126 @@ bot.on(message('text'), async (ctx) => {
       await ctx.reply(`❌ Ошибка при добавлении ноды: ${err.message}`);
       userStates.delete(userId);
     }
+  }
+
+  // ─── Выбор домена для MTProto ───
+  if (state.action === 'add_secret_domain') {
+    const domain = text.trim();
+    
+    if (!domain) {
+      await ctx.reply('❌ Домен не может быть пустым. Отправьте домен или /cancel для отмены.');
+      return;
+    }
+
+    // Валидация домена
+    const domainRegex = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!domainRegex.test(domain)) {
+      await ctx.reply('❌ Неверный формат домена. Отправьте корректный домен или /cancel для отмены.');
+      return;
+    }
+
+    const node = queries.getNodeById.get(state.nodeId) as any;
+    if (!node) {
+      await ctx.reply('❌ Нода не найдена');
+      userStates.delete(userId);
+      return;
+    }
+
+    // Добавляем секрет в БД
+    queries.insertSecret.run({
+      node_id: state.nodeId,
+      secret: state.secret,
+      is_fake_tls: 0,
+      description: `Домен: ${domain}`,
+    });
+
+    // Отправляем на ноду
+    const client = getNodeClient(state.nodeId!);
+    if (client) {
+      try {
+        await client.addMtProtoSecret({
+          secret: state.secret!,
+          isFakeTls: false,
+          description: `Домен: ${domain}`
+        });
+      } catch (err) {
+        console.error('Failed to add secret to node:', err);
+      }
+    }
+
+    // Генерируем ссылку
+    const link = SecretGenerator.generateMtProtoLink(domain, 443, state.secret!, false);
+
+    userStates.delete(userId);
+
+    await ctx.reply(
+      `✅ *MTProto секрет добавлен!*\n\n` +
+      `Нода: ${node.name}\n` +
+      `Тип: Обычный\n` +
+      `Домен: ${domain}\n\n` +
+      `Ссылка:\n\`${link}\``,
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  // ─── Выбор IP для MTProto ───
+  if (state.action === 'add_secret_ip') {
+    const ip = text.trim();
+    
+    if (!ip) {
+      await ctx.reply('❌ IP адрес не может быть пустым. Отправьте IP или /cancel для отмены.');
+      return;
+    }
+
+    // Валидация IP
+    const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    if (!ipRegex.test(ip)) {
+      await ctx.reply('❌ Неверный формат IP адреса. Отправьте корректный IP или /cancel для отмены.');
+      return;
+    }
+
+    const node = queries.getNodeById.get(state.nodeId) as any;
+    if (!node) {
+      await ctx.reply('❌ Нода не найдена');
+      userStates.delete(userId);
+      return;
+    }
+
+    // Добавляем секрет в БД
+    queries.insertSecret.run({
+      node_id: state.nodeId,
+      secret: state.secret,
+      is_fake_tls: 0,
+      description: `IP: ${ip}`,
+    });
+
+    // Отправляем на ноду
+    const client = getNodeClient(state.nodeId!);
+    if (client) {
+      try {
+        await client.addMtProtoSecret({
+          secret: state.secret!,
+          isFakeTls: false,
+          description: `IP: ${ip}`
+        });
+      } catch (err) {
+        console.error('Failed to add secret to node:', err);
+      }
+    }
+
+    // Генерируем ссылку
+    const link = SecretGenerator.generateMtProtoLink(ip, 443, state.secret!, false);
+
+    userStates.delete(userId);
+
+    await ctx.reply(
+      `✅ *MTProto секрет добавлен!*\n\n` +
+      `Нода: ${node.name}\n` +
+      `Тип: Обычный\n` +
+      `IP: ${ip}\n\n` +
+      `Ссылка:\n\`${link}\``,
+      { parse_mode: 'Markdown' }
+    );
   }
 });
 

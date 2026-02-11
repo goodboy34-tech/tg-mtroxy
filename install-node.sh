@@ -1,8 +1,14 @@
 #!/bin/bash
 set -e
 
-# Ensure we have a valid working directory
-cd /tmp 2>/dev/null || cd /root 2>/dev/null || cd / 2>/dev/null || true
+# Ensure we have a valid working directory from the start
+# This is critical for environments where cwd is corrupted
+if ! pwd >/dev/null 2>&1; then
+    cd /tmp 2>/dev/null || cd /root 2>/dev/null || cd / 2>/dev/null || {
+        echo "X Cannot establish a valid working directory"
+        exit 1
+    }
+fi
 
 # Installation script path
 SCRIPT_PATH="/usr/local/bin/install-node.sh"

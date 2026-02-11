@@ -264,62 +264,18 @@ case "\$1" in
         fi
         ;;
     recreate-socks5)
-        echo "* Recreating SOCKS5 configuration..."
+        echo "* Recreating SOCKS5 container..."
         
-        # Stop SOCKS5 container
+        # Stop and remove SOCKS5 container
         docker compose stop socks5
+        docker compose rm -f socks5
         
-        # Remove old config
-        rm -rf socks5/
-        
-        # Create new configuration
-        mkdir -p socks5
-        
-        # Create Dante configuration
-        cat > socks5/sockd.conf <<EOF
-# Dante SOCKS5 Server Configuration
-# Generated automatically by install script
-
-logoutput: /dev/stdout
-
-# Internal interface
-internal: 0.0.0.0 port = 1080
-
-# External interface (use eth0 in Docker)
-external: eth0
-
-# Authentication methods
-clientmethod: none
-socksmethod: username
-
-# User configuration
-user.privileged: root
-user.unprivileged: nobody
-
-# Client rules
-client pass {
-  from: 0.0.0.0/0 to: 0.0.0.0/0
-  log: connect disconnect error
-}
-
-# SOCKS rules
-socks pass {
-  from: 0.0.0.0/0 to: 0.0.0.0/0
-  protocol: tcp udp
-  log: connect disconnect error
-}
-EOF
-
-        # Create password file
-        cat > socks5/sockd.passwd <<EOF
-testuser:testpass
-EOF
-
-        echo "-> SOCKS5 configuration recreated"
-        
-        # Start SOCKS5 container
+        # Start with default credentials (will be updated via bot)
+        echo "* Starting SOCKS5 container with GOST..."
         docker compose up -d socks5
-        echo "-> SOCKS5 container started"
+        
+        echo "-> SOCKS5 container recreated"
+        echo "   Use bot to add SOCKS5 accounts"
         ;;
     "")
         echo "* MTProxy Node Manager"
@@ -472,13 +428,10 @@ services:
       - mtproxy-network
 
   socks5:
-    image: vimagick/dante:latest
+    image: ginuerzh/gost:latest
     container_name: mtproxy-socks5
     restart: unless-stopped
-    command: ["sockd", "-f", "/etc/sockd.conf"]
-    volumes:
-      - ./socks5/sockd.conf:/etc/sockd.conf:ro
-      - ./socks5/sockd.passwd:/etc/sockd.passwd:ro
+    command: ["-L=socks5://testuser:testpass@:1080"]
     ports:
       - "1080:1080"
     networks:
@@ -646,13 +599,10 @@ services:
       - mtproxy-network
 
   socks5:
-    image: vimagick/dante:latest
+    image: ginuerzh/gost:latest
     container_name: mtproxy-socks5
     restart: unless-stopped
-    command: ["sockd", "-f", "/etc/sockd.conf"]
-    volumes:
-      - ./socks5/sockd.conf:/etc/sockd.conf:ro
-      - ./socks5/sockd.passwd:/etc/sockd.passwd:ro
+    command: ["-L=socks5://testuser:testpass@:1080"]
     ports:
       - "1080:1080"
     networks:

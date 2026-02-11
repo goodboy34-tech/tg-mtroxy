@@ -390,68 +390,45 @@ async function restartSocks5(): Promise<void> {
 }
 
 async function updateSocks5Config(accounts: Array<{ username: string; password: string }>): Promise<void> {
-  // Генерируем конфигурационный файл для Dante
-  let config = `# Dante SOCKS5 Server Configuration
-# Generated automatically by Node Agent
-
-logoutput: /dev/stdout
-
-# Internal interface
-internal: 0.0.0.0 port = ${SOCKS5_PORT}
-
-# External interface
-external: 0.0.0.0
-
-# Authentication methods
-clientmethod: none
-socksmethod: username
-
-# User configuration
-user.privileged: root
-user.unprivileged: nobody
-
-# Password file (Dante will look for sockd.passwd in the same directory as config)
-
-`;
-
-  // Добавляем пользователей в файл паролей
-  let passwdContent = '';
-  for (const account of accounts) {
-    passwdContent += `${account.username}:${account.password}\n`;
+  // GOST использует аргументы командной строки для конфигурации
+  // Формат: -L=socks5://user1:pass1,user2:pass2@:1080
+  
+  if (accounts.length === 0) {
+    console.log('[SOCKS5] No accounts to configure');
+    return;
   }
 
-  config += `
-# Client rules
-client pass {
-  from: 0.0.0.0/0 to: 0.0.0.0/0
-  log: connect disconnect error
-}
+  // Генерируем строку аутентификации для GOST
+  const authStrings = accounts.map(acc => `${acc.username}:${acc.password}`).join(',');
+  const gostCommand = `-L=socks5://${authStrings}@:${SOCKS5_PORT}`;
 
-# SOCKS rules
-socks pass {
-  from: 0.0.0.0/0 to: 0.0.0.0/0
-  protocol: tcp udp
-  log: connect disconnect error
-}
-`;
+  console.log(`[SOCKS5] Updating GOST config with ${accounts.length} accounts`);
 
-  // Сохраняем конфиг Dante
-  const configPath = path.join(__dirname, '..', '..', 'socks5', 'sockd.conf');
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, config);
-
-  // Сохраняем файл паролей
-  const passwdPath = path.join(__dirname, '..', '..', 'socks5', 'sockd.passwd');
-  fs.writeFileSync(passwdPath, passwdContent);
-
-  console.log(`[SOCKS5] Dante config updated with ${accounts.length} accounts`);
-
-  // Перезапускаем контейнер для применения новой конфигурации
+  // Обновляем docker-compose.yml с новой командой
+  const composeFilePath = path.join(__dirname, '..', '..', 'docker-compose.yml');
+  
   try {
-    execSync('docker restart mtproxy-socks5');
-    console.log('[SOCKS5] Container restarted successfully');
+    let composeContent = fs.readFileSync(composeFilePath, 'utf-8');
+    
+    // Заменяем команду для socks5 контейнера
+    const commandRegex = /(socks5:[\s\S]*?command:\s*\[)([^\]]+)(\])/;
+    const newCommand = `"${gostCommand}"`;
+    
+    if (commandRegex.test(composeContent)) {
+      composeContent = composeContent.replace(commandRegex, `$1${newCommand}$3`);
+      fs.writeFileSync(composeFilePath, composeContent);
+      console.log('[SOCKS5] docker-compose.yml updated');
+    } else {
+      console.error('[SOCKS5] Could not find socks5 command in docker-compose.yml');
+      return;
+    }
+
+    // Перезапускаем контейнер для применения новой конфигурации
+    execSync('docker compose up -d --force-recreate socks5', { cwd: path.join(__dirname, '..', '..') });
+    console.log('[SOCKS5] Container recreated successfully');
   } catch (error) {
-    console.error('[SOCKS5] Failed to restart container:', error);
+    console.error('[SOCKS5] Failed to update config:', error);
+    throw error;
   }
 }
 

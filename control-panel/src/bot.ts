@@ -1342,6 +1342,7 @@ bot.on(message('text'), async (ctx) => {
 // ═══════════════════════════════════════════════
 
 bot.action('manage_links', async (ctx) => {
+  await ctx.answerCbQuery();
   const nodes = queries.getAllNodes.all([]) as any[];
   
   if (nodes.length === 0) {
@@ -1437,6 +1438,7 @@ async function showManageNodeLinks(ctx: any, nodeId: number) {
 }
 
 bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
   const nodeId = parseInt(ctx.match[1]);
   await showManageNodeLinks(ctx, nodeId);
 });
@@ -1444,6 +1446,7 @@ bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
 // ─── УДАЛЕНИЕ ССЫЛОК ───
 
 bot.action(/^delete_mtproto_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
   const secretId = parseInt(ctx.match[1]);
   const secret = queries.getSecretById.get(secretId) as any;
   
@@ -1478,6 +1481,7 @@ bot.action(/^delete_mtproto_(\d+)$/, async (ctx) => {
 });
 
 bot.action(/^delete_socks5_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
   const accountId = parseInt(ctx.match[1]);
   const account = queries.getSocks5AccountById.get(accountId) as any;
   

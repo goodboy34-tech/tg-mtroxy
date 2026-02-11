@@ -121,26 +121,43 @@ perform_update() {
         echo "========================================================"
         echo ""
 
-        # Request Telegram Bot Token
-        read -p "Enter Telegram Bot Token: " BOT_TOKEN
-        if [ -z "$BOT_TOKEN" ]; then
-            echo "X Bot Token cannot be empty!"
-            exit 1
-        fi
-
-        # Request Admin IDs
+        echo "Please provide your Telegram Bot Token from @BotFather"
+        echo "Example: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
         echo ""
-        read -p "Enter Admin User IDs (comma-separated): " ADMIN_IDS
-        if [ -z "$ADMIN_IDS" ]; then
-            echo "X Admin IDs cannot be empty!"
-            exit 1
-        fi
 
-        # Validate admin IDs format (should be numbers separated by commas)
-        if ! echo "$ADMIN_IDS" | grep -E '^([0-9]+,)*[0-9]+$' >/dev/null; then
-            echo "X Admin IDs should be numbers separated by commas (e.g., 123456789,987654321)"
-            exit 1
-        fi
+        # Request Telegram Bot Token with retry
+        while true; do
+            read -p "Enter Telegram Bot Token: " BOT_TOKEN
+            if [ -n "$BOT_TOKEN" ] && [ "$BOT_TOKEN" != "" ]; then
+                break
+            else
+                echo "X Bot Token cannot be empty! Please try again."
+                echo ""
+            fi
+        done
+
+        echo ""
+        echo "Please provide Admin User IDs (comma-separated)"
+        echo "You can get your user ID from @userinfobot"
+        echo "Example: 123456789,987654321"
+        echo ""
+
+        # Request Admin IDs with retry
+        while true; do
+            read -p "Enter Admin User IDs (comma-separated): " ADMIN_IDS
+            if [ -n "$ADMIN_IDS" ] && [ "$ADMIN_IDS" != "" ]; then
+                # Validate admin IDs format (should be numbers separated by commas)
+                if echo "$ADMIN_IDS" | grep -E '^([0-9]+,)*[0-9]+$' >/dev/null; then
+                    break
+                else
+                    echo "X Admin IDs should be numbers separated by commas (e.g., 123456789,987654321)"
+                    echo ""
+                fi
+            else
+                echo "X Admin IDs cannot be empty! Please try again."
+                echo ""
+            fi
+        done
 
         # Create .env file
         echo ""
@@ -511,26 +528,43 @@ perform_install() {
     echo "========================================================"
     echo ""
 
-    # Request Telegram Bot Token
-    read -p "Enter Telegram Bot Token: " BOT_TOKEN
-    if [ -z "$BOT_TOKEN" ]; then
-        echo "X Bot Token cannot be empty!"
-        exit 1
-    fi
-
-    # Request Admin IDs
+    echo "Please provide your Telegram Bot Token from @BotFather"
+    echo "Example: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
     echo ""
-    read -p "Enter Admin User IDs (comma-separated): " ADMIN_IDS
-    if [ -z "$ADMIN_IDS" ]; then
-        echo "X Admin IDs cannot be empty!"
-        exit 1
-    fi
 
-    # Validate admin IDs format (should be numbers separated by commas)
-    if ! echo "$ADMIN_IDS" | grep -E '^([0-9]+,)*[0-9]+$' >/dev/null; then
-        echo "X Admin IDs should be numbers separated by commas (e.g., 123456789,987654321)"
-        exit 1
-    fi
+    # Request Telegram Bot Token with retry
+    while true; do
+        read -p "Enter Telegram Bot Token: " BOT_TOKEN
+        if [ -n "$BOT_TOKEN" ] && [ "$BOT_TOKEN" != "" ]; then
+            break
+        else
+            echo "X Bot Token cannot be empty! Please try again."
+            echo ""
+        fi
+    done
+
+    echo ""
+    echo "Please provide Admin User IDs (comma-separated)"
+    echo "You can get your user ID from @userinfobot"
+    echo "Example: 123456789,987654321"
+    echo ""
+
+    # Request Admin IDs with retry
+    while true; do
+        read -p "Enter Admin User IDs (comma-separated): " ADMIN_IDS
+        if [ -n "$ADMIN_IDS" ] && [ "$ADMIN_IDS" != "" ]; then
+            # Validate admin IDs format (should be numbers separated by commas)
+            if echo "$ADMIN_IDS" | grep -E '^([0-9]+,)*[0-9]+$' >/dev/null; then
+                break
+            else
+                echo "X Admin IDs should be numbers separated by commas (e.g., 123456789,987654321)"
+                echo ""
+            fi
+        else
+            echo "X Admin IDs cannot be empty! Please try again."
+            echo ""
+        fi
+    done
 
     # Create .env for control-panel
     echo ""

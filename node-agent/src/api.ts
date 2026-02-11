@@ -390,9 +390,6 @@ async function restartSocks5(): Promise<void> {
 }
 
 async function updateSocks5Config(accounts: Array<{ username: string; password: string }>): Promise<void> {
-  // GOST использует аргументы командной строки для конфигурации
-  // Формат: -L=socks5://user1:pass1,user2:pass2@:1080
-  
   console.log(`[SOCKS5] Updating GOST config with ${accounts.length} accounts`);
 
   // Останавливаем старый контейнер
@@ -408,18 +405,24 @@ async function updateSocks5Config(accounts: Array<{ username: string; password: 
     return;
   }
 
-  // Генерируем строку аутентификации для GOST
-  const authStrings = accounts.map(acc => `${acc.username}:${acc.password}`).join(',');
-  const gostArg = `-L=socks5://${authStrings}@:${SOCKS5_PORT}`;
+  // Создаём файл с аутентификацией для GOST
+  // Формат: username:password (по одной паре на строку)
+  const authFileContent = accounts.map(acc => `${acc.username}:${acc.password}`).join('\n');
+  const authFilePath = path.join(DATA_DIR, 'socks5-auth.txt');
+  
+  fs.writeFileSync(authFilePath, authFileContent);
+  console.log(`[SOCKS5] Auth file created with ${accounts.length} accounts`);
 
-  // Запускаем новый контейнер с аргументами
+  // Запускаем новый контейнер с файлом аутентификации
+  // -L=socks5://:1080?auth=file.txt использует файл для аутентификации
   const cmd = `docker run -d --name=mtproxy-socks5 --restart=unless-stopped ` +
               `-p ${SOCKS5_PORT}:${SOCKS5_PORT} ` +
-              `ginuerzh/gost ${gostArg}`;
+              `-v ${authFilePath}:/etc/gost/auth.txt:ro ` +
+              `ginuerzh/gost -L=socks5://:${SOCKS5_PORT}?auth=/etc/gost/auth.txt`;
 
   try {
     execSync(cmd);
-    console.log('[SOCKS5] Container started successfully');
+    console.log('[SOCKS5] Container started successfully with auth file');
   } catch (error) {
     console.error('[SOCKS5] Failed to start container:', error);
     throw error;

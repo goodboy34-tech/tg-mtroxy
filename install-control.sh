@@ -503,22 +503,36 @@ ENV_EOF
         systemctl start mtproxy-control
         echo "-> Backup restored and service restarted"
         ;;
+    self-update)
+        echo "* Updating mtproxy-control script..."
+        curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-control.sh -o /tmp/install-control.sh
+        if [ -f /tmp/install-control.sh ]; then
+            chmod +x /tmp/install-control.sh
+            mv /tmp/install-control.sh /usr/local/bin/mtproxy-control
+            echo "✓ Script updated successfully!"
+            echo "  Run 'mtproxy-control update' to update control panel"
+        else
+            echo "X Failed to download script"
+            exit 1
+        fi
+        ;;
     *)
         echo "MTProxy Control Panel Management Tool"
         echo ""
         echo "Usage: mtproxy-control <command>"
         echo ""
         echo "Commands:"
-        echo "  status    - Show service and container status"
-        echo "  logs      - Show container logs (use 'logs <service>' for specific)"
-        echo "  restart   - Restart the service"
-        echo "  update    - Update from GitHub"
-        echo "  rebuild   - Rebuild containers"
-        echo "  setup     - Configure bot token and admin IDs"
-        echo "  shell     - Open shell in container"
-        echo "  config    - Show current configuration"
-        echo "  backup    - Create backup archive"
-        echo "  restore   - Restore from backup"
+        echo "  status      - Show service and container status"
+        echo "  logs        - Show container logs (use 'logs <service>' for specific)"
+        echo "  restart     - Restart the service"
+        echo "  update      - Update from GitHub"
+        echo "  self-update - Update mtproxy-control script itself"
+        echo "  rebuild     - Rebuild containers"
+        echo "  setup       - Configure bot token and admin IDs"
+        echo "  shell       - Open shell in container"
+        echo "  config      - Show current configuration"
+        echo "  backup      - Create backup archive"
+        echo "  restore     - Restore from backup"
         echo ""
         echo "Examples:"
         echo "  mtproxy-control status"

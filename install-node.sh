@@ -1005,6 +1005,19 @@ EOF
         docker compose -f docker-compose.node.yml up -d socks5
         echo "-> SOCKS5 container started"
         ;;
+    self-update)
+        echo "* Updating mtproxy-node script..."
+        curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh -o /tmp/install-node.sh
+        if [ -f /tmp/install-node.sh ]; then
+            chmod +x /tmp/install-node.sh
+            mv /tmp/install-node.sh /usr/local/bin/mtproxy-node
+            echo "✓ Script updated successfully!"
+            echo "  Run 'mtproxy-node update' to update node-agent"
+        else
+            echo "X Failed to download script"
+            exit 1
+        fi
+        ;;
     "")
         echo "* MTProxy Node Manager"
         echo ""
@@ -1015,6 +1028,7 @@ EOF
         echo "  logs [service] - show logs (Ctrl+C to exit)"
         echo "  restart      - restart all services"
         echo "  update       - update node-agent and components from GitHub"
+        echo "  self-update  - update mtproxy-node script itself"
         echo "  rebuild      - rebuild containers"
         echo "  setup        - add/update API TOKEN from bot"
         echo "  config       - show current configuration"

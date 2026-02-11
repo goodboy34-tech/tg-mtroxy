@@ -1770,41 +1770,55 @@ bot.on(message('text'), async (ctx) => {
     const isFakeTls = state.isFakeTls || false;
     const typeText = isFakeTls ? 'Fake-TLS (DD)' : 'Обычный';
 
-    // Добавляем секрет в БД
-    queries.insertSecret.run({
-      node_id: state.nodeId,
-      secret: state.secret,
-      is_fake_tls: isFakeTls ? 1 : 0,
-      description: `Домен: ${domain}`,
-    });
+    try {
+      // Показываем прогресс
+      await ctx.reply('⏳ Добавляю секрет на ноду...');
 
-    // Отправляем на ноду
-    const client = getNodeClient(state.nodeId!);
-    if (client) {
-      try {
-        await client.addMtProtoSecret({
-          secret: state.secret!,
-          isFakeTls: isFakeTls,
-          description: `Домен: ${domain}`
-        });
-      } catch (err) {
-        console.error('Failed to add secret to node:', err);
+      // Добавляем секрет в БД
+      queries.insertSecret.run({
+        node_id: state.nodeId,
+        secret: state.secret,
+        is_fake_tls: isFakeTls ? 1 : 0,
+        description: `Домен: ${domain}`,
+      });
+
+      // Отправляем на ноду
+      const client = getNodeClient(state.nodeId!);
+      if (!client) {
+        throw new Error('Не удалось подключиться к ноде');
       }
+
+      await client.addMtProtoSecret({
+        secret: state.secret!,
+        isFakeTls: isFakeTls,
+        description: `Домен: ${domain}`
+      });
+
+      // Генерируем ссылку
+      const link = ProxyLinkGenerator.generateMtProtoLink(domain, 443, state.secret!, isFakeTls);
+
+      userStates.delete(userId);
+
+      await ctx.reply(
+        `✅ <b>MTProto секрет добавлен!</b>\n\n` +
+        `Нода: ${node.name}\n` +
+        `Тип: ${typeText}\n` +
+        `Домен: ${domain}\n\n` +
+        `Ссылка:\n<code>${link}</code>`,
+        { parse_mode: 'HTML' }
+      );
+
+    } catch (err: any) {
+      userStates.delete(userId);
+      await ctx.reply(
+        `❌ <b>Ошибка при добавлении секрета:</b>\n\n` +
+        `${err.message}\n\n` +
+        `Попробуйте:\n` +
+        `• Проверить что нода доступна: /health\n` +
+        `• Перезапустить ноду: /restart_node ${state.nodeId}`,
+        { parse_mode: 'HTML' }
+      );
     }
-
-    // Генерируем ссылку
-    const link = ProxyLinkGenerator.generateMtProtoLink(domain, 443, state.secret!, isFakeTls);
-
-    userStates.delete(userId);
-
-    await ctx.reply(
-      `✅ <b>MTProto секрет добавлен!</b>\n\n` +
-      `Нода: ${node.name}\n` +
-      `Тип: ${typeText}\n` +
-      `Домен: ${domain}\n\n` +
-      `Ссылка:\n<code>${link}</code>`,
-      { parse_mode: 'HTML' }
-    );
   }
 
   // ─── Выбор IP для MTProto ───
@@ -1833,41 +1847,55 @@ bot.on(message('text'), async (ctx) => {
     const isFakeTls = state.isFakeTls || false;
     const typeText = isFakeTls ? 'Fake-TLS (DD)' : 'Обычный';
 
-    // Добавляем секрет в БД
-    queries.insertSecret.run({
-      node_id: state.nodeId,
-      secret: state.secret,
-      is_fake_tls: isFakeTls ? 1 : 0,
-      description: `IP: ${ip}`,
-    });
+    try {
+      // Показываем прогресс
+      await ctx.reply('⏳ Добавляю секрет на ноду...');
 
-    // Отправляем на ноду
-    const client = getNodeClient(state.nodeId!);
-    if (client) {
-      try {
-        await client.addMtProtoSecret({
-          secret: state.secret!,
-          isFakeTls: isFakeTls,
-          description: `IP: ${ip}`
-        });
-      } catch (err) {
-        console.error('Failed to add secret to node:', err);
+      // Добавляем секрет в БД
+      queries.insertSecret.run({
+        node_id: state.nodeId,
+        secret: state.secret,
+        is_fake_tls: isFakeTls ? 1 : 0,
+        description: `IP: ${ip}`,
+      });
+
+      // Отправляем на ноду
+      const client = getNodeClient(state.nodeId!);
+      if (!client) {
+        throw new Error('Не удалось подключиться к ноде');
       }
+
+      await client.addMtProtoSecret({
+        secret: state.secret!,
+        isFakeTls: isFakeTls,
+        description: `IP: ${ip}`
+      });
+
+      // Генерируем ссылку
+      const link = ProxyLinkGenerator.generateMtProtoLink(ip, 443, state.secret!, isFakeTls);
+
+      userStates.delete(userId);
+
+      await ctx.reply(
+        `✅ <b>MTProto секрет добавлен!</b>\n\n` +
+        `Нода: ${node.name}\n` +
+        `Тип: ${typeText}\n` +
+        `IP: ${ip}\n\n` +
+        `Ссылка:\n<code>${link}</code>`,
+        { parse_mode: 'HTML' }
+      );
+
+    } catch (err: any) {
+      userStates.delete(userId);
+      await ctx.reply(
+        `❌ <b>Ошибка при добавлении секрета:</b>\n\n` +
+        `${err.message}\n\n` +
+        `Попробуйте:\n` +
+        `• Проверить что нода доступна: /health\n` +
+        `• Перезапустить ноду: /restart_node ${state.nodeId}`,
+        { parse_mode: 'HTML' }
+      );
     }
-
-    // Генерируем ссылку
-    const link = ProxyLinkGenerator.generateMtProtoLink(ip, 443, state.secret!, isFakeTls);
-
-    userStates.delete(userId);
-
-    await ctx.reply(
-      `✅ <b>MTProto секрет добавлен!</b>\n\n` +
-      `Нода: ${node.name}\n` +
-      `Тип: ${typeText}\n` +
-      `IP: ${ip}\n\n` +
-      `Ссылка:\n<code>${link}</code>`,
-      { parse_mode: 'HTML' }
-    );
   }
 
   // ─── Добавление SOCKS5 аккаунта ───

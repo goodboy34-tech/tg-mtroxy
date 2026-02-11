@@ -20,7 +20,26 @@ INSTALL_DIR="/opt/mtproxy-node"
 perform_update() {
     echo ""
     echo "-> Updating..."
+
+    # Check if installation directory exists
+    if [ ! -d "$INSTALL_DIR" ]; then
+        echo "X Installation directory $INSTALL_DIR not found"
+        echo "   Run full installation first:"
+        echo "   curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh | sudo bash"
+        exit 1
+    fi
+
     cd "$INSTALL_DIR"
+
+    # Check write permissions
+    if [ ! -w "$INSTALL_DIR" ]; then
+        echo "X No write permissions to $INSTALL_DIR"
+        echo "   Make sure you're running as root: sudo bash ..."
+        exit 1
+    fi
+
+    # Ensure node-agent directory exists
+    mkdir -p node-agent/src
 
     # Download updated files
     REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"

@@ -405,48 +405,46 @@ async function updateSocks5Config(accounts: Array<{ username: string; password: 
     return;
   }
 
-  // Для GOST v2 используем простой подход: один пользователь = одна строка в аргументах
-  // Формат: -L=socks5://user:pass@:1080
-  // Для нескольких пользователей GOST v3 поддерживает auther, но v2 только inline
+  // GOST v2 (ginuerzh/gost) НЕ поддерживает файлы аутентификации
+  // Используем GOST v3 (gogost/gost) с JSON конфигом
   
-  if (accounts.length === 1) {
-    // Один пользователь - простой формат
-    const acc = accounts[0];
-    const gostArg = `-L=socks5://${acc.username}:${acc.password}@:${SOCKS5_PORT}`;
-    
-    const cmd = `docker run -d --name=mtproxy-socks5 --restart=unless-stopped ` +
-                `-p ${SOCKS5_PORT}:${SOCKS5_PORT} ` +
-                `ginuerzh/gost ${gostArg}`;
+  const gostConfig = {
+    services: [{
+      name: "socks5",
+      addr: `:${SOCKS5_PORT}`,
+      handler: {
+        type: "socks5",
+        auther: "auther0"
+      },
+      listener: {
+        type: "tcp"
+      }
+    }],
+    authers: [{
+      name: "auther0",
+      auths: accounts.map(acc => ({
+        username: acc.username,
+        password: acc.password
+      }))
+    }]
+  };
+  
+  const configFile = path.join(DATA_DIR, 'gost.json');
+  fs.writeFileSync(configFile, JSON.stringify(gostConfig, null, 2));
+  console.log(`[SOCKS5] GOST v3 config created with ${accounts.length} accounts`);
 
-    try {
-      execSync(cmd);
-      console.log('[SOCKS5] Container started successfully with 1 account');
-    } catch (error) {
-      console.error('[SOCKS5] Failed to start container:', error);
-      throw error;
-    }
-  } else {
-    // Несколько пользователей - используем secrets file
-    // Формат файла: username password (через пробел, без двоеточия!)
-    const secretsContent = accounts.map(acc => `${acc.username} ${acc.password}`).join('\n');
-    const secretsFile = path.join(DATA_DIR, 'socks5-secrets.txt');
-    
-    fs.writeFileSync(secretsFile, secretsContent);
-    console.log(`[SOCKS5] Secrets file created with ${accounts.length} accounts`);
+  // Запускаем GOST v3 с JSON конфигом
+  const cmd = `docker run -d --name=mtproxy-socks5 --restart=unless-stopped ` +
+              `-p ${SOCKS5_PORT}:${SOCKS5_PORT} ` +
+              `-v ${configFile}:/etc/gost.json:ro ` +
+              `gogost/gost -C /etc/gost.json`;
 
-    // Запускаем с secrets file
-    const cmd = `docker run -d --name=mtproxy-socks5 --restart=unless-stopped ` +
-                `-p ${SOCKS5_PORT}:${SOCKS5_PORT} ` +
-                `-v ${secretsFile}:/secrets.txt:ro ` +
-                `ginuerzh/gost -L=socks5://:${SOCKS5_PORT}?secrets=/secrets.txt`;
-
-    try {
-      execSync(cmd);
-      console.log('[SOCKS5] Container started successfully with secrets file');
-    } catch (error) {
-      console.error('[SOCKS5] Failed to start container:', error);
-      throw error;
-    }
+  try {
+    execSync(cmd);
+    console.log('[SOCKS5] Container started successfully with GOST v3');
+  } catch (error) {
+    console.error('[SOCKS5] Failed to start container:', error);
+    throw error;
   }
 }
 

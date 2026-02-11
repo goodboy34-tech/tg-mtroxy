@@ -1,81 +1,311 @@
 #!/bin/bash
 set -e
 
-echo "════════════════════════════════════════════════════"
-echo "  MTProxy Control Panel - Установка"
-echo "════════════════════════════════════════════════════"
-echo ""
+# Installation script path
+SCRIPT_PATH="/usr/local/bin/install-control.sh"
 
-# Проверка root
-if [ "$EUID" -ne 0 ]; then 
-    echo "❌ Запустите скрипт с правами root:"
-    echo "   sudo bash install-control.sh"
-    exit 1
-fi
-
-# Установка Docker
-if ! command -v docker &>/dev/null; then
-    echo "📦 Установка Docker..."
-    curl -fsSL https://get.docker.com | sh
-    systemctl enable docker
-    systemctl start docker
-    echo "✅ Docker установлен"
-else
-    echo "✅ Docker уже установлен: $(docker --version)"
-fi
-
-# Проверка Docker Compose
-if ! docker compose version &>/dev/null; then
-    echo "❌ Docker Compose не найден. Обновите Docker до версии с встроенным Compose."
-    exit 1
-fi
-
-echo "✅ Docker Compose: $(docker compose version)"
-
-# Клонирование репозитория
-INSTALL_DIR="/opt/mtproxy-control"
-if [ -d "$INSTALL_DIR" ]; then
+# If script is run from URL, install it locally first
+if [ ! -f "$SCRIPT_PATH" ] || [ "$0" != "$SCRIPT_PATH" ]; then
+    echo "========================================================"
+    echo "  Installing MTProxy Control Panel Script"
+    echo "========================================================"
     echo ""
-    echo "⚠️  Директория $INSTALL_DIR уже существует"
-    read -p "Переустановить? (y/n): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        cd "$INSTALL_DIR"
-        docker compose down 2>/dev/null || true
-        cd /
-        rm -rf "$INSTALL_DIR"
-    else
-        cd "$INSTALL_DIR"
-        git pull
-        echo ""
-        echo "✅ Репозиторий обновлён"
-        exit 0
+
+    # Root check
+    if [ "$EUID" -ne 0 ]; then
+        echo "X Run script with root privileges:"
+        echo "   sudo bash <(curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-control.sh)"
+        exit 1
     fi
+
+    echo "* Downloading script to $SCRIPT_PATH..."
+    curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-control.sh -o "$SCRIPT_PATH"
+    chmod +x "$SCRIPT_PATH"
+
+    echo "-> Script installed successfully!"
+    echo ""
+    echo "Now running the installation..."
+    echo ""
+    exec "$SCRIPT_PATH" "$@"
+    exit 0
 fi
 
+echo "========================================================"
+echo "  MTProxy Control Panel - Installation"
+echo "========================================================"
 echo ""
-echo "📥 Клонирование репозитория..."
-git clone https://github.com/goodboy34-tech/eeee.git "$INSTALL_DIR"
+
+# Root check
+if [ "$EUID" -ne 0 ]; then
+    echo "X Run script with root privileges:"
+    echo "   sudo $SCRIPT_PATH"
+    exit 1
+fi
+
+# Installation directory
+INSTALL_DIR="/opt/mtproxy-control"
+
+# Create systemd service function
+create_systemd_service() {
+    echo "* Creating systemd service..."
+
+    cat > /etc/systemd/system/mtproxy-control.service <<EOF
+[Unit]
+Description=MTProxy Control Panel Service
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+WorkingDirectory=$INSTALL_DIR
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    echo "-> Systemd service created: mtproxy-control.service"
+}
+
+# Update function
+perform_update() {
+    echo ""
+    echo "-> Updating..."
+
+    # Check if installation directory exists
+    if [ ! -d "$INSTALL_DIR" ]; then
+        echo "X Installation directory $INSTALL_DIR not found"
+        echo "   Run full installation first:"
+        echo "   curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-control.sh | sudo bash"
+        exit 1
+    fi
+
+    cd "$INSTALL_DIR"
+
+    # Check write permissions
+    if [ ! -w "$INSTALL_DIR" ]; then
+        echo "X No write permissions to $INSTALL_DIR"
+        echo "   Make sure you're running as root: sudo bash ..."
+        exit 1
+    fi
+
+    # Update from git
+    echo "* Updating from GitHub..."
+    git pull
+
+    # Restart service
+    systemctl daemon-reload
+    systemctl restart mtproxy-control
+
+    # Create global management command
+    create_management_command
+
+    echo ""
+    echo "-> Update completed!"
+    exit 0
+}
+
+# Create management command function
+create_management_command() {
+    echo "* Creating global 'mtproxy-control' command..."
+
+    cat > /usr/local/bin/mtproxy-control <<'SCRIPT_EOF'
+#!/bin/bash
+
+INSTALL_DIR="/opt/mtproxy-control"
+
+if [ ! -d "$INSTALL_DIR" ]; then
+    echo "X Control Panel not installed in $INSTALL_DIR"
+    exit 1
+fi
+
 cd "$INSTALL_DIR"
 
-echo ""
-echo "════════════════════════════════════════════════════"
-echo "  Настройка Control Panel"
-echo "════════════════════════════════════════════════════"
-echo ""
+case "$1" in
+    status)
+        echo "* MTProxy Control Panel Status:"
+        systemctl status mtproxy-control --no-pager -l
+        echo ""
+        echo "* Container status:"
+        docker compose ps
+        echo ""
+        echo "* Resources:"
+        docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+        ;;
+    logs)
+        if [ -n "$2" ]; then
+            docker compose logs -f "$2"
+        else
+            docker compose logs -f
+        fi
+        ;;
+    restart)
+        echo "* Restarting service..."
+        systemctl restart mtproxy-control
+        echo "-> Restarted"
+        ;;
+    update)
+        echo "* Updating from GitHub..."
+        curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-control.sh | bash
+        ;;
+    rebuild)
+        echo "* Rebuilding containers..."
+        systemctl stop mtproxy-control
+        docker compose down
+        docker compose build --no-cache
+        systemctl start mtproxy-control
+        echo "-> Rebuilt"
+        ;;
+    shell)
+        if [ -n "$2" ]; then
+            docker compose exec "$2" /bin/sh
+        else
+            echo "Usage: mtproxy-control shell <service>"
+        fi
+        ;;
+    config)
+        echo "* Current configuration:"
+        echo "* Directory: $INSTALL_DIR"
+        echo ""
+        if [ -f ".env" ]; then
+            echo "* .env:"
+            cat .env
+            echo ""
+        fi
+        ;;
+    backup)
+        BACKUP_FILE="backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+        echo "* Creating backup: $BACKUP_FILE"
+        tar -czf "$BACKUP_FILE" .env data/ 2>/dev/null || true
+        echo "-> Backup created: $BACKUP_FILE"
+        ;;
+    restore)
+        if [ -z "$2" ]; then
+            echo "Usage: mtproxy-control restore <backup-file>"
+            exit 1
+        fi
+        
+        if [ ! -f "$2" ]; then
+            echo "X Backup file not found: $2"
+            exit 1
+        fi
+        
+        echo "* Restoring from backup: $2"
+        systemctl stop mtproxy-control
+        tar -xzf "$2"
+        systemctl start mtproxy-control
+        echo "-> Backup restored and service restarted"
+        ;;
+    *)
+        echo "MTProxy Control Panel Management Tool"
+        echo ""
+        echo "Usage: mtproxy-control <command>"
+        echo ""
+        echo "Commands:"
+        echo "  status    - Show service and container status"
+        echo "  logs      - Show container logs (use 'logs <service>' for specific)"
+        echo "  restart   - Restart the service"
+        echo "  update    - Update from GitHub"
+        echo "  rebuild   - Rebuild containers"
+        echo "  shell     - Open shell in container"
+        echo "  config    - Show current configuration"
+        echo "  backup    - Create backup archive"
+        echo "  restore   - Restore from backup"
+        echo ""
+        echo "Examples:"
+        echo "  mtproxy-control status"
+        echo "  mtproxy-control logs"
+        echo "  mtproxy-control restart"
+        ;;
+esac
+SCRIPT_EOF
 
-# Запрос Telegram Bot Token
-read -p "Введите Telegram Bot Token: " BOT_TOKEN
-if [ -z "$BOT_TOKEN" ]; then
-    echo "❌ Bot Token не может быть пустым!"
-    exit 1
-fi
+    chmod +x /usr/local/bin/mtproxy-control
+    echo "-> Global command created: mtproxy-control"
+}
 
-# Создание .env для control-panel
-echo ""
-echo "📝 Создание конфигурации..."
+# Show bot info function
+show_bot_info() {
+    echo ""
+    if [ -f "$INSTALL_DIR/control-panel/.env" ]; then
+        BOT_TOKEN=$(grep "^BOT_TOKEN=" "$INSTALL_DIR/control-panel/.env" | cut -d '=' -f2)
+        IP=$(curl -s ifconfig.me)
+        if [ -n "$BOT_TOKEN" ]; then
+            echo "Control Panel Information:"
+            echo "==============================================="
+            echo "Server IP: $IP"
+            echo "Bot Token: $BOT_TOKEN"
+            echo "Web Panel: http://$IP:3000"
+            echo "==============================================="
+            echo ""
+            echo "To access the web panel:"
+            echo "1. Open http://$IP:3000 in your browser"
+            echo "2. Use the bot token above to authenticate"
+        else
+            echo "X BOT_TOKEN not found in .env file"
+        fi
+    else
+        echo "X Control panel .env file not found"
+        echo "   Installation may be incomplete"
+    fi
+    echo ""
+}
 
-cat > control-panel/.env <<EOF
+# New installation function
+perform_install() {
+    # Install Docker
+    if ! command -v docker &>/dev/null; then
+        echo "* Installing Docker..."
+        curl -fsSL https://get.docker.com | sh
+        systemctl enable docker
+        systemctl start docker
+        echo "-> Docker installed"
+    else
+        echo "-> Docker already installed: $(docker --version)"
+    fi
+
+    # Check Docker Compose
+    if ! docker compose version &>/dev/null; then
+        echo "X Docker Compose not found. Update Docker to version with built-in Compose."
+        exit 1
+    fi
+
+    echo "-> Docker Compose: $(docker compose version)"
+
+    # Clone repository
+    echo ""
+    echo "* Cloning repository..."
+    if [ -d "$INSTALL_DIR" ]; then
+        echo "X Directory $INSTALL_DIR already exists"
+        echo "   Remove it first or use update"
+        exit 1
+    fi
+
+    git clone https://github.com/goodboy34-tech/eeee.git "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
+
+    echo ""
+    echo "========================================================"
+    echo "  Control Panel Setup"
+    echo "========================================================"
+    echo ""
+
+    # Request Telegram Bot Token
+    read -p "Enter Telegram Bot Token: " BOT_TOKEN
+    if [ -z "$BOT_TOKEN" ]; then
+        echo "X Bot Token cannot be empty!"
+        exit 1
+    fi
+
+    # Create .env for control-panel
+    echo ""
+    echo "* Creating configuration..."
+
+    cat > control-panel/.env <<EOF
 # Telegram Bot Configuration
 BOT_TOKEN=$BOT_TOKEN
 
@@ -87,138 +317,117 @@ PORT=3000
 NODE_ENV=production
 EOF
 
-echo "✅ Конфигурация создана: control-panel/.env"
+    echo "-> Configuration created: control-panel/.env"
 
-# Настройка firewall (опционально)
-echo ""
-read -p "Настроить firewall для порта 3000? (y/n): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    if command -v ufw &>/dev/null; then
-        ufw allow 3000/tcp comment "MTProxy Control Panel"
-        echo "✅ Правило UFW добавлено"
-    elif command -v firewall-cmd &>/dev/null; then
-        firewall-cmd --permanent --add-port=3000/tcp
-        firewall-cmd --reload
-        echo "✅ Правило FirewallD добавлено"
+    # Firewall setup
+    echo ""
+    read -p "Setup firewall for port 3000? (y/n): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        if command -v ufw &>/dev/null; then
+            ufw allow 3000/tcp comment "MTProxy Control Panel"
+            echo "-> UFW rule added"
+        elif command -v firewall-cmd &>/dev/null; then
+            firewall-cmd --permanent --add-port=3000/tcp
+            firewall-cmd --reload
+            echo "-> FirewallD rule added"
+        else
+            echo "! Firewall not detected"
+        fi
     else
-        echo "⚠️  Firewall не обнаружен"
+        echo "! Don't forget to open port 3000 manually"
     fi
+
+    # Create and start systemd service
+    echo ""
+    echo "* Creating and starting Control Panel service..."
+    create_systemd_service
+    systemctl daemon-reload
+    systemctl enable mtproxy-control
+    systemctl start mtproxy-control
+
+    echo ""
+    echo "* Waiting for service to start..."
+    sleep 10
+
+    # Check status
+    echo ""
+    echo "* Service status:"
+    systemctl status mtproxy-control --no-pager -l
+
+    # Create global management command
+    create_management_command
+
+    echo ""
+    echo "========================================================"
+    echo "  -> Control Panel installed!"
+    echo "========================================================"
+    echo ""
+    echo "* Telegram Bot is running"
+    echo ""
+    echo "* Management:"
+    echo "   mtproxy-control status      - status"
+    echo "   mtproxy-control logs        - logs"
+    echo "   mtproxy-control restart     - restart"
+    echo "   mtproxy-control update      - update"
+    echo ""
+    echo "* Directory: $INSTALL_DIR"
+    echo ""
+    echo "========================================================"
+}
+
+# Check for existing installation
+if [ -d "$INSTALL_DIR" ]; then
+    echo "* Existing installation detected"
+    echo ""
+
+    # Check if script is run interactively
+    if [ -t 0 ]; then
+        echo "Choose action:"
+        echo "1) Update (git pull + restart)"
+        echo "2) Show Bot Info"
+        echo "3) Reinstall (delete everything and install anew)"
+        echo "4) Exit"
+        echo ""
+        read -p "Your choice (1-4): " choice
+
+        case $choice in
+            1)
+                perform_update
+                ;;
+            2)
+                show_bot_info
+                ;;
+            3)
+                echo ""
+                echo "X WARNING! All data will be deleted!"
+                read -p "Continue? (yes/no): " confirm
+                if [ "$confirm" != "yes" ]; then
+                    echo "Cancelled"
+                    exit 0
+                fi
+                cd "$INSTALL_DIR"
+                systemctl stop mtproxy-control 2>/dev/null || true
+                docker compose down -v 2>/dev/null || true
+                cd /
+                rm -rf "$INSTALL_DIR"
+                echo "-> Old installation removed"
+                perform_install
+                ;;
+            4)
+                echo "Exit"
+                exit 0
+                ;;
+            *)
+                echo "X Invalid choice"
+                exit 1
+                ;;
+        esac
+    else
+        echo "Script run non-interactively. Performing update..."
+        perform_update
+    fi
+else
+    # New installation
+    perform_install
 fi
-
-# Запуск Control Panel
-echo ""
-echo "🚀 Запуск Control Panel..."
-docker compose up -d --build
-
-echo ""
-echo "⏳ Ожидание запуска..."
-sleep 10
-
-# Проверка статуса
-echo ""
-echo "📊 Статус:"
-docker compose ps
-
-# Создание глобальной команды управления
-echo ""
-echo "🔧 Создание глобальной команды 'mtproxy-control'..."
-
-cat > /usr/local/bin/mtproxy-control <<'SCRIPT_EOF'
-#!/bin/bash
-
-INSTALL_DIR="/opt/mtproxy-control"
-
-if [ ! -d "$INSTALL_DIR" ]; then
-    echo "❌ Control Panel не установлен в $INSTALL_DIR"
-    exit 1
-fi
-
-cd "$INSTALL_DIR"
-
-case "$1" in
-    start)
-        echo "🚀 Запуск Control Panel..."
-        docker compose up -d
-        ;;
-    stop)
-        echo "🛑 Остановка Control Panel..."
-        docker compose down
-        ;;
-    restart)
-        echo "🔄 Перезапуск Control Panel..."
-        docker compose restart
-        ;;
-    logs)
-        docker compose logs -f
-        ;;
-    status)
-        echo "📊 Статус Control Panel:"
-        docker compose ps
-        echo ""
-        echo "📈 Использование ресурсов:"
-        docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" \
-          $(docker compose ps -q) 2>/dev/null || echo "Контейнеры не запущены"
-        ;;
-    update)
-        echo "📦 Обновление Control Panel..."
-        docker compose down
-        git pull
-        docker compose up -d --build
-        echo "✅ Обновлено"
-        ;;
-    rebuild)
-        echo "🔨 Пересборка Control Panel..."
-        docker compose down
-        docker compose build --no-cache
-        docker compose up -d
-        echo "✅ Пересобрано"
-        ;;
-    shell)
-        docker compose exec control-panel sh
-        ;;
-    *)
-        echo "MTProxy Control Panel - Управление"
-        echo ""
-        echo "Использование: mtproxy-control <команда>"
-        echo ""
-        echo "Команды:"
-        echo "  start    - Запустить Control Panel"
-        echo "  stop     - Остановить Control Panel"
-        echo "  restart  - Перезапустить Control Panel"
-        echo "  logs     - Показать логи (Ctrl+C для выхода)"
-        echo "  status   - Показать статус и ресурсы"
-        echo "  update   - Обновить из GitHub и перезапустить"
-        echo "  rebuild  - Пересобрать с нуля"
-        echo "  shell    - Открыть shell в контейнере"
-        echo ""
-        echo "Примеры:"
-        echo "  mtproxy-control status"
-        echo "  mtproxy-control logs"
-        echo "  mtproxy-control restart"
-        ;;
-esac
-SCRIPT_EOF
-
-chmod +x /usr/local/bin/mtproxy-control
-
-echo "✅ Команда создана"
-
-echo ""
-echo "════════════════════════════════════════════════════"
-echo "  ✅ Control Panel установлен!"
-echo "════════════════════════════════════════════════════"
-echo ""
-echo "🤖 Telegram Bot запущен"
-echo ""
-echo "📋 Управление из любой директории:"
-echo "   mtproxy-control status   - статус и ресурсы"
-echo "   mtproxy-control logs     - просмотр логов"
-echo "   mtproxy-control restart  - перезапуск"
-echo "   mtproxy-control update   - обновление"
-echo "   mtproxy-control stop     - остановка"
-echo ""
-echo "📂 Директория установки: $INSTALL_DIR"
-echo ""
-echo "════════════════════════════════════════════════════"
-echo ""

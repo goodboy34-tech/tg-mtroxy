@@ -210,6 +210,7 @@ bot.action('back_to_main', async (ctx: Context) => {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
         [Markup.button.callback('📋 Ноды', 'show_nodes')],
+        [Markup.button.callback('🔗 Управление ссылками', 'manage_links')],
         [Markup.button.callback('➕ Добавить ноду', 'add_node')],
         [Markup.button.callback('📊 Статистика', 'show_stats')],
         [Markup.button.callback('📖 Справка', 'show_help')]
@@ -1164,6 +1165,113 @@ cron.schedule('0 3 * * *', async () => {
   queries.cleanOldStats.run();
   queries.cleanOldLogs.run();
   console.log('[Cron] Очистка завершена');
+});
+
+// ═══════════════════════════════════════════════
+// УПРАВЛЕНИЕ ССЫЛКАМИ
+// ═══════════════════════════════════════════════
+
+bot.action('manage_links', async (ctx) => {
+  const nodes = queries.getAllNodes.all() as any[];
+  
+  if (nodes.length === 0) {
+    return ctx.editMessageText('📭 Нет добавленных нод.\n\nСначала добавьте ноду через /add_node', {
+      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'back_to_main')]])
+    });
+  }
+
+  let text = '🔗 *Управление ссылками*\n\nВыберите ноду для управления ссылками:\n\n';
+  
+  const buttons = [];
+  for (const node of nodes) {
+    const statusEmoji = node.status === 'online' ? '🟢' : 
+                       node.status === 'offline' ? '🔴' : '🟡';
+    
+    text += `${statusEmoji} *${node.name}*\n`;
+    
+    // Получаем количество ссылок
+    const secrets = queries.getNodeSecrets.all(node.id) as any[];
+    const socks5Accounts = queries.getNodeSocks5Accounts.all(node.id) as any[];
+    const totalLinks = secrets.length + socks5Accounts.length;
+    
+    text += `   Ссылок: ${totalLinks}\n\n`;
+    
+    buttons.push([Markup.button.callback(`${node.name} (${totalLinks})`, `manage_node_links_${node.id}`)]);
+  }
+  
+  buttons.push([Markup.button.callback('⬅️ Назад', 'back_to_main')]);
+  
+  await ctx.editMessageText(text, {
+    parse_mode: 'Markdown',
+    ...Markup.inlineKeyboard(buttons)
+  });
+});
+
+bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  const node = queries.getNodeById.get(nodeId) as any;
+  
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  const secrets = queries.getNodeSecrets.all(nodeId) as any[];
+  const socks5Accounts = queries.getNodeSocks5Accounts.all(nodeId) as any[];
+  
+  let text = `🔗 *Управление ссылками - ${node.name}*\n\n`;
+  
+  // MTProto ссылки
+  if (secrets.length > 0) {
+    text += `🟣 *MTProto (${secrets.length}):*\n`;
+    for (const secret of secrets) {
+      text += `   \`${secret.secret}\` - /delete_mtproto_${secret.id}\n`;
+    }
+    text += '\n';
+  }
+  
+  // SOCKS5 аккаунты
+  if (socks5Accounts.length > 0) {
+    text += `🔵 *SOCKS5 (${socks5Accounts.length}):*\n`;
+    for (const account of socks5Accounts) {
+      text += `   \`${account.username}\` - /delete_socks5_${account.id}\n`;
+    }
+    text += '\n';
+  }
+  
+  if (secrets.length === 0 && socks5Accounts.length === 0) {
+    text += '📭 Ссылок пока нет.\n\n';
+    text += `Добавить:\n`;
+    text += `/add_secret ${nodeId}\n`;
+    text += `/add_socks5 ${nodeId}\n`;
+  }
+  
+  const buttons = [
+    [Markup.button.callback('➕ MTProto', `add_secret_${nodeId}`)],
+    [Markup.button.callback('➕ SOCKS5', `add_socks5_${nodeId}`)],
+    [Markup.button.callback('⬅️ Назад', 'manage_links')]
+  ];
+  
+  await ctx.editMessageText(text, {
+    parse_mode: 'Markdown',
+    ...Markup.inlineKeyboard(buttons)
+  });
+});
+
+bot.action(/^add_secret_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду add_secret
+  ctx.message = { text: `/add_secret ${nodeId}` } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+bot.action(/^add_socks5_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду add_socks5
+  ctx.message = { text: `/add_socks5 ${nodeId}` } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
 });
 
 // ═══════════════════════════════════════════════

@@ -1,28 +1,28 @@
 #!/bin/bash
 set -e
 
-echo "════════════════════════════════════════════════════"
-echo "  MTProxy Node - Установка"
-echo "════════════════════════════════════════════════════"
+echo "========================================================"
+echo "  MTProxy Node - Installation"
+echo "========================================================"
 echo ""
 
-# Проверка root
-if [ "$EUID" -ne 0 ]; then 
-    echo "❌ Запустите скрипт с правами root:"
+# Root check
+if [ "$EUID" -ne 0 ]; then
+    echo "X Run script with root privileges:"
     echo "   sudo bash install-node.sh"
     exit 1
 fi
 
-# Директория установки
+# Installation directory
 INSTALL_DIR="/opt/mtproxy-node"
 
-# Функция обновления
+# Update function
 perform_update() {
     echo ""
-    echo "🔄 Обновление..."
+    echo "-> Updating..."
     cd "$INSTALL_DIR"
-    
-    # Скачиваем обновленные файлы
+
+    # Download updated files
     REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
     FILES=(
         "package.json"
@@ -31,248 +31,153 @@ perform_update() {
         "Dockerfile"
         ".env.example"
     )
-    
-    echo "Загрузка обновлений..."
+
+    echo "Downloading updates..."
     for file in "${FILES[@]}"; do
-        echo "  📄 $file"
+        echo "  * $file"
         curl -fsSL "$REPO_URL/$file" -o "node-agent/$file"
     done
-    
-    # Загружаем обновленный api.ts
-    echo "  📁 src/api.ts"
+
+    # Load updated api.ts
+    echo "  / src/api.ts"
     curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
-    
-    # Перезапускаем контейнеры
+
+    # Restart containers
     docker compose down
     docker compose up -d --build
-    
-    # Показываем API KEY
+
+    # Show API KEY
     if [ -f "node-agent/.env" ]; then
         API_KEY=$(grep "^API_TOKEN=" node-agent/.env | cut -d '=' -f2)
         if [ -n "$API_KEY" ]; then
             IP=$(curl -s ifconfig.me)
             echo ""
-            echo "✅ Обновление завершено!"
+            echo "-> Update completed!"
             echo ""
-            echo "📋 Данные для добавления в бот:"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "Data for adding to bot:"
+            echo "==============================================="
             echo "name: Node-1"
             echo "ip: $IP"
             echo "api_key: $API_KEY"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "==============================================="
         fi
     fi
     exit 0
 }
 
-# Функция показа API KEY
+# Show API KEY function
 show_api_key() {
     echo ""
     if [ -f "$INSTALL_DIR/node-agent/.env" ]; then
         API_KEY=$(grep "^API_TOKEN=" "$INSTALL_DIR/node-agent/.env" | cut -d '=' -f2)
         IP=$(curl -s ifconfig.me)
         if [ -n "$API_KEY" ]; then
-            echo "📋 Данные для добавления в бот:"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "Data for adding to bot:"
+            echo "==============================================="
             echo "name: Node-1"
             echo "ip: $IP"
             echo "api_key: $API_KEY"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "==============================================="
         else
-            echo "❌ API_TOKEN не найден в .env файле"
+            echo "X API_TOKEN not found in .env file"
         fi
     else
-        echo "❌ Файл .env не найден"
+        echo "X .env file not found"
     fi
     exit 0
 }
 
-# Функция переустановки
+# Reinstall function
 perform_reinstall() {
     echo ""
-    echo "⚠️  ВНИМАНИЕ! Все данные будут удалены!"
-    read -p "Продолжить? (yes/no): " confirm
+    echo "X WARNING! All data will be deleted!"
+    read -p "Continue? (yes/no): " confirm
     if [ "$confirm" != "yes" ]; then
-        echo "Отменено"
+        echo "Cancelled"
         exit 0
     fi
     cd "$INSTALL_DIR"
     docker compose down -v
     cd /
     rm -rf "$INSTALL_DIR"
-    echo "✅ Старая установка удалена"
+    echo "-> Old installation removed"
 }
 
-# Функция для настройки после установки
-setup_api_token() {
-    echo ""
-    echo "════════════════════════════════════════════════════"
-    echo "  Добавление API TOKEN от бота"
-    echo "════════════════════════════════════════════════════"
-    echo ""
-    
-    read -p "Введите API TOKEN от бота: " API_TOKEN
-    
-    if [ -z "$API_TOKEN" ]; then
-        echo "❌ API TOKEN не может быть пустым!"
-        return 1
-    fi
-    
-    # Добавляем API_TOKEN в .env
-    if grep -q "^API_TOKEN=" node-agent/.env 2>/dev/null; then
-        sed -i "s/^API_TOKEN=.*/API_TOKEN=$API_TOKEN/" node-agent/.env
-        echo "✅ API TOKEN обновлён"
+# New installation function
+perform_install() {
+    # Install Docker
+    if ! command -v docker &>/dev/null; then
+        echo "* Installing Docker..."
+        curl -fsSL https://get.docker.com | sh
+        systemctl enable docker
+        systemctl start docker
+        echo "-> Docker installed"
     else
-        echo "API_TOKEN=$API_TOKEN" >> node-agent/.env
-        echo "✅ API TOKEN добавлен"
+        echo "-> Docker already installed: $(docker --version)"
     fi
-    
-    # Перезапускаем node-agent
-    echo ""
-    echo "🔄 Перезапуск node-agent..."
-    docker compose restart node-agent
-    
-    echo ""
-    echo "✅ Готово! Проверьте подключение:"
-    echo "   docker compose logs -f node-agent"
-    echo ""
-}
 
-# Проверяем аргументы командной строки
-if [ "$1" = "setup" ]; then
-    # Если запущен из произвольной директории, переходим в install dir
-    if [ -d "/opt/mtproxy-node" ]; then
-        cd /opt/mtproxy-node
-    else
-        echo "❌ Node не установлен в /opt/mtproxy-node"
+    # Check Docker Compose
+    if ! docker compose version &>/dev/null; then
+        echo "X Docker Compose not found. Update Docker to version with built-in Compose."
         exit 1
     fi
-    
-    # Проверяем наличие docker-compose.yml
-    if [ ! -f "docker-compose.yml" ]; then
-        echo "❌ docker-compose.yml не найден"
-        echo "   Запустите полную переустановку:"
-        echo "   curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh | sudo bash"
-        exit 1
-    fi
-    
-    setup_api_token
-    exit 0
-fi
 
-# Проверка на существующую установку
-if [ -d "$INSTALL_DIR" ]; then
-    echo "📦 Обнаружена существующая установка"
+    echo "-> Docker Compose: $(docker compose version)"
+
+    # Determine IP
     echo ""
-    
-    # Проверяем, запущен ли скрипт интерактивно
-    if [ -t 0 ]; then
-        echo "Выберите действие:"
-        echo "1) Обновить (git pull + перезапуск)"
-        echo "2) Показать API KEY"
-        echo "3) Переустановить (удалить всё и установить заново)"
-        echo "4) Выход"
-        echo ""
-        read -p "Ваш выбор (1-4): " choice
-        
-        case $choice in
-            1)
-                perform_update
-                ;;
-            2)
-                show_api_key
-                ;;
-            3)
-                perform_reinstall
-                ;;
-            4)
-                echo "Выход"
-                exit 0
-                ;;
-            *)
-                echo "❌ Неверный выбор"
-                exit 1
-                ;;
-        esac
-    else
-        echo "Скрипт запущен неинтерактивно. Выполняю обновление..."
-        perform_update
+    echo "* Determining IP address..."
+    EXTERNAL_IP=$(curl -s ifconfig.me || curl -s api.ipify.org || echo "")
+    if [ -z "$EXTERNAL_IP" ]; then
+        echo "! Could not determine IP automatically"
+        read -p "Enter external IP of this server: " EXTERNAL_IP
     fi
-fi
+    echo "* External IP: $EXTERNAL_IP"
 
-# Установка Docker
-if ! command -v docker &>/dev/null; then
-    echo "📦 Установка Docker..."
-    curl -fsSL https://get.docker.com | sh
-    systemctl enable docker
-    systemctl start docker
-    echo "✅ Docker установлен"
-else
-    echo "✅ Docker уже установлен: $(docker --version)"
-fi
+    echo ""
+    echo "* Downloading node-agent..."
+    mkdir -p "$INSTALL_DIR/node-agent"
+    cd "$INSTALL_DIR"
 
-# Проверка Docker Compose
-if ! docker compose version &>/dev/null; then
-    echo "❌ Docker Compose не найден. Обновите Docker до версии с встроенным Compose."
-    exit 1
-fi
+    # Download only necessary node-agent files from GitHub
+    REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
+    FILES=(
+        "package.json"
+        "package-lock.json"
+        "tsconfig.json"
+        "Dockerfile"
+        ".env.example"
+    )
 
-echo "✅ Docker Compose: $(docker compose version)"
+    echo "Downloading files..."
+    for file in "${FILES[@]}"; do
+        echo "  * $file"
+        curl -fsSL "$REPO_URL/$file" -o "node-agent/$file"
+    done
 
-# Определение IP
-echo ""
-echo "🔍 Определение IP адреса..."
-EXTERNAL_IP=$(curl -s ifconfig.me || curl -s api.ipify.org || echo "")
-if [ -z "$EXTERNAL_IP" ]; then
-    echo "⚠️  Не удалось определить IP автоматически"
-    read -p "Введите внешний IP этого сервера: " EXTERNAL_IP
-fi
-echo "📡 Внешний IP: $EXTERNAL_IP"
+    # Load src directory
+    echo "  / src/"
+    mkdir -p node-agent/src
+    curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
 
-echo ""
-echo "📥 Загрузка node-agent..."
-mkdir -p "$INSTALL_DIR/node-agent"
-cd "$INSTALL_DIR"
+    echo "-> node-agent downloaded"
 
-# Скачиваем только нужные файлы node-agent из GitHub
-REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
-FILES=(
-    "package.json"
-    "package-lock.json"
-    "tsconfig.json"
-    "Dockerfile"
-    ".env.example"
-)
+    echo ""
+    echo "========================================================"
+    echo "  Node Setup"
+    echo "========================================================"
+    echo ""
 
-echo "Загрузка файлов node-agent..."
-for file in "${FILES[@]}"; do
-    echo "  📄 $file"
-    curl -fsSL "$REPO_URL/$file" -o "node-agent/$file"
-done
+    # Generate API key for authorization
+    echo "Generating API key..."
+    API_KEY=$(openssl rand -hex 32)
+    echo "* API Key: $API_KEY"
 
-# Загружаем src директорию
-echo "  📁 src/"
-mkdir -p node-agent/src
-curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
+    echo ""
+    echo "* Creating node-agent configuration..."
 
-echo "✅ node-agent загружен"
-
-echo ""
-echo "════════════════════════════════════════════════════"
-echo "  Настройка ноды"
-echo "════════════════════════════════════════════════════"
-echo ""
-
-# Генерация API ключа для авторизации
-echo "Генерация API ключа..."
-API_KEY=$(openssl rand -hex 32)
-echo "🔑 API Key: $API_KEY"
-
-echo ""
-echo "📝 Создание конфигурации node-agent..."
-
-# Минимальная конфигурация - всё остальное настраивается через API
-cat > node-agent/.env <<EOF
+    # Minimal configuration - everything else is configured via API
+    cat > node-agent/.env <<EOF
 # API Configuration
 API_TOKEN=$API_KEY
 API_PORT=3000
@@ -281,25 +186,25 @@ API_PORT=3000
 NODE_ENV=production
 EOF
 
-echo "✅ Конфигурация создана: node-agent/.env"
+    echo "-> Configuration created: node-agent/.env"
 
-# Создание .env в корне для docker-compose
-echo ""
-echo "📝 Создание .env для docker-compose..."
+    # Create .env in root for docker-compose
+    echo ""
+    echo "* Creating .env for docker-compose..."
 
-cat > .env <<EOF
+    cat > .env <<EOF
 # API Configuration
 API_TOKEN=$API_KEY
 API_PORT=3000
 EOF
 
-echo "✅ .env создан"
+    echo "-> .env created"
 
-# Создание docker-compose для standalone ноды
-echo ""
-echo "📝 Создание docker-compose.yml..."
+    # Create docker-compose for standalone node
+    echo ""
+    echo "* Creating docker-compose.yml..."
 
-cat > docker-compose.yml <<'COMPOSE_EOF'
+    cat > docker-compose.yml <<'COMPOSE_EOF'
 services:
   node-agent:
     build:
@@ -322,84 +227,73 @@ networks:
     driver: bridge
 COMPOSE_EOF
 
-echo "✅ docker-compose.yml создан"
+    echo "-> docker-compose.yml created"
 
-# Настройка firewall
-echo ""
-read -p "Настроить firewall автоматически? (y/n): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "🔥 Настройка firewall..."
-    if command -v ufw &>/dev/null; then
-        ufw allow 443/tcp comment "MTProxy"
-        ufw allow 1080/tcp comment "SOCKS5"
-        ufw allow 3000/tcp comment "Node API"
-        echo "✅ Правила UFW добавлены"
-    elif command -v firewall-cmd &>/dev/null; then
-        firewall-cmd --permanent --add-port=443/tcp
-        firewall-cmd --permanent --add-port=1080/tcp
-        firewall-cmd --permanent --add-port=3000/tcp
-        firewall-cmd --reload
-        echo "✅ Правила FirewallD добавлены"
+    # Firewall setup
+    echo ""
+    read -p "Setup firewall automatically? (y/n): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "* Setting up firewall..."
+        if command -v ufw &>/dev/null; then
+            ufw allow 443/tcp comment "MTProxy"
+            ufw allow 1080/tcp comment "SOCKS5"
+            ufw allow 3000/tcp comment "Node API"
+            echo "-> UFW rules added"
+        elif command -v firewall-cmd &>/dev/null; then
+            firewall-cmd --permanent --add-port=443/tcp
+            firewall-cmd --permanent --add-port=1080/tcp
+            firewall-cmd --permanent --add-port=3000/tcp
+            firewall-cmd --reload
+            echo "-> FirewallD rules added"
+        else
+            echo "! Firewall not detected, configure manually:"
+            echo "   Ports: 443, 1080, 3000"
+        fi
     else
-        echo "⚠️  Firewall не обнаружен, настройте вручную:"
-        echo "   Порты: 443, 1080, 3000"
+        echo "! Don't forget to open ports manually:"
+        echo "   443/tcp  - MTProxy"
+        echo "   1080/tcp - SOCKS5"
+        echo "   3000/tcp - Node API"
     fi
-else
-    echo "⚠️  Не забудьте открыть порты вручную:"
-    echo "   443/tcp  - MTProxy"
-    echo "   1080/tcp - SOCKS5"
-    echo "   3000/tcp - Node API"
-fi
 
-# Запуск контейнеров
-echo ""
-echo "🚀 Запуск MTProxy Node..."
-docker compose up -d --build
+    # Start containers
+    echo ""
+    echo "* Starting MTProxy Node..."
+    docker compose up -d --build
 
-echo ""
-echo "⏳ Ожидание запуска контейнеров..."
-sleep 10
+    echo ""
+    echo "* Waiting for containers to start..."
+    sleep 10
 
-# Проверка статуса
-echo ""
-echo "📊 Статус контейнеров:"
-docker compose ps
+    # Check status
+    echo ""
+    echo "* Container status:"
+    docker compose ps
 
-# Получение секрета из логов MTProxy
-echo ""
-echo "🔍 Получение MTProxy ссылки..."
-sleep 3
-SECRET_LINE=$(docker logs mtproxy 2>&1 | grep -E "tg://|t.me/proxy" | head -1 || echo "")
+    # Create global management command
+    echo ""
+    echo "* Creating global 'mtproxy-node' command..."
 
-# Создание глобальной команды управления
-echo ""
-echo "🔧 Создание глобальной команды 'mtproxy-node'..."
-
-cat > /usr/local/bin/mtproxy-node <<'NODE_SCRIPT_EOF'
+    cat > /usr/local/bin/mtproxy-node <<'NODE_SCRIPT_EOF'
 #!/bin/bash
 
 INSTALL_DIR="/opt/mtproxy-node"
 
 if [ ! -d "$INSTALL_DIR" ]; then
-    echo "❌ Node не установлен в $INSTALL_DIR"
+    echo "X Node not installed in $INSTALL_DIR"
     exit 1
 fi
 
 cd "$INSTALL_DIR"
 
 case "$1" in
-    start)
-        echo "🚀 Запуск Node..."
-        docker compose up -d
-        ;;
-    stop)
-        echo "🛑 Остановка Node..."
-        docker compose down
-        ;;
-    restart)
-        echo "🔄 Перезапуск Node..."
-        docker compose restart
+    status)
+        echo "* MTProxy Node Status:"
+        docker compose ps
+        echo ""
+        echo "* Resources:"
+        docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
         ;;
     logs)
         if [ -n "$2" ]; then
@@ -408,155 +302,249 @@ case "$1" in
             docker compose logs -f
         fi
         ;;
-    status)
-        echo "📊 Статус Node:"
-        docker compose ps
-        echo ""
-        echo "📈 Использование ресурсов:"
-        docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" \
-          $(docker compose ps -q) 2>/dev/null || echo "Контейнеры не запущены"
+    restart)
+        echo "* Restarting all services..."
+        docker compose restart
+        echo "-> Restarted"
         ;;
     update)
-        echo "📦 Обновление Node..."
-        docker compose down
-        git pull
-        docker compose up -d --build
-        echo "✅ Обновлено"
+        echo "* Updating from GitHub..."
+        curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh | bash
         ;;
     rebuild)
-        echo "🔨 Пересборка Node..."
+        echo "* Rebuilding containers..."
         docker compose down
-        docker compose build --no-cache
-        docker compose up -d
-        echo "✅ Пересобрано"
+        docker compose up -d --build
+        echo "-> Rebuilt"
         ;;
     setup)
         echo ""
-        echo "════════════════════════════════════════════════════"
-        echo "  Добавление API TOKEN от бота"
-        echo "════════════════════════════════════════════════════"
+        echo "========================================================"
+        echo "  Adding API TOKEN from bot"
+        echo "========================================================"
         echo ""
-        
-        read -p "Введите API TOKEN от бота: " API_TOKEN
-        
+
+        read -p "Enter API TOKEN from bot: " API_TOKEN
+
         if [ -z "$API_TOKEN" ]; then
-            echo "❌ API TOKEN не может быть пустым!"
-            exit 1
+            echo "X API TOKEN cannot be empty!"
+            return 1
         fi
-        
+
+        # Add API_TOKEN to .env
         if grep -q "^API_TOKEN=" node-agent/.env 2>/dev/null; then
             sed -i "s/^API_TOKEN=.*/API_TOKEN=$API_TOKEN/" node-agent/.env
-            echo "✅ API TOKEN обновлён"
+            echo "-> API TOKEN updated"
         else
             echo "API_TOKEN=$API_TOKEN" >> node-agent/.env
-            echo "✅ API TOKEN добавлен"
+            echo "-> API TOKEN added"
         fi
-        
+
+        # Restart node-agent
         echo ""
-        echo "🔄 Перезапуск node-agent..."
+        echo "* Restarting node-agent..."
         docker compose restart node-agent
-        
+
         echo ""
-        echo "✅ Готово! Проверьте подключение:"
-        echo "   mtproxy-node logs node-agent"
+        echo "-> Done! Check connection:"
+        echo "   docker compose logs -f node-agent"
         ;;
     config)
+        echo "* Current configuration:"
+        echo "* Directory: $INSTALL_DIR"
+        echo ""
+        if [ -f ".env" ]; then
+            echo "* .env:"
+            cat .env
+            echo ""
+        fi
         if [ -f "node-agent/.env" ]; then
-            echo "📄 Конфигурация Node:"
-            cat node-agent/.env | grep -v "^#" | grep -v "^$"
-        else
-            echo "❌ Файл конфигурации не найден"
+            echo "* node-agent/.env:"
+            cat node-agent/.env
+            echo ""
         fi
         ;;
     shell)
-        if [ -n "$2" ]; then
-            docker compose exec "$2" sh
-        else
-            docker compose exec node-agent sh
+        if [ -z "$2" ]; then
+            echo "Usage: mtproxy-node shell <service>"
+            echo "Available services:"
+            docker compose ps --services
+            exit 1
         fi
+        docker compose exec "$2" /bin/sh
         ;;
     proxy-link)
-        echo "🔗 MTProxy ссылка:"
-        docker logs mtproxy 2>&1 | grep -E "tg://|t.me/proxy" | head -1
+        echo "* MTProxy links:"
+        # Look for links in logs
+        SECRET_LINE=$(docker logs mtproxy 2>&1 | grep -E "tg://|t.me/proxy" | head -1 || echo "")
+        if [ -n "$SECRET_LINE" ]; then
+            echo "$SECRET_LINE"
+        else
+            echo "X Link not found in logs"
+            echo "   MTProxy may not be running yet"
+        fi
         ;;
-    *)
-        echo "MTProxy Node - Управление"
+    "")
+        echo "* MTProxy Node Manager"
         echo ""
-        echo "Использование: mtproxy-node <команда> [опции]"
+        echo "Usage: mtproxy-node <command>"
         echo ""
-        echo "Команды:"
-        echo "  start       - Запустить Node"
-        echo "  stop        - Остановить Node"
-        echo "  restart     - Перезапустить Node"
-        echo "  logs [сервис] - Показать логи (Ctrl+C для выхода)"
-        echo "  status      - Показать статус и ресурсы"
-        echo "  update      - Обновить из GitHub и перезапустить"
-        echo "  rebuild     - Пересобрать с нуля"
-        echo "  setup       - Добавить/обновить API TOKEN от бота"
-        echo "  config      - Показать текущую конфигурацию"
-        echo "  shell [сервис] - Открыть shell в контейнере"
-        echo "  proxy-link  - Показать MTProxy ссылку"
+        echo "Commands:"
+        echo "  status       - show status and resources"
+        echo "  logs [service] - show logs (Ctrl+C to exit)"
+        echo "  restart      - restart all services"
+        echo "  update       - update from GitHub"
+        echo "  rebuild      - rebuild containers"
+        echo "  setup        - add/update API TOKEN from bot"
+        echo "  config       - show current configuration"
+        echo "  shell <service> - open shell in container"
+        echo "  proxy-link   - show MTProxy link"
         echo ""
-        echo "Примеры:"
+        echo "Examples:"
         echo "  mtproxy-node status"
         echo "  mtproxy-node logs node-agent"
         echo "  mtproxy-node setup"
-        echo "  mtproxy-node proxy-link"
+        ;;
+    *)
+        echo "X Unknown command: $1"
+        echo "Use 'mtproxy-node' for command list"
+        exit 1
         ;;
 esac
 NODE_SCRIPT_EOF
 
-chmod +x /usr/local/bin/mtproxy-node
+    chmod +x /usr/local/bin/mtproxy-node
 
-echo "✅ Команда 'mtproxy-node' создана"
+    echo "-> 'mtproxy-node' command created"
 
-echo ""
-echo "════════════════════════════════════════════════════"
-echo "  ✅ MTProxy Node установлен!"
-echo "════════════════════════════════════════════════════"
-echo ""
-echo "📋 ШАГ 1: Добавьте ноду в Control Panel через бота"
-echo ""
-echo "В Telegram боте отправьте команду /add_node"
-echo "Затем отправьте эти данные:"
-echo ""
-echo "─────────────────────────────────────────────────────"
-echo "name: $NODE_NAME"
-echo "domain: $DOMAIN"
-echo "ip: $EXTERNAL_IP"
-echo "api_url: http://$EXTERNAL_IP:3001"
-echo "mtproto_port: 443"
-echo "socks5_port: 1080"
-echo "workers: $WORKERS"
-echo "cpu_cores: $CPU_CORES"
-echo "ram_mb: $RAM_MB"
-echo "─────────────────────────────────────────────────────"
-echo ""
-echo "🔑 Сохраните API Key: $API_KEY"
-echo "   (может понадобиться для прямых запросов к API)"
-echo ""
-echo "📋 ШАГ 2: После добавления ноды бот выдаст API TOKEN"
-echo ""
-echo "Выполните команду для добавления токена:"
-echo ""
-echo "   mtproxy-node setup"
-echo ""
-echo "🔗 MTProxy ссылка (для проверки):"
-if [ -n "$SECRET_LINE" ]; then
-    echo "   $SECRET_LINE"
-else
-    echo "   mtproxy-node proxy-link"
+    echo ""
+    echo "========================================================"
+    echo "  -> MTProxy Node installed!"
+    echo "========================================================"
+    echo ""
+    echo "* Data for adding to bot:"
+    echo ""
+    echo "-----------------------------------------------------"
+    echo "name: Node-1"
+    echo "ip: $EXTERNAL_IP"
+    echo "api_key: $API_KEY"
+    echo "-----------------------------------------------------"
+    echo ""
+    echo "* Steps:"
+    echo "1. In Telegram bot send /add_node"
+    echo "2. Send the data above to the bot chat"
+    echo "3. Bot will automatically configure proxies!"
+    echo ""
+    echo "* Management:"
+    echo "   mtproxy-node status      - status"
+    echo "   mtproxy-node logs        - logs"
+    echo "   mtproxy-node restart     - restart"
+    echo "   mtproxy-node update      - update"
+    echo ""
+    echo "* Directory: $INSTALL_DIR"
+    echo ""
+    echo "========================================================"
+}
+
+# API token setup function
+setup_api_token() {
+    echo ""
+    echo "========================================================"
+    echo "  Adding API TOKEN from bot"
+    echo "========================================================"
+    echo ""
+
+    read -p "Enter API TOKEN from bot: " API_TOKEN
+
+    if [ -z "$API_TOKEN" ]; then
+        echo "X API TOKEN cannot be empty!"
+        return 1
+    fi
+
+    # Add API_TOKEN to .env
+    if grep -q "^API_TOKEN=" node-agent/.env 2>/dev/null; then
+        sed -i "s/^API_TOKEN=.*/API_TOKEN=$API_TOKEN/" node-agent/.env
+        echo "-> API TOKEN updated"
+    else
+        echo "API_TOKEN=$API_TOKEN" >> node-agent/.env
+        echo "-> API TOKEN added"
+    fi
+
+    # Restart node-agent
+    echo ""
+    echo "* Restarting node-agent..."
+    docker compose restart node-agent
+
+    echo ""
+    echo "-> Done! Check connection:"
+    echo "   docker compose logs -f node-agent"
+    echo ""
+}
+
+# Check command line arguments
+if [ "$1" = "setup" ]; then
+    # If run from arbitrary directory, go to install dir
+    if [ -d "/opt/mtproxy-node" ]; then
+        cd /opt/mtproxy-node
+    else
+        echo "X Node not installed in /opt/mtproxy-node"
+        exit 1
+    fi
+
+    # Check docker-compose.yml presence
+    if [ ! -f "docker-compose.yml" ]; then
+        echo "X docker-compose.yml not found"
+        echo "   Run full reinstallation:"
+        echo "   curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh | sudo bash"
+        exit 1
+    fi
+
+    setup_api_token
+    exit 0
 fi
-echo ""
-echo "� Управление из любой директории:"
-echo "   mtproxy-node status      - статус и ресурсы"
-echo "   mtproxy-node logs        - просмотр всех логов"
-echo "   mtproxy-node logs node-agent  - логи агента"
-echo "   mtproxy-node restart     - перезапуск"
-echo "   mtproxy-node setup       - добавить API TOKEN"
-echo "   mtproxy-node config      - показать конфигурацию"
-echo "   mtproxy-node update      - обновление"
-echo ""
-echo "📂 Директория: $INSTALL_DIR"
-echo ""
-echo "════════════════════════════════════════════════════"
+
+# Check for existing installation
+if [ -d "$INSTALL_DIR" ]; then
+    echo "* Existing installation detected"
+    echo ""
+
+    # Check if script is run interactively
+    if [ -t 0 ]; then
+        echo "Choose action:"
+        echo "1) Update (git pull + restart)"
+        echo "2) Show API KEY"
+        echo "3) Reinstall (delete everything and install anew)"
+        echo "4) Exit"
+        echo ""
+        read -p "Your choice (1-4): " choice
+
+        case $choice in
+            1)
+                perform_update
+                ;;
+            2)
+                show_api_key
+                ;;
+            3)
+                perform_reinstall
+                ;;
+            4)
+                echo "Exit"
+                exit 0
+                ;;
+            *)
+                echo "X Invalid choice"
+                exit 1
+                ;;
+        esac
+    else
+        echo "Script run non-interactively. Performing update..."
+        perform_update
+    fi
+else
+    # New installation
+    perform_install
+fi
+
+# Launch main function
+main

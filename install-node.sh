@@ -99,14 +99,14 @@ create_mtproxy_command() {
     cat > /usr/local/bin/mtproxy-node <<NODE_SCRIPT_EOF
 #!/bin/bash
 
-export INSTALL_DIR="/opt/mtproxy-node"
+INSTALL_DIR="/opt/mtproxy-node"
 
-if [ ! -d \$INSTALL_DIR ]; then
+if [ ! -d "\$INSTALL_DIR" ]; then
     echo "X Node not installed in \$INSTALL_DIR"
     exit 1
 fi
 
-cd \$INSTALL_DIR || {
+cd "\$INSTALL_DIR" || {
     echo "X Cannot change to directory \$INSTALL_DIR"
     exit 1
 }

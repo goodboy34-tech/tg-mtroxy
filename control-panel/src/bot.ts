@@ -542,20 +542,16 @@ bot.action(/^add_secret_(\d+)$/, async (ctx) => {
     return;
   }
 
-  // Генерируем секрет
-  const secret = SecretGenerator.generateMtProtoSecret();
-
+  // Показываем выбор типа секрета
   await ctx.editMessageText(
-    `🔐 Добавление MTProto секрета
-
-Нода: ${node.name}
-Секрет: ${secret}
-
-Выберите тип подключения:`,
+    `🔐 <b>Добавление MTProto секрета</b>\n\n` +
+    `Нода: ${node.name}\n\n` +
+    `Выберите тип секрета:`,
     {
+      parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('🌐 Домен', `add_secret_domain_${nodeId}_${secret}`)],
-        [Markup.button.callback('📍 IP адрес', `add_secret_ip_${nodeId}_${secret}`)],
+        [Markup.button.callback('🔓 Обычный', `add_secret_type_normal_${nodeId}`)],
+        [Markup.button.callback('� Fake-TLS (DD)', `add_secret_type_dd_${nodeId}`)],
         [Markup.button.callback('❌ Отмена', 'cancel')],
       ])
     }

@@ -149,16 +149,75 @@ perform_update() {
 
     # Download docker-compose configuration
     echo "  * docker-compose.yml"
-    if ! curl -fsSL "https://raw.githubusercontent.com/goodboy34-tech/eeee/master/docker-compose.node.yml" -o "docker-compose.yml"; then
-        echo "X Failed to download docker-compose.node.yml"
-        exit 1
-    fi
+    cat > docker-compose.yml <<'DOCKER_COMPOSE_EOF'
+# Docker Compose для установки ноды на том же сервере с панелью управления
+# Использует нестандартные порты чтобы избежать конфликтов
 
-    # Verify the file is not empty
-    if [ ! -s "docker-compose.yml" ]; then
-        echo "X Downloaded docker-compose.yml is empty"
-        exit 1
-    fi
+services:
+  # Node Agent API для управления прокси
+  node-agent:
+    build:
+      context: ./node-agent
+      dockerfile: Dockerfile
+    container_name: mtproxy-node-local
+    restart: unless-stopped
+    env_file:
+      - ./node-agent/.env
+    environment:
+      - NODE_ENV=production
+      - API_PORT=9090
+      - MTPROTO_PORT=8443
+      - SOCKS5_PORT=9080
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./node-data:/app/data
+      - ./certs:/app/certs:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - mtproxy-network
+    depends_on:
+      - mtproto-local
+      - socks5-local
+
+  # MTProto Proxy (локальная нода)
+  mtproto-local:
+    image: telegrammessenger/proxy:latest
+    container_name: mtproxy-local
+    restart: unless-stopped
+    environment:
+      - SECRET=${SECRET:-}
+      - SECRET_COUNT=${SECRET_COUNT:-1}
+      - TAG=${TAG:-}
+      - WORKERS=${WORKERS:-2}
+    volumes:
+      - mtproxy-local-config:/data
+    ports:
+      - "8443:443"
+      - "2399:2398"
+    networks:
+      - mtproxy-network
+
+  # SOCKS5 Proxy (локальная нода)
+  socks5-local:
+    image: ghcr.io/txthinking/socks5:latest
+    container_name: socks5-local
+    restart: unless-stopped
+    environment:
+      - Socks5_User=${SOCKS5_USER:-}
+      - Socks5_Password=${SOCKS5_PASSWORD:-}
+    ports:
+      - "9080:1080"
+    networks:
+      - mtproxy-network
+
+volumes:
+  mtproxy-local-config:
+
+networks:
+  mtproxy-network:
+    driver: bridge
+DOCKER_COMPOSE_EOF
 
     # Create systemd service
     create_systemd_service
@@ -390,20 +449,81 @@ perform_install() {
 
     echo "-> node-agent downloaded"
 
-    # Download docker-compose configuration
+    # Create docker-compose configuration
     echo ""
-    echo "* Downloading docker-compose configuration..."
-    if ! curl -fsSL "https://raw.githubusercontent.com/goodboy34-tech/eeee/master/docker-compose.node.yml" -o "docker-compose.yml"; then
-        echo "X Failed to download docker-compose.node.yml"
-        exit 1
-    fi
+    echo "* Creating docker-compose configuration..."
 
-    # Verify the file is not empty
-    if [ ! -s "docker-compose.yml" ]; then
-        echo "X Downloaded docker-compose.yml is empty"
-        exit 1
-    fi
-    echo "-> docker-compose.yml downloaded"
+    cat > docker-compose.yml <<'DOCKER_COMPOSE_EOF'
+# Docker Compose для установки ноды на том же сервере с панелью управления
+# Использует нестандартные порты чтобы избежать конфликтов
+
+services:
+  # Node Agent API для управления прокси
+  node-agent:
+    build:
+      context: ./node-agent
+      dockerfile: Dockerfile
+    container_name: mtproxy-node-local
+    restart: unless-stopped
+    env_file:
+      - ./node-agent/.env
+    environment:
+      - NODE_ENV=production
+      - API_PORT=9090
+      - MTPROTO_PORT=8443
+      - SOCKS5_PORT=9080
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./node-data:/app/data
+      - ./certs:/app/certs:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - mtproxy-network
+    depends_on:
+      - mtproto-local
+      - socks5-local
+
+  # MTProto Proxy (локальная нода)
+  mtproto-local:
+    image: telegrammessenger/proxy:latest
+    container_name: mtproxy-local
+    restart: unless-stopped
+    environment:
+      - SECRET=${SECRET:-}
+      - SECRET_COUNT=${SECRET_COUNT:-1}
+      - TAG=${TAG:-}
+      - WORKERS=${WORKERS:-2}
+    volumes:
+      - mtproxy-local-config:/data
+    ports:
+      - "8443:443"
+      - "2399:2398"
+    networks:
+      - mtproxy-network
+
+  # SOCKS5 Proxy (локальная нода)
+  socks5-local:
+    image: ghcr.io/txthinking/socks5:latest
+    container_name: socks5-local
+    restart: unless-stopped
+    environment:
+      - Socks5_User=${SOCKS5_USER:-}
+      - Socks5_Password=${SOCKS5_PASSWORD:-}
+    ports:
+      - "9080:1080"
+    networks:
+      - mtproxy-network
+
+volumes:
+  mtproxy-local-config:
+
+networks:
+  mtproxy-network:
+    driver: bridge
+DOCKER_COMPOSE_EOF
+
+    echo "-> docker-compose.yml created"
 
     echo ""
     echo "========================================================"

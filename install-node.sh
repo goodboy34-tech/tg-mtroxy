@@ -162,6 +162,22 @@ perform_update() {
     
     echo "* Configuration restored"
 
+    # Ensure vnstat is installed for traffic monitoring
+    if ! command -v vnstat &>/dev/null; then
+        echo "* Installing vnstat for network traffic monitoring..."
+        if command -v apt-get &>/dev/null; then
+            apt-get update -qq && apt-get install -y vnstat >/dev/null 2>&1
+        elif command -v yum &>/dev/null; then
+            yum install -y vnstat >/dev/null 2>&1
+        fi
+        
+        if command -v vnstat &>/dev/null; then
+            systemctl enable vnstat 2>/dev/null || true
+            systemctl start vnstat 2>/dev/null || true
+            echo "-> vnstat installed"
+        fi
+    fi
+
     echo "* Stopping containers..."
     docker compose down
     
@@ -570,6 +586,27 @@ perform_install() {
     fi
 
     echo "-> Docker Compose: $(docker compose version)"
+
+    # Install vnstat for accurate traffic monitoring
+    if ! command -v vnstat &>/dev/null; then
+        echo "* Installing vnstat for network traffic monitoring..."
+        if command -v apt-get &>/dev/null; then
+            apt-get update -qq && apt-get install -y vnstat >/dev/null 2>&1
+        elif command -v yum &>/dev/null; then
+            yum install -y vnstat >/dev/null 2>&1
+        fi
+        
+        if command -v vnstat &>/dev/null; then
+            # Initialize vnstat database for main interface
+            systemctl enable vnstat 2>/dev/null || true
+            systemctl start vnstat 2>/dev/null || true
+            echo "-> vnstat installed and started"
+        else
+            echo "! vnstat installation failed (non-critical, will use fallback methods)"
+        fi
+    else
+        echo "-> vnstat already installed: $(vnstat --version | head -n1)"
+    fi
 
     # Determine IP
     echo ""

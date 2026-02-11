@@ -636,7 +636,25 @@ async function getSocks5Stats() {
 
 async function getNetworkStats() {
   try {
-    // Метод 1: Читаем /proc/net/dev для всех интерфейсов
+    // Метод 1: vnstat (наиболее точный, если установлен)
+    try {
+      const vnstatOutput = execSync('vnstat --json', { timeout: 3000 }).toString();
+      const vnstatData = JSON.parse(vnstatOutput);
+      
+      if (vnstatData?.interfaces?.[0]?.traffic?.total) {
+        const traffic = vnstatData.interfaces[0].traffic.total;
+        const rxMb = (traffic.rx || 0) / 1024 / 1024;
+        const txMb = (traffic.tx || 0) / 1024 / 1024;
+        
+        if (rxMb > 0 || txMb > 0) {
+          return { inMb: rxMb, outMb: txMb };
+        }
+      }
+    } catch (e) {
+      // vnstat не установлен или недоступен, переходим к следующему методу
+    }
+
+    // Метод 2: Читаем /proc/net/dev для всех интерфейсов
     try {
       const netDev = fs.readFileSync('/proc/net/dev', 'utf8');
       const lines = netDev.split('\n');
@@ -674,7 +692,7 @@ async function getNetworkStats() {
       // Продолжаем к следующему методу
     }
     
-    // Метод 2: Пробуем конкретные интерфейсы через /sys/class/net
+    // Метод 3: Пробуем конкретные интерфейсы через /sys/class/net
     const interfaces = ['eth0', 'ens3', 'enp0s3', 'ens18', 'venet0', 'ens5'];
     
     for (const iface of interfaces) {
@@ -696,7 +714,7 @@ async function getNetworkStats() {
       }
     }
     
-    // Метод 3 (Fallback): Docker stats для MTProxy контейнера
+    // Метод 4 (Fallback): Docker stats для MTProxy контейнера
     try {
       // Используем docker inspect для получения накопительной статистики
       const statsJson = execSync(

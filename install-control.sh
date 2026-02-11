@@ -146,26 +146,31 @@ perform_update() {
         }
     fi
     
-    if systemctl restart mtproxy-control; then
+    # Try to restart with timeout
+    echo "* Starting service restart (timeout: 60 seconds)..."
+    timeout 60 systemctl restart mtproxy-control && {
         echo "* Service restarted successfully"
-    else
-        echo "X Failed to restart service, checking status..."
-        if systemctl status mtproxy-control --no-pager -l 2>/dev/null; then
-            echo "* Service status shown above"
+        # Wait a moment and check status
+        sleep 3
+        if systemctl is-active --quiet mtproxy-control; then
+            echo "* Service is active and running"
         else
-            echo "* Service not found, checking if systemd is running..."
-            if systemctl is-system-running >/dev/null 2>&1; then
-                echo "* Systemd is running, service file may be corrupted"
-                echo "* Service file content:"
-                cat /etc/systemd/system/mtproxy-control.service 2>/dev/null || echo "* Service file not found"
-                echo "* Checking systemd service list:"
-                systemctl list-units --type=service | grep mtproxy || echo "* mtproxy service not in list"
-            else
-                echo "* Systemd is not running properly"
-                systemctl status
-            fi
+            echo "! Service restart completed but may not be fully active yet"
         fi
-    fi
+    } || {
+        echo "X Service restart timed out or failed"
+        echo "* Checking service status..."
+        systemctl status mtproxy-control --no-pager -l || echo "* Could not get service status"
+        
+        echo "* Checking Docker containers..."
+        docker ps | grep mtproxy || echo "* No mtproxy containers running"
+        
+        echo "* You may need to:"
+        echo "  1. Check Docker status: systemctl status docker"
+        echo "  2. Check service logs: journalctl -u mtproxy-control -f"
+        echo "  3. Try manual restart: systemctl restart mtproxy-control"
+        echo "  4. Or run manually: cd /opt/mtproxy-control && docker compose up -d"
+    }
 
     # Create global management command
     create_management_command

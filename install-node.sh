@@ -20,26 +20,54 @@ INSTALL_DIR="/opt/mtproxy-node"
 if [ -d "$INSTALL_DIR" ]; then
     echo "📦 Обнаружена существующая установка"
     echo ""
-    echo "Выберите действие:"
-    echo "1) Обновить (git pull + перезапуск)"
-    echo "2) Показать API KEY"
-    echo "3) Переустановить (удалить всё и установить заново)"
-    echo "4) Выход"
-    echo ""
-    read -p "Ваш выбор (1-4): " choice
+    
+    # Проверяем, запущен ли скрипт интерактивно
+    if [ -t 0 ]; then
+        echo "Выберите действие:"
+        echo "1) Обновить (git pull + перезапуск)"
+        echo "2) Показать API KEY"
+        echo "3) Переустановить (удалить всё и установить заново)"
+        echo "4) Выход"
+        echo ""
+        read -p "Ваш выбор (1-4): " choice
+    else
+        echo "Скрипт запущен неинтерактивно. Выполняю обновление..."
+        choice=1
+    fi
     
     case $choice in
         1)
             echo ""
             echo "🔄 Обновление..."
             cd "$INSTALL_DIR"
-            git pull
+            
+            # Скачиваем обновленные файлы
+            REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
+            FILES=(
+                "package.json"
+                "package-lock.json"
+                "tsconfig.json"
+                "Dockerfile"
+                ".env.example"
+            )
+            
+            echo "Загрузка обновлений..."
+            for file in "${FILES[@]}"; do
+                echo "  📄 $file"
+                curl -fsSL "$REPO_URL/$file" -o "node-agent/$file"
+            done
+            
+            # Загружаем обновленный api.ts
+            echo "  📁 src/api.ts"
+            curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
+            
+            # Перезапускаем контейнеры
             docker compose down
             docker compose up -d --build
             
             # Показываем API KEY
             if [ -f "node-agent/.env" ]; then
-                API_KEY=$(grep "^API_KEY=" node-agent/.env | cut -d '=' -f2)
+                API_KEY=$(grep "^API_TOKEN=" node-agent/.env | cut -d '=' -f2)
                 if [ -n "$API_KEY" ]; then
                     IP=$(curl -s ifconfig.me)
                     echo ""
@@ -78,9 +106,15 @@ if [ -d "$INSTALL_DIR" ]; then
         3)
             echo ""
             echo "⚠️  ВНИМАНИЕ! Все данные будут удалены!"
-            read -p "Продолжить? (yes/no): " confirm
-            if [ "$confirm" != "yes" ]; then
-                echo "Отменено"
+            if [ -t 0 ]; then
+                read -p "Продолжить? (yes/no): " confirm
+                if [ "$confirm" != "yes" ]; then
+                    echo "Отменено"
+                    exit 0
+                fi
+            else
+                echo "Скрипт запущен неинтерактивно. Пропускаю переустановку."
+                echo "Для переустановки запустите скрипт интерактивно."
                 exit 0
             fi
             cd "$INSTALL_DIR"

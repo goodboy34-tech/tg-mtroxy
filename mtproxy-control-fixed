@@ -1,0 +1,216 @@
+#!/bin/bash
+
+INSTALL_DIR="/opt/mtproxy-control"
+
+if [ ! -d "$INSTALL_DIR" ]; then
+    echo "X Control Panel not installed in $INSTALL_DIR"
+    exit 1
+fi
+
+cd "$INSTALL_DIR"
+
+case "$1" in
+    status)
+        echo "* MTProxy Control Panel Status:"
+        systemctl status mtproxy-control --no-pager -l
+        echo ""
+        echo "* Container status:"
+        docker compose ps
+        echo ""
+        echo "* Resources:"
+        docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+        ;;
+    logs)
+        if [ -n "$2" ]; then
+            docker compose logs -f "$2"
+        else
+            docker compose logs -f
+        fi
+        ;;
+    restart)
+        echo "* Restarting service..."
+        systemctl restart mtproxy-control
+        echo "-> Restarted"
+        ;;
+    update)
+        echo "* Updating from GitHub..."
+
+        # Download latest version and recreate management command
+        curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-control.sh -o /tmp/install-control-new.sh
+        chmod +x /tmp/install-control-new.sh
+
+        # Extract and run just the management command creation
+        sed -n '/^create_management_command() {/,/^}$/p' /tmp/install-control-new.sh > /tmp/create_cmd.sh
+        echo 'create_management_command' >> /tmp/create_cmd.sh
+        bash /tmp/create_cmd.sh
+
+        rm -f /tmp/install-control-new.sh /tmp/create_cmd.sh
+        echo "-> Update completed!"
+        ;;
+    rebuild)
+        echo "* Rebuilding containers..."
+        systemctl stop mtproxy-control
+        docker compose down
+        docker compose build --no-cache
+        systemctl start mtproxy-control
+        echo "-> Rebuilt"
+        ;;
+    shell)
+        if [ -n "$2" ]; then
+            docker compose exec "$2" /bin/sh
+        else
+            echo "Usage: mtproxy-control shell <service>"
+        fi
+        ;;
+    setup)
+        # Check if running interactively
+        if [ ! -t 0 ]; then
+            echo "X This command requires an interactive terminal."
+            echo "   Please run from your host system:"
+            echo "   mtproxy-control setup"
+            echo ""
+            echo "   Or run interactively in the container:"
+            echo "   docker compose exec mtproxy-control /bin/bash"
+            echo "   Then run: mtproxy-control setup"
+            exit 1
+        fi
+
+        echo ""
+        echo "========================================================"
+        echo "  Control Panel Bot Configuration"
+        echo "========================================================"
+        echo ""
+
+        echo "Please provide your Telegram Bot Token from @BotFather"
+        echo "Example: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+        echo ""
+
+        # Request Telegram Bot Token with retry
+        while true; do
+            read -p "Enter Telegram Bot Token: " BOT_TOKEN
+            if [ -n "$BOT_TOKEN" ] && [ "$BOT_TOKEN" != "" ]; then
+                break
+            else
+                echo "X Bot Token cannot be empty! Please try again."
+                echo ""
+            fi
+        done
+
+        echo ""
+        echo "Please provide Admin User IDs (comma-separated)"
+        echo "You can get your user ID from @userinfobot"
+        echo "Example: 123456789,987654321"
+        echo ""
+
+        # Request Admin IDs with retry
+        while true; do
+            read -p "Enter Admin User IDs (comma-separated): " ADMIN_IDS
+            if [ -n "$ADMIN_IDS" ] && [ "$ADMIN_IDS" != "" ]; then
+                # Validate admin IDs format (should be numbers separated by commas)
+                if echo "$ADMIN_IDS" | grep -E "^([0-9]+,)*[0-9]+$" >/dev/null; then
+                    break
+                else
+                    echo "X Admin IDs should be numbers separated by commas (e.g., 123456789,987654321)"
+                    echo ""
+                fi
+            else
+                echo "X Admin IDs cannot be empty! Please try again."
+                echo ""
+            fi
+        done
+
+        # Update .env file
+        if [ -f ".env" ]; then
+            # Update existing .env file
+            sed -i "s/^BOT_TOKEN=.*/BOT_TOKEN=$BOT_TOKEN/" .env
+            sed -i "s/^ADMIN_IDS=.*/ADMIN_IDS=$ADMIN_IDS/" .env
+            echo "* Configuration updated in .env file"
+        else
+            # Create new .env file
+            cat > .env <<ENV_EOF
+# Telegram Bot Configuration
+BOT_TOKEN=$BOT_TOKEN
+ADMIN_IDS=$ADMIN_IDS
+
+# Database
+DATABASE_PATH=./data/database.sqlite
+
+# Server
+PORT=3000
+NODE_ENV=production
+ENV_EOF
+            echo "* Configuration created: .env"
+        fi
+
+        echo ""
+        echo "Configuration saved! Restarting service..."
+        echo ""
+
+        # Restart service
+        systemctl daemon-reload
+        if systemctl restart mtproxy-control; then
+            echo "* Service restarted successfully"
+            echo ""
+            echo "Bot is now configured and running!"
+            echo "You can check the status with: mtproxy-control status"
+        else
+            echo "X Failed to restart service"
+            echo "You may need to check the logs: mtproxy-control logs"
+        fi
+        ;;
+    config)
+        echo "* Current configuration:"
+        echo "* Directory: $INSTALL_DIR"
+        echo ""
+        if [ -f ".env" ]; then
+            echo "* .env:"
+            cat .env
+            echo ""
+        fi
+        ;;
+    backup)
+        BACKUP_FILE="backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+        echo "* Creating backup: $BACKUP_FILE"
+        tar -czf "$BACKUP_FILE" .env data/ 2>/dev/null || true
+        echo "-> Backup created: $BACKUP_FILE"
+        ;;
+    restore)
+        if [ -z "$2" ]; then
+            echo "Usage: mtproxy-control restore <backup-file>"
+            exit 1
+        fi
+
+        if [ ! -f "$2" ]; then
+            echo "X Backup file not found: $2"
+            exit 1
+        fi
+
+        echo "* Restoring from backup: $2"
+        systemctl stop mtproxy-control
+        tar -xzf "$2"
+        systemctl start mtproxy-control
+        echo "-> Backup restored and service restarted"
+        ;;
+    *)
+        echo "MTProxy Control Panel Management Tool"
+        echo ""
+        echo "Usage: mtproxy-control <command>"
+        echo ""
+        echo "Commands:"
+        echo "  status    - Show service and container status"
+        echo "  logs      - Show container logs (use 'logs <service>' for specific)"
+        echo "  restart   - Restart the service"
+        echo "  update    - Update from GitHub"
+        echo "  rebuild   - Rebuild containers"
+        echo "  setup     - Configure bot token and admin IDs"
+        echo "  shell     - Open shell in container"
+        echo "  config    - Show current configuration"
+        echo "  backup    - Create backup archive"
+        echo "  restore   - Restore from backup"
+        echo ""
+        echo "Examples:"
+        echo "  mtproxy-control status"
+        echo "  mtproxy-control logs"
+        echo "  mtproxy-control restart"
+        ;;
+esac

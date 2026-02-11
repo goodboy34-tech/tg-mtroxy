@@ -26,7 +26,7 @@ const nodeClients = new Map<number, NodeApiClient>();
 
 // Хранилище состояний пользователей (для диалогов)
 interface UserState {
-  action: 'add_node' | 'add_secret' | 'add_socks5' | 'add_secret_domain' | 'add_secret_ip' | null;
+  action: 'add_node' | 'add_secret' | 'add_socks5' | 'add_secret_domain' | 'add_secret_ip' | 'set_ad_tag' | null;
   nodeId?: number;
   secret?: string;
   isFakeTls?: boolean;
@@ -179,9 +179,26 @@ bot.command('nodes', async (ctx) => {
     const statusEmoji = node.status === 'online' ? '🟢' : 
                        node.status === 'offline' ? '🔴' : '🟡';
     
-    text += `${statusEmoji} <b>${node.name}</b> (ID: ${node.id})\n`;
+    const client = getNodeClient(node.id);
+    let statsLine = '';
+    
+    // Получаем статистику для каждой ноды
+    try {
+      if (client) {
+        const stats = await client.getStats();
+        statsLine = `   📊 MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections} | SOCKS5: ${stats.socks5.connections}\n` +
+                   `   🌐 Трафик: ↓${(stats.network.inMb / 1024).toFixed(2)} GB ↑${(stats.network.outMb / 1024).toFixed(2)} GB\n`;
+      }
+    } catch (err) {
+      statsLine = `   ⚠️ Статистика недоступна\n`;
+    }
+    
+    text += `${statusEmoji} <b>${node.name}</b>\n`;
+    text += `   ID: ${node.id}\n`;
     text += `   Домен: <code>${node.domain}</code>\n`;
-    text += `   Статус: ${node.status} | Воркеры: ${node.workers}\n\n`;
+    text += `   Статус: ${node.status} | Воркеры: ${node.workers}\n`;
+    text += statsLine;
+    text += '\n';
     
     // Добавляем кнопку для каждой ноды
     buttons.push([
@@ -268,10 +285,13 @@ bot.command('node', async (ctx) => {
         { text: '🔄 Рестарт', callback_data: `restart_node_${node.id}` }
       ],
       [
-        { text: '📋 Логи', callback_data: `get_logs_${node.id}` },
-        { text: '🗑️ Удалить', callback_data: `delete_node_${node.id}` }
+        { text: '🏷️ AD_TAG', callback_data: `manage_ad_tag_${node.id}` },
+        { text: '📋 Логи', callback_data: `get_logs_${node.id}` }
       ],
-      [{ text: '⬅️ Назад к списку', callback_data: 'back_to_nodes_list' }]
+      [
+        { text: '🗑️ Удалить', callback_data: `delete_node_${node.id}` },
+        { text: '⬅️ Назад к списку', callback_data: 'back_to_nodes_list' }
+      ]
     ];
 
     await ctx.reply(nodeInfo, {
@@ -404,10 +424,13 @@ bot.action(/^node_info_(\d+)$/, async (ctx: any) => {
       { text: '🔄 Рестарт', callback_data: `restart_node_${nodeId}` }
     ],
     [
-      { text: '📋 Логи', callback_data: `get_logs_${nodeId}` },
-      { text: '🗑️ Удалить', callback_data: `delete_node_${nodeId}` }
+      { text: '🏷️ AD_TAG', callback_data: `manage_ad_tag_${nodeId}` },
+      { text: '📋 Логи', callback_data: `get_logs_${nodeId}` }
     ],
-    [{ text: '⬅️ Назад к списку', callback_data: 'back_to_nodes_list' }]
+    [
+      { text: '🗑️ Удалить', callback_data: `delete_node_${nodeId}` },
+      { text: '⬅️ Назад к списку', callback_data: 'back_to_nodes_list' }
+    ]
   ];
 
   await ctx.editMessageText(text, {
@@ -433,9 +456,26 @@ bot.action('refresh_nodes_list', async (ctx: any) => {
     const statusEmoji = node.status === 'online' ? '🟢' : 
                        node.status === 'offline' ? '🔴' : '🟡';
     
-    text += `${statusEmoji} <b>${node.name}</b> (ID: ${node.id})\n`;
+    const client = getNodeClient(node.id);
+    let statsLine = '';
+    
+    // Получаем статистику для каждой ноды
+    try {
+      if (client) {
+        const stats = await client.getStats();
+        statsLine = `   📊 MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections} | SOCKS5: ${stats.socks5.connections}\n` +
+                   `   🌐 Трафик: ↓${(stats.network.inMb / 1024).toFixed(2)} GB ↑${(stats.network.outMb / 1024).toFixed(2)} GB\n`;
+      }
+    } catch (err) {
+      statsLine = `   ⚠️ Статистика недоступна\n`;
+    }
+    
+    text += `${statusEmoji} <b>${node.name}</b>\n`;
+    text += `   ID: ${node.id}\n`;
     text += `   Домен: <code>${node.domain}</code>\n`;
-    text += `   Статус: ${node.status} | Воркеры: ${node.workers}\n\n`;
+    text += `   Статус: ${node.status} | Воркеры: ${node.workers}\n`;
+    text += statsLine;
+    text += '\n';
     
     buttons.push([
       { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` }
@@ -633,6 +673,127 @@ bot.action(/^logs_node_(\d+)$/, async (ctx: any) => {
     await ctx.answerCbQuery('Ошибка получения логов');
   }
 });
+
+// ─── УПРАВЛЕНИЕ AD_TAG ───
+
+bot.action(/^manage_ad_tag_(\d+)$/, async (ctx: any) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.editMessageText('❌ Нода не найдена');
+    return;
+  }
+
+  const text = 
+    `🏷️ <b>Управление AD_TAG</b>\n\n` +
+    `Нода: <b>${node.name}</b>\n` +
+    `Текущий AD_TAG: ${node.ad_tag ? `<code>${node.ad_tag}</code>` : '<i>не установлен</i>'}\n\n` +
+    `<b>Что такое AD_TAG?</b>\n` +
+    `Это 16-значный hex тег для монетизации трафика MTProxy.\n` +
+    `Получить можно у @MTProxybot после регистрации канала.\n\n` +
+    `<b>Формат:</b> 16 hex символов (a-f, 0-9)\n` +
+    `<b>Пример:</b> <code>a1b2c3d4e5f67890</code>`;
+
+  const buttons = [
+    [{ text: '✏️ Установить новый тег', callback_data: `set_ad_tag_prompt_${nodeId}` }],
+  ];
+
+  if (node.ad_tag) {
+    buttons.push([{ text: '🗑️ Удалить тег', callback_data: `remove_ad_tag_${nodeId}` }]);
+  }
+
+  buttons.push([{ text: '⬅️ Назад', callback_data: `node_info_${nodeId}` }]);
+
+  await ctx.editMessageText(text, {
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: buttons }
+  });
+});
+
+bot.action(/^set_ad_tag_prompt_(\d+)$/, async (ctx: any) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.editMessageText('❌ Нода не найдена');
+    return;
+  }
+
+  userStates.set(ctx.from.id, { action: 'set_ad_tag', nodeId });
+
+  await ctx.editMessageText(
+    `✏️ <b>Установка AD_TAG</b>\n\n` +
+    `Нода: <b>${node.name}</b>\n\n` +
+    `Отправьте 16-значный hex тег (a-f, 0-9)\n` +
+    `Пример: <code>a1b2c3d4e5f67890</code>\n\n` +
+    `Или /cancel для отмены`,
+    { 
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '❌ Отмена', callback_data: `manage_ad_tag_${nodeId}` }]
+        ]
+      }
+    }
+  );
+});
+
+bot.action(/^remove_ad_tag_(\d+)$/, async (ctx: any) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.editMessageText('❌ Нода не найдена');
+    return;
+  }
+
+  const client = getNodeClient(nodeId);
+  if (!client) {
+    await ctx.answerCbQuery('❌ Не удалось подключиться к ноде');
+    return;
+  }
+
+  try {
+    await ctx.editMessageText('⏳ Удаление AD_TAG...');
+    
+    await client.updateAdTag(null);
+    
+    queries.updateNodeAdTag.run({
+      id: nodeId,
+      ad_tag: null,
+    });
+
+    await ctx.editMessageText(
+      `✅ <b>AD_TAG удалён!</b>\n\n` +
+      `Нода: ${node.name}\n` +
+      `MTProxy перезапущен без рекламного тега.`,
+      { 
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '⬅️ Назад к ноде', callback_data: `node_info_${nodeId}` }]
+          ]
+        }
+      }
+    );
+
+    queries.insertLog.run({
+      node_id: nodeId,
+      level: 'info',
+      message: 'AD_TAG removed',
+      details: `Admin: ${ctx.from.id}`,
+    });
+
+  } catch (err: any) {
+    await ctx.editMessageText(`❌ Ошибка: ${err.message}`);
+  }
+});
+
+// ─── УДАЛЕНИЕ НОДЫ ───
 
 bot.action(/^confirm_delete_node_(\d+)$/, async (ctx) => {
   const nodeId = parseInt(ctx.match[1]);
@@ -2312,6 +2473,69 @@ bot.on(message('text'), async (ctx) => {
 
     } catch (err: any) {
       await ctx.reply(`❌ Ошибка при добавлении: ${err.message}`);
+      userStates.delete(userId);
+    }
+  }
+
+  // ─── Установка AD_TAG ───
+  if (state.action === 'set_ad_tag') {
+    const adTag = text.trim();
+    
+    // Валидация формата (16 hex символов)
+    if (!/^[a-f0-9]{16}$/i.test(adTag)) {
+      await ctx.reply(
+        '❌ Неверный формат AD_TAG!\n\n' +
+        'Должно быть 16 hex символов (a-f, 0-9)\n' +
+        'Пример: <code>a1b2c3d4e5f67890</code>\n\n' +
+        'Отправьте правильный тег или /cancel для отмены.',
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+
+    const node = queries.getNodeById.get(state.nodeId) as any;
+    if (!node) {
+      await ctx.reply('❌ Нода не найдена');
+      userStates.delete(userId);
+      return;
+    }
+
+    const client = getNodeClient(state.nodeId!);
+    if (!client) {
+      await ctx.reply('❌ Не удалось подключиться к ноде');
+      userStates.delete(userId);
+      return;
+    }
+
+    try {
+      await ctx.reply('⏳ Устанавливаю AD_TAG...');
+      
+      await client.updateAdTag(adTag);
+      
+      queries.updateNodeAdTag.run({
+        id: state.nodeId,
+        ad_tag: adTag,
+      });
+
+      userStates.delete(userId);
+
+      await ctx.reply(
+        `✅ <b>AD_TAG установлен!</b>\n\n` +
+        `Нода: ${node.name}\n` +
+        `Тег: <code>${adTag}</code>\n\n` +
+        `MTProxy перезапущен с новыми настройками.`,
+        { parse_mode: 'HTML' }
+      );
+
+      queries.insertLog.run({
+        node_id: state.nodeId,
+        level: 'info',
+        message: 'AD_TAG set',
+        details: `AD_TAG: ${adTag}, Admin: ${userId}`,
+      });
+
+    } catch (err: any) {
+      await ctx.reply(`❌ Ошибка: ${err.message}`);
       userStates.delete(userId);
     }
   }

@@ -1166,6 +1166,60 @@ bot.command('health', async (ctx) => {
   await ctx.reply(text, { parse_mode: 'HTML' });
 });
 
+bot.command('refresh_nodes', async (ctx) => {
+  await ctx.reply('🔄 Обновляю статус всех нод...');
+  
+  const nodes = queries.getActiveNodes.all([]) as any[];
+  let updated = 0;
+  let errors = 0;
+
+  for (const node of nodes) {
+    const client = getNodeClient(node.id);
+    if (!client) {
+      errors++;
+      continue;
+    }
+
+    try {
+      const health = await client.getHealth();
+      const stats = await client.getStats();
+
+      // Обновляем статус ноды
+      queries.updateNodeStatus.run({
+        id: node.id,
+        status: health.status === 'healthy' ? 'online' : 'offline',
+      });
+
+      // Сохраняем статистику
+      queries.insertStats.run({
+        node_id: node.id,
+        mtproto_connections: stats.mtproto.connections,
+        mtproto_max: stats.mtproto.maxConnections,
+        socks5_connections: stats.socks5.connections,
+        cpu_usage: health.system.cpuUsage,
+        ram_usage: health.system.ramUsage,
+        network_in_mb: stats.network.inMb,
+        network_out_mb: stats.network.outMb,
+      });
+
+      updated++;
+    } catch (err: any) {
+      queries.updateNodeStatus.run({
+        id: node.id,
+        status: 'error',
+      });
+      errors++;
+    }
+  }
+
+  await ctx.reply(
+    `✅ Обновление завершено!\n\n` +
+    `Обновлено: ${updated}\n` +
+    `Ошибок: ${errors}\n\n` +
+    `Проверьте: /nodes`
+  );
+});
+
 bot.command('logs', async (ctx) => {
   const args = ctx.message.text.split(' ').slice(1);
   const nodeId = parseInt(args[0]);
@@ -1637,12 +1691,17 @@ bot.command('cancel', async (ctx) => {
 bot.on(message('text'), async (ctx) => {
   const userId = ctx.from.id;
   const state = userStates.get(userId);
+  const text = ctx.message.text;
+  
+  console.log(`[TextHandler] User ${userId} sent text:`, text);
+  console.log(`[TextHandler] Current state:`, state);
   
   if (!state || !state.action) {
+    console.log('[TextHandler] No active state, ignoring message');
     return; // Игнорируем обычные сообщения
   }
 
-  const text = ctx.message.text;
+  console.log(`[TextHandler] Processing action: ${state.action}`);
 
   // ─── Добавление ноды ───
   if (state.action === 'add_node') {
@@ -1746,6 +1805,7 @@ bot.on(message('text'), async (ctx) => {
 
   // ─── Выбор домена для MTProto ───
   if (state.action === 'add_secret_domain') {
+    console.log('[MTProto] Processing domain input:', text);
     const domain = text.trim();
     
     if (!domain) {
@@ -1770,17 +1830,22 @@ bot.on(message('text'), async (ctx) => {
     const isFakeTls = state.isFakeTls || false;
     const typeText = isFakeTls ? 'Fake-TLS (DD)' : 'Обычный';
 
+    console.log(`[MTProto] Adding secret to node ${node.id} (${node.name})`);
+    console.log(`[MTProto] Secret: ${state.secret}, Domain: ${domain}, FakeTLS: ${isFakeTls}`);
+
     try {
       // Показываем прогресс
       await ctx.reply('⏳ Добавляю секрет на ноду...');
 
       // Добавляем секрет в БД
+      console.log('[MTProto] Inserting secret to database...');
       queries.insertSecret.run({
         node_id: state.nodeId,
         secret: state.secret,
         is_fake_tls: isFakeTls ? 1 : 0,
         description: `Домен: ${domain}`,
       });
+      console.log('[MTProto] Secret added to database');
 
       // Отправляем на ноду
       const client = getNodeClient(state.nodeId!);
@@ -1788,14 +1853,17 @@ bot.on(message('text'), async (ctx) => {
         throw new Error('Не удалось подключиться к ноде');
       }
 
+      console.log('[MTProto] Calling node API to add secret...');
       await client.addMtProtoSecret({
         secret: state.secret!,
         isFakeTls: isFakeTls,
         description: `Домен: ${domain}`
       });
+      console.log('[MTProto] Secret added to node successfully');
 
       // Генерируем ссылку
       const link = ProxyLinkGenerator.generateMtProtoLink(domain, 443, state.secret!, isFakeTls);
+      console.log('[MTProto] Generated link:', link);
 
       userStates.delete(userId);
 
@@ -1808,7 +1876,10 @@ bot.on(message('text'), async (ctx) => {
         { parse_mode: 'HTML' }
       );
 
+      console.log('[MTProto] Process completed successfully');
+
     } catch (err: any) {
+      console.error('[MTProto] Error adding secret:', err);
       userStates.delete(userId);
       await ctx.reply(
         `❌ <b>Ошибка при добавлении секрета:</b>\n\n` +
@@ -1823,6 +1894,7 @@ bot.on(message('text'), async (ctx) => {
 
   // ─── Выбор IP для MTProto ───
   if (state.action === 'add_secret_ip') {
+    console.log('[MTProto] Processing IP input:', text);
     const ip = text.trim();
     
     if (!ip) {
@@ -1847,17 +1919,22 @@ bot.on(message('text'), async (ctx) => {
     const isFakeTls = state.isFakeTls || false;
     const typeText = isFakeTls ? 'Fake-TLS (DD)' : 'Обычный';
 
+    console.log(`[MTProto] Adding secret to node ${node.id} (${node.name})`);
+    console.log(`[MTProto] Secret: ${state.secret}, IP: ${ip}, FakeTLS: ${isFakeTls}`);
+
     try {
       // Показываем прогресс
       await ctx.reply('⏳ Добавляю секрет на ноду...');
 
       // Добавляем секрет в БД
+      console.log('[MTProto] Inserting secret to database...');
       queries.insertSecret.run({
         node_id: state.nodeId,
         secret: state.secret,
         is_fake_tls: isFakeTls ? 1 : 0,
         description: `IP: ${ip}`,
       });
+      console.log('[MTProto] Secret added to database');
 
       // Отправляем на ноду
       const client = getNodeClient(state.nodeId!);
@@ -1865,14 +1942,17 @@ bot.on(message('text'), async (ctx) => {
         throw new Error('Не удалось подключиться к ноде');
       }
 
+      console.log('[MTProto] Calling node API to add secret...');
       await client.addMtProtoSecret({
         secret: state.secret!,
         isFakeTls: isFakeTls,
         description: `IP: ${ip}`
       });
+      console.log('[MTProto] Secret added to node successfully');
 
       // Генерируем ссылку
       const link = ProxyLinkGenerator.generateMtProtoLink(ip, 443, state.secret!, isFakeTls);
+      console.log('[MTProto] Generated link:', link);
 
       userStates.delete(userId);
 
@@ -1885,7 +1965,10 @@ bot.on(message('text'), async (ctx) => {
         { parse_mode: 'HTML' }
       );
 
+      console.log('[MTProto] Process completed successfully');
+
     } catch (err: any) {
+      console.error('[MTProto] Error adding secret:', err);
       userStates.delete(userId);
       await ctx.reply(
         `❌ <b>Ошибка при добавлении секрета:</b>\n\n` +

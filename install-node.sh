@@ -457,7 +457,7 @@ external: eth0
 
 # Authentication methods
 clientmethod: none
-socksmethod: username /etc/sockd.passwd
+socksmethod: username
 
 # User configuration
 user.privileged: root

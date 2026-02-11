@@ -796,6 +796,3 @@ else
     # New installation
     perform_install
 fi
-
-# Launch main function
-main

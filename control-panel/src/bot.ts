@@ -1669,7 +1669,7 @@ bot.on(message('text'), async (ctx) => {
     }
 
     // Генерируем ссылку
-    const link = SecretGenerator.generateMtProtoLink(domain, 443, state.secret!, false);
+    const link = ProxyLinkGenerator.generateMtProtoLink(domain, 443, state.secret!, false);
 
     userStates.delete(userId);
 
@@ -1729,7 +1729,7 @@ bot.on(message('text'), async (ctx) => {
     }
 
     // Генерируем ссылку
-    const link = SecretGenerator.generateMtProtoLink(ip, 443, state.secret!, false);
+    const link = ProxyLinkGenerator.generateMtProtoLink(ip, 443, state.secret!, false);
 
     userStates.delete(userId);
 

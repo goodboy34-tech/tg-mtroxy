@@ -92,7 +92,7 @@ bot.use(async (ctx, next) => {
   }
 
   console.log('User is admin, proceeding with update type:', ctx.updateType);
-  if (ctx.callbackQuery) {
+  if (ctx.callbackQuery && 'data' in ctx.callbackQuery) {
     console.log('Callback query data:', ctx.callbackQuery.data);
   }
   return next();

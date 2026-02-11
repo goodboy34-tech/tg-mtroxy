@@ -30,109 +30,118 @@ if [ -d "$INSTALL_DIR" ]; then
         echo "4) Выход"
         echo ""
         read -p "Ваш выбор (1-4): " choice
+        
+        case $choice in
+            1)
+                perform_update
+                ;;
+            2)
+                show_api_key
+                ;;
+            3)
+                perform_reinstall
+                ;;
+            4)
+                echo "Выход"
+                exit 0
+                ;;
+            *)
+                echo "❌ Неверный выбор"
+                exit 1
+                ;;
+        esac
     else
         echo "Скрипт запущен неинтерактивно. Выполняю обновление..."
-        choice=1
+        perform_update
     fi
-    
-    case $choice in
-        1)
-            echo ""
-            echo "🔄 Обновление..."
-            cd "$INSTALL_DIR"
-            
-            # Скачиваем обновленные файлы
-            REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
-            FILES=(
-                "package.json"
-                "package-lock.json"
-                "tsconfig.json"
-                "Dockerfile"
-                ".env.example"
-            )
-            
-            echo "Загрузка обновлений..."
-            for file in "${FILES[@]}"; do
-                echo "  📄 $file"
-                curl -fsSL "$REPO_URL/$file" -o "node-agent/$file"
-            done
-            
-            # Загружаем обновленный api.ts
-            echo "  📁 src/api.ts"
-            curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
-            
-            # Перезапускаем контейнеры
-            docker compose down
-            docker compose up -d --build
-            
-            # Показываем API KEY
-            if [ -f "node-agent/.env" ]; then
-                API_KEY=$(grep "^API_TOKEN=" node-agent/.env | cut -d '=' -f2)
-                if [ -n "$API_KEY" ]; then
-                    IP=$(curl -s ifconfig.me)
-                    echo ""
-                    echo "✅ Обновление завершено!"
-                    echo ""
-                    echo "📋 Данные для добавления в бот:"
-                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "name: Node-1"
-                    echo "ip: $IP"
-                    echo "api_key: $API_KEY"
-                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                fi
-            fi
-            exit 0
-            ;;
-        2)
-            echo ""
-            if [ -f "$INSTALL_DIR/node-agent/.env" ]; then
-                API_KEY=$(grep "^API_TOKEN=" "$INSTALL_DIR/node-agent/.env" | cut -d '=' -f2)
-                IP=$(curl -s ifconfig.me)
-                if [ -n "$API_KEY" ]; then
-                    echo "📋 Данные для добавления в бот:"
-                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "name: Node-1"
-                    echo "ip: $IP"
-                    echo "api_key: $API_KEY"
-                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                else
-                    echo "❌ API_TOKEN не найден в .env файле"
-                fi
-            else
-                echo "❌ Файл .env не найден"
-            fi
-            exit 0
-            ;;
-        3)
-            echo ""
-            echo "⚠️  ВНИМАНИЕ! Все данные будут удалены!"
-            if [ -t 0 ]; then
-                read -p "Продолжить? (yes/no): " confirm
-                if [ "$confirm" != "yes" ]; then
-                    echo "Отменено"
-                    exit 0
-                fi
-            else
-                echo "Скрипт запущен неинтерактивно. Пропускаю переустановку."
-                echo "Для переустановки запустите скрипт интерактивно."
-                exit 0
-            fi
-            cd "$INSTALL_DIR"
-            docker compose down -v
-            cd /
-            rm -rf "$INSTALL_DIR"
-            echo "✅ Старая установка удалена"
-            ;;
-        4)
-            echo "Выход"
-            exit 0
-            ;;
-        *)
-            echo "❌ Неверный выбор"
-            exit 1
-            ;;
-    esac
 fi
+
+# Функция обновления
+perform_update() {
+    echo ""
+    echo "🔄 Обновление..."
+    cd "$INSTALL_DIR"
+    
+    # Скачиваем обновленные файлы
+    REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
+    FILES=(
+        "package.json"
+        "package-lock.json"
+        "tsconfig.json"
+        "Dockerfile"
+        ".env.example"
+    )
+    
+    echo "Загрузка обновлений..."
+    for file in "${FILES[@]}"; do
+        echo "  📄 $file"
+        curl -fsSL "$REPO_URL/$file" -o "node-agent/$file"
+    done
+    
+    # Загружаем обновленный api.ts
+    echo "  📁 src/api.ts"
+    curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
+    
+    # Перезапускаем контейнеры
+    docker compose down
+    docker compose up -d --build
+    
+    # Показываем API KEY
+    if [ -f "node-agent/.env" ]; then
+        API_KEY=$(grep "^API_TOKEN=" node-agent/.env | cut -d '=' -f2)
+        if [ -n "$API_KEY" ]; then
+            IP=$(curl -s ifconfig.me)
+            echo ""
+            echo "✅ Обновление завершено!"
+            echo ""
+            echo "📋 Данные для добавления в бот:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "name: Node-1"
+            echo "ip: $IP"
+            echo "api_key: $API_KEY"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        fi
+    fi
+    exit 0
+}
+
+# Функция показа API KEY
+show_api_key() {
+    echo ""
+    if [ -f "$INSTALL_DIR/node-agent/.env" ]; then
+        API_KEY=$(grep "^API_TOKEN=" "$INSTALL_DIR/node-agent/.env" | cut -d '=' -f2)
+        IP=$(curl -s ifconfig.me)
+        if [ -n "$API_KEY" ]; then
+            echo "📋 Данные для добавления в бот:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "name: Node-1"
+            echo "ip: $IP"
+            echo "api_key: $API_KEY"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        else
+            echo "❌ API_TOKEN не найден в .env файле"
+        fi
+    else
+        echo "❌ Файл .env не найден"
+    fi
+    exit 0
+}
+
+# Функция переустановки
+perform_reinstall() {
+    echo ""
+    echo "⚠️  ВНИМАНИЕ! Все данные будут удалены!"
+    read -p "Продолжить? (yes/no): " confirm
+    if [ "$confirm" != "yes" ]; then
+        echo "Отменено"
+        exit 0
+    fi
+    cd "$INSTALL_DIR"
+    docker compose down -v
+    cd /
+    rm -rf "$INSTALL_DIR"
+    echo "✅ Старая установка удалена"
+}
 
 # Функция для настройки после установки
 setup_api_token() {

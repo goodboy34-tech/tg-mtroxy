@@ -434,10 +434,11 @@ async function updateSocks5Config(accounts: Array<{ username: string; password: 
   console.log(`[SOCKS5] GOST v3 config created with ${accounts.length} accounts`);
 
   // Запускаем GOST v3 с JSON конфигом
+  // Монтируем в /gost.json чтобы избежать конфликта с директорией /etc
   const cmd = `docker run -d --name=mtproxy-socks5 --restart=unless-stopped ` +
               `-p ${SOCKS5_PORT}:${SOCKS5_PORT} ` +
-              `-v ${configFile}:/etc/gost.json:ro ` +
-              `gogost/gost -C /etc/gost.json`;
+              `-v ${configFile}:/gost.json:ro ` +
+              `gogost/gost -C /gost.json`;
 
   try {
     execSync(cmd);

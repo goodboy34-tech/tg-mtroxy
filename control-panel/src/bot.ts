@@ -528,22 +528,22 @@ bot.action(/^add_secret_(\d+)$/, async (ctx) => {
     return;
   }
 
-  // Устанавливаем состояние ожидания секрета
-  userStates.set(ctx.from!.id, { action: 'add_secret', nodeId });
+  // Генерируем секрет
+  const secret = SecretGenerator.generateMtProtoSecret();
 
   await ctx.editMessageText(
-    `➕ Добавление MTProto секрета для ${node.name}
+    `🔐 Добавление MTProto секрета
 
-Отправьте секрет в формате:
-dd1234567890abcdef1234567890abcdef
+Нода: ${node.name}
+Секрет: ${secret}
 
-Или используйте /generate_secret для генерации нового.
-
-Отправьте /cancel для отмены.`,
+Выберите тип подключения:`,
     {
-      reply_markup: {
-        inline_keyboard: [[{ text: '⬅️ Назад', callback_data: `manage_node_links_${nodeId}` }]]
-      }
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🌐 Домен', `add_secret_domain_${nodeId}_${secret}`)],
+        [Markup.button.callback('📍 IP адрес', `add_secret_ip_${nodeId}_${secret}`)],
+        [Markup.button.callback('❌ Отмена', 'cancel')],
+      ])
     }
   );
 });

@@ -68,7 +68,8 @@ app.get('/health', async (req, res) => {
     const diskUsage = await getDiskUsage();
     const uptime = getUptime();
 
-    const status = mtprotoRunning && socks5Running ? 'healthy' : 'unhealthy';
+    // Статус healthy если MTProto работает (SOCKS5 опционален)
+    const status = mtprotoRunning ? 'healthy' : 'unhealthy';
 
     res.json({
       status,

@@ -200,14 +200,16 @@ bot.command('nodes', async (ctx) => {
     text += statsLine;
     text += '\n';
     
-    // Добавляем кнопку для каждой ноды
+    // Добавляем кнопки для каждой ноды (несколько в ряд)
     buttons.push([
-      { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` }
+      { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` },
+      { text: '🔗', callback_data: `get_links_${node.id}` },
+      { text: '🔄', callback_data: `restart_node_${node.id}` }
     ]);
   }
   
   // Кнопка обновления списка
-  buttons.push([{ text: '🔄 Обновить', callback_data: 'refresh_nodes_list' }]);
+  buttons.push([{ text: '🔄 Обновить список', callback_data: 'refresh_nodes_list' }]);
 
   await ctx.reply(text, { 
     parse_mode: 'HTML',
@@ -478,11 +480,13 @@ bot.action('refresh_nodes_list', async (ctx: any) => {
     text += '\n';
     
     buttons.push([
-      { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` }
+      { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` },
+      { text: '🔗', callback_data: `get_links_${node.id}` },
+      { text: '🔄', callback_data: `restart_node_${node.id}` }
     ]);
   }
   
-  buttons.push([{ text: '🔄 Обновить', callback_data: 'refresh_nodes_list' }]);
+  buttons.push([{ text: '🔄 Обновить список', callback_data: 'refresh_nodes_list' }]);
 
   await ctx.editMessageText(text, { 
     parse_mode: 'HTML',
@@ -622,7 +626,7 @@ bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
 
 bot.action(/^restart_node_(\d+)$/, async (ctx: any) => {
   const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
+  await ctx.answerCbQuery('Перезапускаю...');
 
   const node = queries.getNodeById.get(nodeId) as any;
   if (!node) {
@@ -637,11 +641,30 @@ bot.action(/^restart_node_(\d+)$/, async (ctx: any) => {
   }
 
   try {
+    // Отправляем команду перезапуска
     await client.rebootNode();
-    await ctx.answerCbQuery('Нода перезапущена');
-  } catch (error) {
-    console.error('Failed to restart node:', error);
-    await ctx.answerCbQuery('Ошибка перезапуска');
+    
+    // Отправляем подтверждение в чат
+    await ctx.reply(
+      `✅ <b>Нода "${node.name}" перезапускается</b>\n\n` +
+      `Это займёт около 10-30 секунд.\n` +
+      `Используйте /node ${nodeId} для проверки статуса.`,
+      { parse_mode: 'HTML' }
+    );
+    
+    queries.insertLog.run({
+      node_id: nodeId,
+      level: 'info',
+      message: 'Node restart requested',
+      details: `Admin: ${ctx.from.id}`,
+    });
+    
+  } catch (error: any) {
+    await ctx.reply(
+      `❌ <b>Ошибка перезапуска ноды "${node.name}"</b>\n\n` +
+      `${error.message}`,
+      { parse_mode: 'HTML' }
+    );
   }
 });
 

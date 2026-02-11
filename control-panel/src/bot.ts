@@ -417,37 +417,125 @@ bot.action(/^add_socks5_(\d+)$/, async (ctx) => {
 
 bot.action('show_nodes', async (ctx) => {
   await ctx.answerCbQuery();
-  // Перенаправляем на команду nodes — создаём фейковый update
-  const fakeUpdate: any = { update_id: 0, message: { text: '/nodes', from: ctx.from, chat: ctx.chat } };
-  await bot.handleUpdate(fakeUpdate);
+
+  const nodes = queries.getAllNodes.all([]) as any[];
+
+  if (nodes.length === 0) {
+    return ctx.reply('📭 Нет добавленных нод.\n\nИспользуйте /add_node для добавления.');
+  }
+
+  let text = '📡 *Список нод:*\n\n';
+
+  for (const node of nodes) {
+    const statusEmoji = node.status === 'online' ? '🟢' :
+                       node.status === 'offline' ? '🔴' : '🟡';
+
+    text += `${statusEmoji} *${node.name}*\n`;
+    text += `   ID: \`${node.id}\`\n`;
+    text += `   Домен: \`${node.domain}\`\n`;
+    text += `   Статус: ${node.status}\n`;
+    text += `   Воркеры: ${node.workers}\n`;
+    text += `   /node ${node.id}\n\n`;
+  }
+
+  await ctx.reply(text, { parse_mode: 'Markdown' });
 });
 
 bot.action('add_node', async (ctx) => {
   await ctx.answerCbQuery();
-  // Перенаправляем на команду add_node — создаём фейковый update
-  const fakeUpdate: any = { update_id: 0, message: { text: '/add_node', from: ctx.from, chat: ctx.chat } };
-  await bot.handleUpdate(fakeUpdate);
+
+  // Устанавливаем состояние ожидания данных ноды
+  userStates.set(ctx.from!.id, { action: 'add_node' });
+
+  await ctx.reply(
+    '➕ Добавление новой ноды\n\n' +
+    'Отправьте данные ноды в формате:\n\n' +
+    'name: Node-Moscow\n' +
+    'ip: 1.2.3.4\n' +
+    'api_key: ваш_api_key_с_сервера\n\n' +
+    'Бот настроит прокси автоматически через API!\n\n' +
+    'Отправьте /cancel для отмены.'
+  );
 });
 
 bot.action('show_stats', async (ctx) => {
   await ctx.answerCbQuery();
-  // Перенаправляем на команду stats — создаём фейковый update
-  const fakeUpdate: any = { update_id: 0, message: { text: '/stats', from: ctx.from, chat: ctx.chat } };
-  await bot.handleUpdate(fakeUpdate);
+
+  const nodes = queries.getActiveNodes.all([]) as any[];
+  const allStats = queries.getAllNodesLatestStats.all([]) as any[];
+
+  let text = '📊 *Общая статистика*\n\n';
+  text += `Нод активно: ${nodes.length}\n\n`;
+
+  let totalMtprotoConnections = 0;
+  let totalSocks5Connections = 0;
+
+  for (const stat of allStats) {
+    totalMtprotoConnections += stat.mtproto_connections || 0;
+    totalSocks5Connections += stat.socks5_connections || 0;
+
+    text += `*${stat.node_name}*\n`;
+    text += `  MTProto: ${stat.mtproto_connections}/${stat.mtproto_max}\n`;
+    text += `  SOCKS5: ${stat.socks5_connections}\n`;
+    text += `  CPU: ${stat.cpu_usage?.toFixed(1)}% | RAM: ${stat.ram_usage?.toFixed(1)}%\n\n`;
+  }
+
+  text += `*Итого:*\n`;
+  text += `MTProto подключений: ${totalMtprotoConnections}\n`;
+  text += `SOCKS5 подключений: ${totalSocks5Connections}\n`;
+
+  await ctx.reply(text, { parse_mode: 'Markdown' });
 });
 
 bot.action('show_help', async (ctx) => {
   await ctx.answerCbQuery();
-  // Перенаправляем на команду help — создаём фейковый update
-  const fakeUpdate: any = { update_id: 0, message: { text: '/help', from: ctx.from, chat: ctx.chat } };
-  await bot.handleUpdate(fakeUpdate);
+
+  await ctx.reply(
+    '📖 *Справка по командам*\n\n' +
+    '*Управление нодами:*\n' +
+    '/nodes - список всех нод\n' +
+    '/add\\_node - добавить новую ноду\n' +
+    '/node <id> - информация о ноде\n' +
+    '/remove\\_node <id> - удалить ноду\n' +
+    '/restart\\_node <id> - перезапустить прокси\n\n' +
+    '*Получение доступов:*\n' +
+    '/links <node\\_id> - получить все ссылки\n' +
+    '/add\\_secret <node\\_id> - добавить секрет\n' +
+    '/add\\_socks5 <node\\_id> - добавить SOCKS5 аккаунт\n\n' +
+    '*Подписки:*\n' +
+    '/create\\_subscription <название> - создать подписку\n' +
+    '/subscriptions - список всех подписок\n' +
+    '/subscription <id> - детали подписки\n\n' +
+    '*Мониторинг:*\n' +
+    '/stats - общая статистика\n' +
+    '/health - здоровье всех нод\n' +
+    '/logs <node\\_id> - логи ноды\n\n' +
+    '*Настройки:*\n' +
+    '/set\\_workers <node\\_id> <count> - воркеры\n' +
+    '/update\\_node <id> - обновить конфиг',
+    { parse_mode: 'Markdown' }
+  );
 });
 
 bot.action('back_to_main', async (ctx) => {
   await ctx.answerCbQuery();
-  // Возвращаемся в главное меню — создаём фейковый update
-  const fakeUpdate: any = { update_id: 0, message: { text: '/start', from: ctx.from, chat: ctx.chat } };
-  await bot.handleUpdate(fakeUpdate);
+
+  await ctx.reply(
+    '👋 *MTProxy Management Bot*\n\n' +
+    'Управление прокси-серверами через Telegram.',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '📋 Ноды', callback_data: 'show_nodes' }],
+          [{ text: '➕ Добавить ноду', callback_data: 'add_node' }],
+          [{ text: '🔗 Управление ссылками', callback_data: 'manage_links' }],
+          [{ text: '📊 Статистика', callback_data: 'show_stats' }],
+          [{ text: '📖 Справка', callback_data: 'show_help' }]
+        ]
+      }
+    }
+  );
 });
 
 // ═══════════════════════════════════════════════

@@ -459,10 +459,10 @@ services:
         max-file: "3"
 
   socks5:
-    image: ginuerzh/gost:latest
+    image: gogost/gost:latest
     container_name: mtproxy-socks5
     restart: unless-stopped
-    command: ["-L=socks5://testuser:testpass@:1080"]
+    command: ["-L", "socks5://testuser:testpass@:1080"]
     ports:
       - "1080:1080"
     networks:
@@ -630,10 +630,10 @@ services:
         max-file: "3"
 
   socks5:
-    image: ginuerzh/gost:latest
+    image: gogost/gost:latest
     container_name: mtproxy-socks5
     restart: unless-stopped
-    command: ["-L=socks5://testuser:testpass@:1080"]
+    command: ["-L", "socks5://testuser:testpass@:1080"]
     ports:
       - "1080:1080"
     networks:

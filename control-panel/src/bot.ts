@@ -411,7 +411,7 @@ bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
     }
   }
 
-  await ctx.reply(text);
+  await ctx.reply(text, { parse_mode: 'Markdown' });
 });
 
 bot.action(/^restart_node_(\d+)$/, async (ctx: any) => {

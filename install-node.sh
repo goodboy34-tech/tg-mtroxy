@@ -120,40 +120,122 @@ cd "\$MT_PROXY_DIR" || {
 
 perform_update() {
     echo ""
-    echo "-> Updating node-agent from GitHub..."
+    echo "========================================================"
+    echo "  Updating node-agent from GitHub"
+    echo "========================================================"
+    echo ""
 
-    # Backup existing .env file
-    ENV_BACKUP=""
-    if [ -f "node-agent/.env" ]; then
-        ENV_BACKUP=\$(cat node-agent/.env)
-        echo "* Backing up .env file..."
+    # Check if we're in a git repository
+    if [ -d ".git" ]; then
+        echo "* Fetching latest changes..."
+        git fetch origin master
+
+        # Get current and remote commits
+        LOCAL=\$(git rev-parse @)
+        REMOTE=\$(git rev-parse @{u})
+
+        if [ "\$LOCAL" = "\$REMOTE" ]; then
+            echo "✓ Already up to date!"
+            return 0
+        fi
+
+        echo ""
+        echo "----------------------------------------"
+        echo "  Changes to be applied:"
+        echo "----------------------------------------"
+        
+        # Show commit log
+        git log HEAD..@{u} --pretty=format:"%C(yellow)%h%C(reset) %C(cyan)%ar%C(reset) %s" --abbrev-commit
+        
+        echo ""
+        echo ""
+        echo "----------------------------------------"
+        echo "  Detailed changes:"
+        echo "----------------------------------------"
+        
+        # Show diff for node-agent files only
+        git diff HEAD..@{u} --stat node-agent/
+        
+        echo ""
+        echo "----------------------------------------"
+        
+        # Ask for confirmation
+        read -p "Do you want to apply these updates? (y/n): " -n 1 -r
+        echo ""
+        
+        if [[ ! \$REPLY =~ ^[Yy]$ ]]; then
+            echo "* Update cancelled"
+            return 1
+        fi
+
+        echo ""
+        echo "* Applying updates..."
+
+        # Backup .env file
+        ENV_BACKUP=""
+        if [ -f "node-agent/.env" ]; then
+            ENV_BACKUP=\$(cat node-agent/.env)
+            echo "* Backing up .env file..."
+        fi
+
+        # Pull changes
+        git pull origin master
+
+        # Restore .env file
+        if [ -n "\$ENV_BACKUP" ]; then
+            echo "\$ENV_BACKUP" > node-agent/.env
+            echo "* Restored .env file"
+        fi
+
+        echo "* Rebuilding containers..."
+        cd node-agent
+        docker compose build --no-cache
+        docker compose up -d
+        cd ..
+
+        echo ""
+        echo "✓ Update completed successfully!"
+        
+    else
+        # Fallback: download from GitHub directly (old method)
+        echo "* Not a git repository. Using direct download method..."
+        
+        # Backup existing .env file
+        ENV_BACKUP=""
+        if [ -f "node-agent/.env" ]; then
+            ENV_BACKUP=\$(cat node-agent/.env)
+            echo "* Backing up .env file..."
+        fi
+
+        # Clean and recreate node-agent directory
+        rm -rf node-agent
+        mkdir -p node-agent/src
+
+        # Restore .env file
+        if [ -n "\$ENV_BACKUP" ]; then
+            echo "\$ENV_BACKUP" > node-agent/.env
+            echo "* Restored .env file"
+        fi
+
+        # Download updated files from GitHub
+        REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
+        
+        echo "* Downloading updates..."
+        curl -fsSL "\$REPO_URL/package.json" -o "node-agent/package.json"
+        curl -fsSL "\$REPO_URL/package-lock.json" -o "node-agent/package-lock.json"
+        curl -fsSL "\$REPO_URL/tsconfig.json" -o "node-agent/tsconfig.json"
+        curl -fsSL "\$REPO_URL/Dockerfile" -o "node-agent/Dockerfile"
+        curl -fsSL "\$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
+
+        echo "* Rebuilding container..."
+        cd node-agent
+        docker compose down
+        docker compose build --no-cache
+        docker compose up -d
+        cd ..
+
+        echo "✓ Update completed!"
     fi
-
-    # Clean and recreate node-agent directory
-    rm -rf node-agent
-    mkdir -p node-agent/src
-
-    # Restore .env file
-    if [ -n "\$ENV_BACKUP" ]; then
-        echo "\$ENV_BACKUP" > node-agent/.env
-        echo "* Restored .env file"
-    fi
-
-    # Download updated files from GitHub
-    REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
-    
-    echo "* Downloading updates..."
-    curl -fsSL "\$REPO_URL/package.json" -o "node-agent/package.json"
-    curl -fsSL "\$REPO_URL/package-lock.json" -o "node-agent/package-lock.json"
-    curl -fsSL "\$REPO_URL/tsconfig.json" -o "node-agent/tsconfig.json"
-    curl -fsSL "\$REPO_URL/Dockerfile" -o "node-agent/Dockerfile"
-    curl -fsSL "\$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
-
-    echo "* Rebuilding container..."
-    docker compose down node-agent
-    docker compose up -d --build node-agent
-
-    echo "* Update completed!"
 }
 
 # ═══════════════════════════════════════════════

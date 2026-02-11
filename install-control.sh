@@ -300,13 +300,64 @@ case "$1" in
         echo "-> Restarted"
         ;;
     update)
-        echo "* Updating from GitHub..."
+        echo ""
+        echo "========================================================"
+        echo "  Updating control-panel from GitHub"
+        echo "========================================================"
+        echo ""
+        echo "* Fetching latest changes..."
+        git fetch origin master
+
+        # Get current and remote commits
+        LOCAL=\$(git rev-parse @)
+        REMOTE=\$(git rev-parse @{u})
+
+        if [ "\$LOCAL" = "\$REMOTE" ]; then
+            echo "✓ Already up to date!"
+            exit 0
+        fi
+
+        echo ""
+        echo "----------------------------------------"
+        echo "  Changes to be applied:"
+        echo "----------------------------------------"
+        
+        # Show commit log
+        git log HEAD..@{u} --pretty=format:"%C(yellow)%h%C(reset) %C(cyan)%ar%C(reset) %s" --abbrev-commit
+        
+        echo ""
+        echo ""
+        echo "----------------------------------------"
+        echo "  Detailed changes:"
+        echo "----------------------------------------"
+        
+        # Show diff for control-panel files only
+        git diff HEAD..@{u} --stat control-panel/
+        
+        echo ""
+        echo "----------------------------------------"
+        
+        # Ask for confirmation
+        read -p "Do you want to apply these updates? (y/n): " -n 1 -r
+        echo ""
+        
+        if [[ ! \$REPLY =~ ^[Yy]$ ]]; then
+            echo "* Update cancelled"
+            exit 1
+        fi
+
+        echo ""
+        echo "* Applying updates..."
         git pull origin master
+        
         echo "* Rebuilding containers..."
         docker compose build --no-cache
+        
         echo "* Restarting service..."
         systemctl restart mtproxy-control
-        echo "-> Update completed!"
+        
+        echo ""
+        echo "✓ Update completed successfully!"
         ;;
     rebuild)
         echo "* Rebuilding containers..."

@@ -457,7 +457,7 @@ external: 0.0.0.0
 
 # Authentication methods
 clientmethod: none
-socksmethod: username
+socksmethod: username /etc/sockd.passwd
 
 # User configuration
 user.privileged: root
@@ -478,8 +478,10 @@ socks pass {
 }
 EOF
 
-    # Create empty password file
-    touch socks5/sockd.passwd
+    # Create initial password file with test user
+    cat > socks5/sockd.passwd <<EOF
+testuser:testpass
+EOF
 
     echo "-> SOCKS5 configuration created"
 

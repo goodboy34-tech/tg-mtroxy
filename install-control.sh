@@ -113,17 +113,26 @@ perform_update() {
         exit 1
     fi
 
-    # Ensure systemd service exists
-    if [ ! -f "/etc/systemd/system/mtproxy-control.service" ]; then
-        echo "* Recreating systemd service..."
-        create_systemd_service
+    # Always recreate systemd service to ensure it's up to date
+    echo "* Ensuring systemd service is properly configured..."
+    create_systemd_service
+    if [ -f "/etc/systemd/system/mtproxy-control.service" ]; then
+        echo "* Service file created successfully"
         systemctl daemon-reload
-        systemctl enable mtproxy-control
+        systemctl enable mtproxy-control 2>/dev/null || echo "* Warning: Could not enable service"
+    else
+        echo "X Failed to create service file"
+        exit 1
     fi
 
     # Restart service
     systemctl daemon-reload
-    systemctl restart mtproxy-control
+    if systemctl restart mtproxy-control; then
+        echo "* Service restarted successfully"
+    else
+        echo "X Failed to restart service, checking status..."
+        systemctl status mtproxy-control --no-pager -l || echo "* Service status check failed"
+    fi
 
     # Create global management command
     create_management_command

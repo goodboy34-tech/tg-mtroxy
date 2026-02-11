@@ -116,7 +116,20 @@ perform_update() {
         chmod 644 node-agent/.env
         echo "* Restored .env file..."
     else
-        echo "* No .env backup to restore"
+        echo "* Creating default .env file..."
+        # Create default .env if it doesn't exist
+        if [ ! -f "node-agent/.env" ]; then
+            cat > node-agent/.env <<EOF
+# API Configuration
+API_TOKEN=change_me_in_bot
+API_PORT=3000
+
+# Node Environment
+NODE_ENV=production
+EOF
+            chmod 644 node-agent/.env
+            echo "* Default .env file created"
+        fi
     fi
 
     # Download updated files
@@ -150,69 +163,25 @@ perform_update() {
     # Download docker-compose configuration
     echo "  * docker-compose.yml"
     cat > docker-compose.yml <<'DOCKER_COMPOSE_EOF'
-# Docker Compose для установки ноды на том же сервере с панелью управления
-# Использует нестандартные порты чтобы избежать конфликтов
-
 services:
-  # Node Agent API для управления прокси
   node-agent:
     build:
       context: ./node-agent
       dockerfile: Dockerfile
-    container_name: mtproxy-node-local
+    container_name: mtproxy-node-agent
     restart: unless-stopped
     env_file:
       - ./node-agent/.env
     environment:
       - NODE_ENV=production
-      - API_PORT=9090
-      - MTPROTO_PORT=8443
-      - SOCKS5_PORT=9080
+      - API_PORT=3000
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./node-data:/app/data
-      - ./certs:/app/certs:ro
     ports:
-      - "9090:9090"
+      - "3000:3000"
     networks:
       - mtproxy-network
-    depends_on:
-      - mtproto-local
-      - socks5-local
-
-  # MTProto Proxy (локальная нода)
-  mtproto-local:
-    image: telegrammessenger/proxy:latest
-    container_name: mtproxy-local
-    restart: unless-stopped
-    environment:
-      - SECRET=${SECRET:-}
-      - SECRET_COUNT=${SECRET_COUNT:-1}
-      - TAG=${TAG:-}
-      - WORKERS=${WORKERS:-2}
-    volumes:
-      - mtproxy-local-config:/data
-    ports:
-      - "8443:443"
-      - "2399:2398"
-    networks:
-      - mtproxy-network
-
-  # SOCKS5 Proxy (локальная нода)
-  socks5-local:
-    image: ghcr.io/txthinking/socks5:latest
-    container_name: socks5-local
-    restart: unless-stopped
-    environment:
-      - Socks5_User=${SOCKS5_USER:-}
-      - Socks5_Password=${SOCKS5_PASSWORD:-}
-    ports:
-      - "9080:1080"
-    networks:
-      - mtproxy-network
-
-volumes:
-  mtproxy-local-config:
 
 networks:
   mtproxy-network:
@@ -454,69 +423,25 @@ perform_install() {
     echo "* Creating docker-compose configuration..."
 
     cat > docker-compose.yml <<'DOCKER_COMPOSE_EOF'
-# Docker Compose для установки ноды на том же сервере с панелью управления
-# Использует нестандартные порты чтобы избежать конфликтов
-
 services:
-  # Node Agent API для управления прокси
   node-agent:
     build:
       context: ./node-agent
       dockerfile: Dockerfile
-    container_name: mtproxy-node-local
+    container_name: mtproxy-node-agent
     restart: unless-stopped
     env_file:
       - ./node-agent/.env
     environment:
       - NODE_ENV=production
-      - API_PORT=9090
-      - MTPROTO_PORT=8443
-      - SOCKS5_PORT=9080
+      - API_PORT=3000
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./node-data:/app/data
-      - ./certs:/app/certs:ro
     ports:
-      - "9090:9090"
+      - "3000:3000"
     networks:
       - mtproxy-network
-    depends_on:
-      - mtproto-local
-      - socks5-local
-
-  # MTProto Proxy (локальная нода)
-  mtproto-local:
-    image: telegrammessenger/proxy:latest
-    container_name: mtproxy-local
-    restart: unless-stopped
-    environment:
-      - SECRET=${SECRET:-}
-      - SECRET_COUNT=${SECRET_COUNT:-1}
-      - TAG=${TAG:-}
-      - WORKERS=${WORKERS:-2}
-    volumes:
-      - mtproxy-local-config:/data
-    ports:
-      - "8443:443"
-      - "2399:2398"
-    networks:
-      - mtproxy-network
-
-  # SOCKS5 Proxy (локальная нода)
-  socks5-local:
-    image: ghcr.io/txthinking/socks5:latest
-    container_name: socks5-local
-    restart: unless-stopped
-    environment:
-      - Socks5_User=${SOCKS5_USER:-}
-      - Socks5_Password=${SOCKS5_PASSWORD:-}
-    ports:
-      - "9080:1080"
-    networks:
-      - mtproxy-network
-
-volumes:
-  mtproxy-local-config:
 
 networks:
   mtproxy-network:

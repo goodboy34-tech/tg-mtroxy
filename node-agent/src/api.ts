@@ -211,9 +211,8 @@ app.post('/socks5/accounts', async (req, res) => {
     accounts.push({ username, password, description: description || '' });
     saveSocks5Accounts(accounts);
 
-    // Обновляем конфигурацию SOCKS5
+    // Обновляем конфигурацию SOCKS5 (пересоздаёт контейнер)
     await updateSocks5Config(accounts);
-    await restartSocks5();
 
     res.json({ success: true });
   } catch (error: any) {
@@ -234,8 +233,9 @@ app.delete('/socks5/accounts/:username', async (req, res) => {
     }
 
     saveSocks5Accounts(accounts);
+    
+    // Обновляем конфигурацию SOCKS5 (пересоздаёт контейнер)
     await updateSocks5Config(accounts);
-    await restartSocks5();
 
     res.json({ success: true });
   } catch (error: any) {

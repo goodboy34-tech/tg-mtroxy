@@ -87,6 +87,9 @@ perform_update() {
     echo ""
     echo "-> Updating..."
 
+    # Always update the management command first
+    create_management_command
+
     # Check if installation directory exists
     if [ ! -d "$INSTALL_DIR" ]; then
         echo "X Installation directory $INSTALL_DIR not found"

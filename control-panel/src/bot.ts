@@ -315,25 +315,25 @@ bot.action('cancel', async (ctx) => {
 bot.action(/^get_links_(\d+)$/, async (ctx) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
-  // Перенаправляем на команду links
-  ctx.message = { text: `/links ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
+  // Перенаправляем на команду links — создаём фейковый update
+  const fakeUpdate: any = { update_id: 0, message: { text: `/links ${nodeId}`, from: ctx.from, chat: ctx.chat } };
+  await bot.handleUpdate(fakeUpdate);
 });
 
 bot.action(/^restart_node_(\d+)$/, async (ctx) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
-  // Перенаправляем на команду restart_node
-  ctx.message = { text: `/restart_node ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
+  // Перенаправляем на команду restart_node — создаём фейковый update
+  const fakeUpdate: any = { update_id: 0, message: { text: `/restart_node ${nodeId}`, from: ctx.from, chat: ctx.chat } };
+  await bot.handleUpdate(fakeUpdate);
 });
 
 bot.action(/^logs_node_(\d+)$/, async (ctx) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
-  // Перенаправляем на команду logs
-  ctx.message = { text: `/logs ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
+  // Перенаправляем на команду logs — создаём фейковый update
+  const fakeUpdate: any = { update_id: 0, message: { text: `/logs ${nodeId}`, from: ctx.from, chat: ctx.chat } };
+  await bot.handleUpdate(fakeUpdate);
 });
 
 bot.action(/^confirm_delete_node_(\d+)$/, async (ctx) => {
@@ -387,54 +387,54 @@ bot.action(/^delete_node_(\d+)$/, async (ctx) => {
 bot.action(/^add_secret_(\d+)$/, async (ctx) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
-  // Перенаправляем на команду add_secret
-  ctx.message = { text: `/add_secret ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
+  // Перенаправляем на команду add_secret — создаём фейковый update
+  const fakeUpdate: any = { update_id: 0, message: { text: `/add_secret ${nodeId}`, from: ctx.from, chat: ctx.chat } };
+  await bot.handleUpdate(fakeUpdate);
 });
 
 bot.action(/^add_socks5_(\d+)$/, async (ctx) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
-  // Перенаправляем на команду add_socks5
-  ctx.message = { text: `/add_socks5 ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
+  // Перенаправляем на команду add_socks5 — создаём фейковый update
+  const fakeUpdate: any = { update_id: 0, message: { text: `/add_socks5 ${nodeId}`, from: ctx.from, chat: ctx.chat } };
+  await bot.handleUpdate(fakeUpdate);
 });
 
 // ─── ОБРАБОТЧИКИ ГЛАВНОГО МЕНЮ ───
 
 bot.action('show_nodes', async (ctx) => {
   await ctx.answerCbQuery();
-  // Перенаправляем на команду nodes
-  ctx.message = { text: '/nodes' } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
+  // Перенаправляем на команду nodes — создаём фейковый update
+  const fakeUpdate: any = { update_id: 0, message: { text: '/nodes', from: ctx.from, chat: ctx.chat } };
+  await bot.handleUpdate(fakeUpdate);
 });
 
 bot.action('add_node', async (ctx) => {
   await ctx.answerCbQuery();
-  // Перенаправляем на команду add_node
-  ctx.message = { text: '/add_node' } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
+  // Перенаправляем на команду add_node — создаём фейковый update
+  const fakeUpdate: any = { update_id: 0, message: { text: '/add_node', from: ctx.from, chat: ctx.chat } };
+  await bot.handleUpdate(fakeUpdate);
 });
 
 bot.action('show_stats', async (ctx) => {
   await ctx.answerCbQuery();
-  // Перенаправляем на команду stats
-  ctx.message = { text: '/stats' } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
+  // Перенаправляем на команду stats — создаём фейковый update
+  const fakeUpdate: any = { update_id: 0, message: { text: '/stats', from: ctx.from, chat: ctx.chat } };
+  await bot.handleUpdate(fakeUpdate);
 });
 
 bot.action('show_help', async (ctx) => {
   await ctx.answerCbQuery();
-  // Перенаправляем на команду help
-  ctx.message = { text: '/help' } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
+  // Перенаправляем на команду help — создаём фейковый update
+  const fakeUpdate: any = { update_id: 0, message: { text: '/help', from: ctx.from, chat: ctx.chat } };
+  await bot.handleUpdate(fakeUpdate);
 });
 
 bot.action('back_to_main', async (ctx) => {
   await ctx.answerCbQuery();
-  // Возвращаемся в главное меню
-  ctx.message = { text: '/start' } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
+  // Возвращаемся в главное меню — создаём фейковый update
+  const fakeUpdate: any = { update_id: 0, message: { text: '/start', from: ctx.from, chat: ctx.chat } };
+  await bot.handleUpdate(fakeUpdate);
 });
 
 // ═══════════════════════════════════════════════
@@ -1342,7 +1342,7 @@ bot.on(message('text'), async (ctx) => {
 // ═══════════════════════════════════════════════
 
 bot.action('manage_links', async (ctx) => {
-  const nodes = queries.getAllNodes.all() as any[];
+  const nodes = queries.getAllNodes.all([]) as any[];
   
   if (nodes.length === 0) {
     return ctx.editMessageText('📭 Нет добавленных нод.\n\nСначала добавьте ноду через /add_node', {
@@ -1381,10 +1381,8 @@ bot.action('manage_links', async (ctx) => {
   });
 });
 
-bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
+async function showManageNodeLinks(ctx: any, nodeId: number) {
   const node = queries.getNodeById.get(nodeId) as any;
-  
   if (!node) {
     await ctx.answerCbQuery('Нода не найдена');
     return;
@@ -1392,10 +1390,10 @@ bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
 
   const secrets = queries.getNodeSecrets.all(nodeId) as any[];
   const socks5Accounts = queries.getNodeSocks5Accounts.all(nodeId) as any[];
-  
+
   let text = `🔗 *Управление ссылками - ${node.name}*\n\n`;
   const buttons: any[][] = [];
-  
+
   // MTProto ссылки
   if (secrets.length > 0) {
     text += `🟣 *MTProto (${secrets.length}):*\n`;
@@ -1407,7 +1405,7 @@ bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
     }
     text += '\n';
   }
-  
+
   // SOCKS5 аккаунты
   if (socks5Accounts.length > 0) {
     text += `🔵 *SOCKS5 (${socks5Accounts.length}):*\n`;
@@ -1418,24 +1416,29 @@ bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
     }
     text += '\n';
   }
-  
+
   if (secrets.length === 0 && socks5Accounts.length === 0) {
     text += '📭 Ссылок пока нет.\n\n';
   }
-  
+
   // Кнопки добавления
   buttons.push([
     { text: '➕ MTProto', callback_data: `add_secret_${nodeId}` },
     { text: '➕ SOCKS5', callback_data: `add_socks5_${nodeId}` }
   ]);
   buttons.push([{ text: '⬅️ Назад', callback_data: 'manage_links' }]);
-  
+
   await ctx.editMessageText(text, {
     parse_mode: 'Markdown',
     reply_markup: {
       inline_keyboard: buttons
     }
   });
+}
+
+bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await showManageNodeLinks(ctx, nodeId);
 });
 
 // ─── УДАЛЕНИЕ ССЫЛОК ───
@@ -1471,8 +1474,7 @@ bot.action(/^delete_mtproto_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery('MTProto секрет удален');
   
   // Обновляем сообщение
-  ctx.match = [null, secret.node_id.toString()];
-  await bot.actions.get('manage_node_links_' + secret.node_id)?.(ctx);
+  await showManageNodeLinks(ctx, secret.node_id);
 });
 
 bot.action(/^delete_socks5_(\d+)$/, async (ctx) => {
@@ -1506,8 +1508,7 @@ bot.action(/^delete_socks5_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery('SOCKS5 аккаунт удален');
   
   // Обновляем сообщение
-  ctx.match = [null, account.node_id.toString()];
-  await bot.actions.get('manage_node_links_' + account.node_id)?.(ctx);
+  await showManageNodeLinks(ctx, account.node_id);
 });
 
 // ═══════════════════════════════════════════════

@@ -173,20 +173,29 @@ bot.command('nodes', async (ctx) => {
   }
 
   let text = '📡 <b>Список нод:</b>\n\n';
+  const buttons: any[][] = [];
   
   for (const node of nodes) {
     const statusEmoji = node.status === 'online' ? '🟢' : 
                        node.status === 'offline' ? '🔴' : '🟡';
     
-    text += `${statusEmoji} <b>${node.name}</b>\n`;
-    text += `   ID: <code>${node.id}</code>\n`;
+    text += `${statusEmoji} <b>${node.name}</b> (ID: ${node.id})\n`;
     text += `   Домен: <code>${node.domain}</code>\n`;
-    text += `   Статус: ${node.status}\n`;
-    text += `   Воркеры: ${node.workers}\n`;
-    text += `   /node ${node.id}\n\n`;
+    text += `   Статус: ${node.status} | Воркеры: ${node.workers}\n\n`;
+    
+    // Добавляем кнопку для каждой ноды
+    buttons.push([
+      { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` }
+    ]);
   }
+  
+  // Кнопка обновления списка
+  buttons.push([{ text: '🔄 Обновить', callback_data: 'refresh_nodes_list' }]);
 
-  await ctx.reply(text, { parse_mode: 'HTML' });
+  await ctx.reply(text, { 
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: buttons }
+  });
 });
 
 bot.command('node', async (ctx) => {
@@ -334,6 +343,148 @@ bot.action(/^confirm_delete_(\d+)$/, async (ctx) => {
 bot.action('cancel', async (ctx) => {
   await ctx.answerCbQuery('Отменено');
   await ctx.editMessageText('❌ Операция отменена');
+});
+
+// ─── ОБРАБОТЧИКИ КНОПОК СПИСКА НОД ───
+
+bot.action(/^node_info_(\d+)$/, async (ctx: any) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.editMessageText('❌ Нода не найдена');
+    return;
+  }
+
+  const client = getNodeClient(nodeId);
+  let healthInfo = '';
+  let statsInfo = '';
+
+  try {
+    if (client) {
+      const health = await client.getHealth();
+      const stats = await client.getStats();
+      
+      const cpuUsage = health.system.cpuUsage.toFixed(1);
+      const ramUsage = health.system.ramUsage.toFixed(1);
+      const uptimeHours = Math.floor(health.uptime / 3600);
+      const uptimeMinutes = Math.floor((health.uptime % 3600) / 60);
+      
+      healthInfo = `\n<b>Состояние:</b>\n` +
+                   `Статус: ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
+                   `Uptime: ${uptimeHours}ч ${uptimeMinutes}м\n` +
+                   `CPU: ${cpuUsage}%\n` +
+                   `RAM: ${ramUsage}%\n`;
+      
+      const inMb = stats.network.inMb.toFixed(2);
+      const outMb = stats.network.outMb.toFixed(2);
+      
+      statsInfo = `\n<b>Статистика:</b>\n` +
+                  `MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
+                  `SOCKS5: ${stats.socks5.connections}\n` +
+                  `Трафик: ⬇️ ${inMb} MB | ⬆️ ${outMb} MB\n`;
+    }
+  } catch (err: any) {
+    healthInfo = `\n⚠️ Не удалось получить статус: ${err.message}\n`;
+  }
+
+  const text = 
+    `📡 <b>${node.name}</b>\n\n` +
+    `ID: <code>${node.id}</code>\n` +
+    `Домен: <code>${node.domain}</code>\n` +
+    `IP: <code>${node.ip}</code>\n` +
+    `MTProto порт: ${node.mtproto_port}\n` +
+    `SOCKS5 порт: ${node.socks5_port}\n` +
+    `Воркеры: ${node.workers}\n` +
+    (node.ad_tag ? `AD_TAG: <code>${node.ad_tag}</code>\n` : '') +
+    healthInfo +
+    statsInfo;
+
+  const buttons = [
+    [
+      { text: '🔗 Ссылки', callback_data: `get_links_${nodeId}` },
+      { text: '🔄 Рестарт', callback_data: `restart_node_${nodeId}` }
+    ],
+    [
+      { text: '📋 Логи', callback_data: `get_logs_${nodeId}` },
+      { text: '🗑️ Удалить', callback_data: `delete_node_${nodeId}` }
+    ],
+    [{ text: '⬅️ Назад к списку', callback_data: 'back_to_nodes_list' }]
+  ];
+
+  await ctx.editMessageText(text, {
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: buttons }
+  });
+});
+
+bot.action('refresh_nodes_list', async (ctx: any) => {
+  await ctx.answerCbQuery('Обновление...');
+  
+  const nodes = queries.getAllNodes.all([]) as any[];
+  
+  if (nodes.length === 0) {
+    await ctx.editMessageText('📭 Нет добавленных нод.\n\nИспользуйте /add_node для добавления.');
+    return;
+  }
+
+  let text = '📡 <b>Список нод:</b>\n\n';
+  const buttons: any[][] = [];
+  
+  for (const node of nodes) {
+    const statusEmoji = node.status === 'online' ? '🟢' : 
+                       node.status === 'offline' ? '🔴' : '🟡';
+    
+    text += `${statusEmoji} <b>${node.name}</b> (ID: ${node.id})\n`;
+    text += `   Домен: <code>${node.domain}</code>\n`;
+    text += `   Статус: ${node.status} | Воркеры: ${node.workers}\n\n`;
+    
+    buttons.push([
+      { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` }
+    ]);
+  }
+  
+  buttons.push([{ text: '🔄 Обновить', callback_data: 'refresh_nodes_list' }]);
+
+  await ctx.editMessageText(text, { 
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: buttons }
+  });
+});
+
+bot.action('back_to_nodes_list', async (ctx: any) => {
+  await ctx.answerCbQuery();
+  
+  const nodes = queries.getAllNodes.all([]) as any[];
+  
+  if (nodes.length === 0) {
+    await ctx.editMessageText('📭 Нет добавленных нод.\n\nИспользуйте /add_node для добавления.');
+    return;
+  }
+
+  let text = '📡 <b>Список нод:</b>\n\n';
+  const buttons: any[][] = [];
+  
+  for (const node of nodes) {
+    const statusEmoji = node.status === 'online' ? '🟢' : 
+                       node.status === 'offline' ? '🔴' : '🟡';
+    
+    text += `${statusEmoji} <b>${node.name}</b> (ID: ${node.id})\n`;
+    text += `   Домен: <code>${node.domain}</code>\n`;
+    text += `   Статус: ${node.status} | Воркеры: ${node.workers}\n\n`;
+    
+    buttons.push([
+      { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` }
+    ]);
+  }
+  
+  buttons.push([{ text: '🔄 Обновить', callback_data: 'refresh_nodes_list' }]);
+
+  await ctx.editMessageText(text, { 
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: buttons }
+  });
 });
 
 // ─── НОВЫЕ ОБРАБОТЧИКИ КНОПОК ───

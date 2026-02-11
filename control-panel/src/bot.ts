@@ -89,13 +89,19 @@ bot.use(async (ctx, next) => {
 bot.start(async (ctx) => {
   await ctx.reply(
     '👋 *MTProxy Management Bot*\n\n' +
-    'Управление прокси-серверами через Telegram.\n\n' +
-    'Основные команды:\n' +
-    '/nodes - список нод\n' +
-    '/add\\_node - добавить ноду\n' +
-    '/stats - общая статистика\n' +
-    '/help - справка',
-    { parse_mode: 'Markdown' }
+    'Управление прокси-серверами через Telegram.',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '📋 Ноды', callback_data: 'show_nodes' }],
+          [{ text: '➕ Добавить ноду', callback_data: 'add_node' }],
+          [{ text: '🔗 Управление ссылками', callback_data: 'manage_links' }],
+          [{ text: '📊 Статистика', callback_data: 'show_stats' }],
+          [{ text: '📖 Справка', callback_data: 'show_help' }]
+        ]
+      }
+    }
   );
 });
 
@@ -219,14 +225,27 @@ bot.command('node', async (ctx) => {
       `CPU ядер: ${node.cpu_cores}\n` +
       `RAM: ${node.ram_mb} MB\n` +
       healthInfo +
-      statsInfo +
-      `\nКоманды:\n` +
-      `/links ${node.id} - получить ссылки\n` +
-      `/restart_node ${node.id} - перезапустить\n` +
-      `/logs ${node.id} - показать логи\n` +
-      `/remove_node ${node.id} - удалить ноду`;
+      statsInfo;
 
-    await ctx.reply(nodeInfo);
+    await ctx.reply(nodeInfo, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🔗 Получить ссылки', callback_data: `get_links_${node.id}` }],
+          [
+            { text: '➕ MTProto', callback_data: `add_secret_${node.id}` },
+            { text: '➕ SOCKS5', callback_data: `add_socks5_${node.id}` }
+          ],
+          [
+            { text: '🔄 Перезапустить', callback_data: `restart_node_${node.id}` },
+            { text: '📋 Логи', callback_data: `logs_node_${node.id}` }
+          ],
+          [
+            { text: '🗑️ Удалить ноду', callback_data: `confirm_delete_node_${node.id}` },
+            { text: '⬅️ Назад', callback_data: 'show_nodes' }
+          ]
+        ]
+      }
+    });
   } catch (err: any) {
     await ctx.reply(`❌ Ошибка при получении информации о ноде: ${err.message}`);
   }
@@ -289,6 +308,133 @@ bot.action(/^confirm_delete_(\d+)$/, async (ctx) => {
 bot.action('cancel', async (ctx) => {
   await ctx.answerCbQuery('Отменено');
   await ctx.editMessageText('❌ Операция отменена');
+});
+
+// ─── НОВЫЕ ОБРАБОТЧИКИ КНОПОК ───
+
+bot.action(/^get_links_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду links
+  ctx.message = { text: `/links ${nodeId}` } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+bot.action(/^restart_node_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду restart_node
+  ctx.message = { text: `/restart_node ${nodeId}` } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+bot.action(/^logs_node_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду logs
+  ctx.message = { text: `/logs ${nodeId}` } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+bot.action(/^confirm_delete_node_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  const node = queries.getNodeById.get(nodeId) as any;
+  
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  await ctx.editMessageText(
+    `⚠️ *Удаление ноды*\n\n` +
+    `Вы уверены, что хотите удалить ноду "${node.name}"?\n\n` +
+    `Это действие нельзя отменить!`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '❌ Да, удалить', callback_data: `delete_node_${nodeId}` }],
+          [{ text: '✅ Отмена', callback_data: 'show_nodes' }]
+        ]
+      }
+    }
+  );
+});
+
+bot.action(/^delete_node_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  const node = queries.getNodeById.get(nodeId) as any;
+  
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  // Удаляем все связанные данные
+  queries.deleteNode.run(nodeId);
+  
+  await ctx.answerCbQuery('Нода удалена');
+  await ctx.editMessageText(
+    `✅ *Нода "${node.name}" успешно удалена!*`,
+    {
+      reply_markup: {
+        inline_keyboard: [[{ text: '⬅️ К списку нод', callback_data: 'show_nodes' }]]
+      }
+    }
+  );
+});
+
+bot.action(/^add_secret_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду add_secret
+  ctx.message = { text: `/add_secret ${nodeId}` } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+bot.action(/^add_socks5_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду add_socks5
+  ctx.message = { text: `/add_socks5 ${nodeId}` } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+// ─── ОБРАБОТЧИКИ ГЛАВНОГО МЕНЮ ───
+
+bot.action('show_nodes', async (ctx) => {
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду nodes
+  ctx.message = { text: '/nodes' } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+bot.action('add_node', async (ctx) => {
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду add_node
+  ctx.message = { text: '/add_node' } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+bot.action('show_stats', async (ctx) => {
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду stats
+  ctx.message = { text: '/stats' } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+bot.action('show_help', async (ctx) => {
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду help
+  ctx.message = { text: '/help' } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+bot.action('back_to_main', async (ctx) => {
+  await ctx.answerCbQuery();
+  // Возвращаемся в главное меню
+  ctx.message = { text: '/start' } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
 });
 
 // ═══════════════════════════════════════════════
@@ -1192,7 +1338,180 @@ bot.on(message('text'), async (ctx) => {
 });
 
 // ═══════════════════════════════════════════════
-// CRON: МОНИТОРИНГ
+// УПРАВЛЕНИЕ ССЫЛКАМИ
+// ═══════════════════════════════════════════════
+
+bot.action('manage_links', async (ctx) => {
+  const nodes = queries.getAllNodes.all() as any[];
+  
+  if (nodes.length === 0) {
+    return ctx.editMessageText('📭 Нет добавленных нод.\n\nСначала добавьте ноду через /add_node', {
+      reply_markup: {
+        inline_keyboard: [[{ text: '⬅️ Назад', callback_data: 'back_to_main' }]]
+      }
+    });
+  }
+
+  let text = '🔗 *Управление ссылками*\n\nВыберите ноду для управления ссылками:\n\n';
+  
+  const buttons = [];
+  for (const node of nodes) {
+    const statusEmoji = node.status === 'online' ? '🟢' : 
+                       node.status === 'offline' ? '🔴' : '🟡';
+    
+    text += `${statusEmoji} *${node.name}*\n`;
+    
+    // Получаем количество ссылок
+    const secrets = queries.getNodeSecrets.all(node.id) as any[];
+    const socks5Accounts = queries.getNodeSocks5Accounts.all(node.id) as any[];
+    const totalLinks = secrets.length + socks5Accounts.length;
+    
+    text += `   Ссылок: ${totalLinks}\n\n`;
+    
+    buttons.push([{ text: `${node.name} (${totalLinks})`, callback_data: `manage_node_links_${node.id}` }]);
+  }
+  
+  buttons.push([{ text: '⬅️ Назад', callback_data: 'back_to_main' }]);
+  
+  await ctx.editMessageText(text, {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      inline_keyboard: buttons
+    }
+  });
+});
+
+bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  const node = queries.getNodeById.get(nodeId) as any;
+  
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  const secrets = queries.getNodeSecrets.all(nodeId) as any[];
+  const socks5Accounts = queries.getNodeSocks5Accounts.all(nodeId) as any[];
+  
+  let text = `🔗 *Управление ссылками - ${node.name}*\n\n`;
+  const buttons: any[][] = [];
+  
+  // MTProto ссылки
+  if (secrets.length > 0) {
+    text += `🟣 *MTProto (${secrets.length}):*\n`;
+    for (const secret of secrets) {
+      const type = secret.is_fake_tls ? '🔒 Fake-TLS' : '🔓 Обычный';
+      text += `   ${type}: \`${secret.secret}\`\n`;
+      if (secret.description) text += `   _${secret.description}_\n`;
+      buttons.push([{ text: `🗑️ Удалить MTProto ${secret.secret.slice(-8)}`, callback_data: `delete_mtproto_${secret.id}` }]);
+    }
+    text += '\n';
+  }
+  
+  // SOCKS5 аккаунты
+  if (socks5Accounts.length > 0) {
+    text += `🔵 *SOCKS5 (${socks5Accounts.length}):*\n`;
+    for (const account of socks5Accounts) {
+      text += `   👤 \`${account.username}\`\n`;
+      if (account.description) text += `   _${account.description}_\n`;
+      buttons.push([{ text: `🗑️ Удалить SOCKS5 ${account.username}`, callback_data: `delete_socks5_${account.id}` }]);
+    }
+    text += '\n';
+  }
+  
+  if (secrets.length === 0 && socks5Accounts.length === 0) {
+    text += '📭 Ссылок пока нет.\n\n';
+  }
+  
+  // Кнопки добавления
+  buttons.push([
+    { text: '➕ MTProto', callback_data: `add_secret_${nodeId}` },
+    { text: '➕ SOCKS5', callback_data: `add_socks5_${nodeId}` }
+  ]);
+  buttons.push([{ text: '⬅️ Назад', callback_data: 'manage_links' }]);
+  
+  await ctx.editMessageText(text, {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      inline_keyboard: buttons
+    }
+  });
+});
+
+// ─── УДАЛЕНИЕ ССЫЛОК ───
+
+bot.action(/^delete_mtproto_(\d+)$/, async (ctx) => {
+  const secretId = parseInt(ctx.match[1]);
+  const secret = queries.getSecretById.get(secretId) as any;
+  
+  if (!secret) {
+    await ctx.answerCbQuery('Секрет не найден');
+    return;
+  }
+
+  const node = queries.getNodeById.get(secret.node_id) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  // Удаляем из БД
+  queries.deactivateSecret.run(secretId);
+
+  // Отправляем на Node Agent для обновления конфига
+  const client = getNodeClient(secret.node_id);
+  if (client) {
+    try {
+      await client.removeMtProtoSecret(secret.secret);
+    } catch (err) {
+      console.error('Failed to remove secret from node:', err);
+    }
+  }
+
+  await ctx.answerCbQuery('MTProto секрет удален');
+  
+  // Обновляем сообщение
+  ctx.match = [null, secret.node_id.toString()];
+  await bot.actions.get('manage_node_links_' + secret.node_id)?.(ctx);
+});
+
+bot.action(/^delete_socks5_(\d+)$/, async (ctx) => {
+  const accountId = parseInt(ctx.match[1]);
+  const account = queries.getSocks5AccountById.get(accountId) as any;
+  
+  if (!account) {
+    await ctx.answerCbQuery('Аккаунт не найден');
+    return;
+  }
+
+  const node = queries.getNodeById.get(account.node_id) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  // Удаляем из БД
+  queries.deactivateSocks5Account.run(accountId);
+
+  // Отправляем на Node Agent для обновления конфига
+  const client = getNodeClient(account.node_id);
+  if (client) {
+    try {
+      await client.removeSocks5Account(account.username);
+    } catch (err) {
+      console.error('Failed to remove SOCKS5 account from node:', err);
+    }
+  }
+
+  await ctx.answerCbQuery('SOCKS5 аккаунт удален');
+  
+  // Обновляем сообщение
+  ctx.match = [null, account.node_id.toString()];
+  await bot.actions.get('manage_node_links_' + account.node_id)?.(ctx);
+});
+
+// ═══════════════════════════════════════════════
+// ЗАПУСК
 // ═══════════════════════════════════════════════
 
 // Каждые 5 минут — проверка здоровья нод и сбор статистики

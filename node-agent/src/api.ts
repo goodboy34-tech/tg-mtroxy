@@ -638,16 +638,21 @@ async function getNetworkStats() {
   try {
     // Метод 1: vnstat (наиболее точный, если установлен)
     try {
-      const vnstatOutput = execSync('vnstat --json', { timeout: 3000 }).toString();
-      const vnstatData = JSON.parse(vnstatOutput);
+      // Используем короткий формат: --oneline для минимального парсинга
+      // Формат: eth0;2024-02-11;12345678;87654321;12345678901;98765432109
+      const vnstatOutput = execSync('vnstat --oneline b', { timeout: 3000 }).toString().trim();
       
-      if (vnstatData?.interfaces?.[0]?.traffic?.total) {
-        const traffic = vnstatData.interfaces[0].traffic.total;
-        const rxMb = (traffic.rx || 0) / 1024 / 1024;
-        const txMb = (traffic.tx || 0) / 1024 / 1024;
+      // Парсим: interface;date;rx_day;tx_day;rx_month;tx_month;rx_total;tx_total
+      const parts = vnstatOutput.split(';');
+      if (parts.length >= 8) {
+        const rxBytes = parseInt(parts[6]) || 0; // rx_total в байтах
+        const txBytes = parseInt(parts[7]) || 0; // tx_total в байтах
         
-        if (rxMb > 0 || txMb > 0) {
-          return { inMb: rxMb, outMb: txMb };
+        if (rxBytes > 0 || txBytes > 0) {
+          return { 
+            inMb: rxBytes / 1024 / 1024, 
+            outMb: txBytes / 1024 / 1024 
+          };
         }
       }
     } catch (e) {

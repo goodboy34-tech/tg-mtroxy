@@ -296,26 +296,50 @@ case "$1" in
         echo "========================================================"
         echo ""
 
-        # Request Telegram Bot Token
-        read -p "Enter Telegram Bot Token: " BOT_TOKEN
-        if [ -z "$BOT_TOKEN" ]; then
-            echo "X Bot Token cannot be empty!"
+        # Check if running interactively
+        if ! [ -t 0 ]; then
+            echo "X This command must be run interactively (not in scripts or pipes)"
+            echo "   Run: mtproxy-control setup"
             exit 1
         fi
 
-        # Request Admin IDs
+        echo "Please provide your Telegram Bot Token from @BotFather"
+        echo "Example: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
         echo ""
-        read -p "Enter Admin User IDs (comma-separated): " ADMIN_IDS
-        if [ -z "$ADMIN_IDS" ]; then
-            echo "X Admin IDs cannot be empty!"
-            exit 1
-        fi
 
-        # Validate admin IDs format (should be numbers separated by commas)
-        if ! echo "$ADMIN_IDS" | grep -E '^([0-9]+,)*[0-9]+$' >/dev/null; then
-            echo "X Admin IDs should be numbers separated by commas (e.g., 123456789,987654321)"
-            exit 1
-        fi
+        # Request Telegram Bot Token with retry
+        while true; do
+            read -p "Enter Telegram Bot Token: " BOT_TOKEN
+            if [ -n "$BOT_TOKEN" ] && [ "$BOT_TOKEN" != "" ]; then
+                break
+            else
+                echo "X Bot Token cannot be empty! Please try again."
+                echo ""
+            fi
+        done
+
+        echo ""
+        echo "Please provide Admin User IDs (comma-separated)"
+        echo "You can get your user ID from @userinfobot"
+        echo "Example: 123456789,987654321"
+        echo ""
+
+        # Request Admin IDs with retry
+        while true; do
+            read -p "Enter Admin User IDs (comma-separated): " ADMIN_IDS
+            if [ -n "$ADMIN_IDS" ] && [ "$ADMIN_IDS" != "" ]; then
+                # Validate admin IDs format (should be numbers separated by commas)
+                if echo "$ADMIN_IDS" | grep -E '^([0-9]+,)*[0-9]+$' >/dev/null; then
+                    break
+                else
+                    echo "X Admin IDs should be numbers separated by commas (e.g., 123456789,987654321)"
+                    echo ""
+                fi
+            else
+                echo "X Admin IDs cannot be empty! Please try again."
+                echo ""
+            fi
+        done
 
         # Update .env file
         if [ -f ".env" ]; then
@@ -340,12 +364,20 @@ EOF
             echo "* Configuration created: .env"
         fi
 
+        echo ""
+        echo "Configuration saved! Restarting service..."
+        echo ""
+
         # Restart service
         systemctl daemon-reload
         if systemctl restart mtproxy-control; then
             echo "* Service restarted successfully"
+            echo ""
+            echo "Bot is now configured and running!"
+            echo "You can check the status with: mtproxy-control status"
         else
             echo "X Failed to restart service"
+            echo "You may need to check the logs: mtproxy-control logs"
         fi
         ;;
     config)

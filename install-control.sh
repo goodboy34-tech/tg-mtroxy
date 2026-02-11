@@ -118,20 +118,53 @@ perform_update() {
     create_systemd_service
     if [ -f "/etc/systemd/system/mtproxy-control.service" ]; then
         echo "* Service file created successfully"
+        # Validate service file syntax
+        if systemctl show mtproxy-control.service >/dev/null 2>&1; then
+            echo "* Service file syntax is valid"
+        else
+            echo "X Service file has syntax errors, checking content..."
+            cat /etc/systemd/system/mtproxy-control.service
+            exit 1
+        fi
         systemctl daemon-reload
         systemctl enable mtproxy-control 2>/dev/null || echo "* Warning: Could not enable service"
     else
-        echo "X Failed to create service file"
+        echo "X Failed to create service file at /etc/systemd/system/mtproxy-control.service"
+        ls -la /etc/systemd/system/ | head -10
         exit 1
     fi
 
     # Restart service
-    systemctl daemon-reload
+    echo "* Attempting to restart service..."
+    
+    # Check if Docker is running
+    if ! systemctl is-active --quiet docker; then
+        echo "* Docker is not running, starting Docker..."
+        systemctl start docker || {
+            echo "X Failed to start Docker"
+            exit 1
+        }
+    fi
+    
     if systemctl restart mtproxy-control; then
         echo "* Service restarted successfully"
     else
         echo "X Failed to restart service, checking status..."
-        systemctl status mtproxy-control --no-pager -l || echo "* Service status check failed"
+        if systemctl status mtproxy-control --no-pager -l 2>/dev/null; then
+            echo "* Service status shown above"
+        else
+            echo "* Service not found, checking if systemd is running..."
+            if systemctl is-system-running >/dev/null 2>&1; then
+                echo "* Systemd is running, service file may be corrupted"
+                echo "* Service file content:"
+                cat /etc/systemd/system/mtproxy-control.service 2>/dev/null || echo "* Service file not found"
+                echo "* Checking systemd service list:"
+                systemctl list-units --type=service | grep mtproxy || echo "* mtproxy service not in list"
+            else
+                echo "* Systemd is not running properly"
+                systemctl status
+            fi
+        fi
     fi
 
     # Create global management command

@@ -108,7 +108,7 @@ bot.start(async (ctx) => {
     '👋 *MTProxy Management Bot*\n\n' +
     'Управление прокси-серверами через Telegram.',
     {
-      parse_mode: 'Markdown',
+      
       reply_markup: {
         inline_keyboard: [
           [{ text: '📋 Ноды', callback_data: 'show_nodes' }],
@@ -146,7 +146,7 @@ bot.help(async (ctx) => {
     '*Настройки:*\n' +
     '/set\\_workers <node\\_id> <count> - воркеры\n' +
     '/update\\_node <id> - обновить конфиг',
-    { parse_mode: 'Markdown' }
+   
   );
 });
 
@@ -177,7 +177,7 @@ bot.command('nodes', async (ctx) => {
     text += `   /node ${node.id}\n\n`;
   }
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text);
 });
 
 bot.command('node', async (ctx) => {
@@ -411,7 +411,7 @@ bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
     }
   }
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text);
 });
 
 bot.action(/^restart_node_(\d+)$/, async (ctx: any) => {
@@ -461,7 +461,7 @@ bot.action(/^logs_node_(\d+)$/, async (ctx: any) => {
     text += '*MTProto:*\n```\n' + logs.mtproto + '\n```\n\n';
     text += '*SOCKS5:*\n```\n' + logs.socks5 + '\n```\n\n';
     text += '*Agent:*\n```\n' + logs.agent + '\n```';
-    await ctx.reply(text, { parse_mode: 'Markdown' });
+    await ctx.reply(text);
   } catch (error) {
     console.error('Failed to get logs:', error);
     await ctx.answerCbQuery('Ошибка получения логов');
@@ -482,7 +482,7 @@ bot.action(/^confirm_delete_node_(\d+)$/, async (ctx) => {
     `Вы уверены, что хотите удалить ноду "${node.name}"?\n\n` +
     `Это действие нельзя отменить!`,
     {
-      parse_mode: 'Markdown',
+      
       reply_markup: {
         inline_keyboard: [
           [{ text: '❌ Да, удалить', callback_data: `delete_node_${nodeId}` }],
@@ -570,7 +570,7 @@ bot.action(/^add_socks5_(\d+)$/, async (ctx: any) => {
     '```\n\n' +
     'Отправьте /cancel для отмены.',
     {
-      parse_mode: 'Markdown',
+      
       reply_markup: {
         inline_keyboard: [[{ text: '⬅️ Назад', callback_data: `manage_node_links_${nodeId}` }]]
       }
@@ -604,7 +604,7 @@ bot.action('show_nodes', async (ctx: any) => {
     text += `   /node ${node.id}\n\n`;
   }
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text);
 });
 
 bot.action('add_node', async (ctx: any) => {
@@ -652,7 +652,7 @@ bot.action('show_stats', async (ctx: any) => {
   text += `MTProto подключений: ${totalMtprotoConnections}\n`;
   text += `SOCKS5 подключений: ${totalSocks5Connections}\n`;
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text);
 });
 
 bot.action('show_help', async (ctx: any) => {
@@ -682,7 +682,7 @@ bot.action('show_help', async (ctx: any) => {
     '*Настройки:*\n' +
     '/set\\_workers <node\\_id> <count> - воркеры\n' +
     '/update\\_node <id> - обновить конфиг',
-    { parse_mode: 'Markdown' }
+   
   );
 });
 
@@ -694,7 +694,7 @@ bot.action('back_to_main', async (ctx: any) => {
     '👋 *MTProxy Management Bot*\n\n' +
     'Управление прокси-серверами через Telegram.',
     {
-      parse_mode: 'Markdown',
+      
       reply_markup: {
         inline_keyboard: [
           [{ text: '📋 Ноды', callback_data: 'show_nodes' }],
@@ -786,7 +786,7 @@ bot.command('links', async (ctx) => {
     }
   }
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text);
 });
 
 bot.command('add_secret', async (ctx) => {
@@ -804,12 +804,14 @@ bot.command('add_secret', async (ctx) => {
   const secret = SecretGenerator.generateMtProtoSecret();
   
   await ctx.reply(
-    `🔐 *Добавление MTProto секрета*\n\n` +
-    `Нода: ${node.name}\n` +
-    `Секрет: \`${secret}\`\n\n` +
-    `Выберите тип подключения:`,
+    `🔐 Добавление MTProto секрета
+
+Нода: ${node.name}
+Секрет: ${secret}
+
+Выберите тип подключения:`,
     {
-      parse_mode: 'Markdown',
+      
       ...Markup.inlineKeyboard([
         [Markup.button.callback('🌐 Домен', `add_secret_domain_${nodeId}_${secret}`)],
         [Markup.button.callback('� IP адрес', `add_secret_ip_${nodeId}_${secret}`)],
@@ -867,7 +869,7 @@ bot.action(/^add_secret_(dd|normal)_(\d+)_([a-f0-9]{32})$/, async (ctx) => {
     `Нода: ${node.name}\n` +
     `Тип: ${isFakeTls ? 'Fake-TLS (dd)' : 'Обычный'}\n\n` +
     `Ссылка:\n\`${link}\``,
-    { parse_mode: 'Markdown' }
+   
   );
 
   queries.insertLog.run({
@@ -901,7 +903,7 @@ bot.action(/^add_secret_domain_(\d+)_([a-f0-9]{32})$/, async (ctx: any) => {
     `Отправьте домен (например: example.com):\n\n` +
     `Отправьте /cancel для отмены.`,
     {
-      parse_mode: 'Markdown',
+      
       reply_markup: {
         inline_keyboard: [[{ text: '⬅️ Назад', callback_data: `add_secret_${nodeId}` }]]
       }
@@ -930,7 +932,7 @@ bot.action(/^add_secret_ip_(\d+)_([a-f0-9]{32})$/, async (ctx: any) => {
     `Отправьте IP адрес (например: 1.2.3.4):\n\n` +
     `Отправьте /cancel для отмены.`,
     {
-      parse_mode: 'Markdown',
+      
       reply_markup: {
         inline_keyboard: [[{ text: '⬅️ Назад', callback_data: `add_secret_${nodeId}` }]]
       }
@@ -962,7 +964,7 @@ bot.command('add_socks5', async (ctx) => {
     `Password: \`${password}\`\n\n` +
     `Подтвердите добавление:`,
     {
-      parse_mode: 'Markdown',
+      
       ...Markup.inlineKeyboard([
         [Markup.button.callback('✅ Добавить', `add_socks5_confirm_${nodeId}_${username}_${password}`)],
         [Markup.button.callback('❌ Отмена', 'cancel')],
@@ -1013,7 +1015,7 @@ bot.action(/^add_socks5_confirm_(\d+)_([^_]+)_([^_]+)$/, async (ctx) => {
       `*Ссылки для импорта:*\n` +
       `\`${tgLink}\`\n\n` +
       `\`${tmeLink}\``,
-      { parse_mode: 'Markdown' }
+     
     );
 
     queries.insertLog.run({
@@ -1056,7 +1058,7 @@ bot.command('stats', async (ctx) => {
   text += `MTProto подключений: ${totalMtprotoConnections}\n`;
   text += `SOCKS5 подключений: ${totalSocks5Connections}\n`;
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text);
 });
 
 bot.command('health', async (ctx) => {
@@ -1086,7 +1088,7 @@ bot.command('health', async (ctx) => {
     text += `\n`;
   }
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text);
 });
 
 bot.command('logs', async (ctx) => {
@@ -1127,7 +1129,7 @@ bot.command('logs', async (ctx) => {
     text += logs.socks5.substring(Math.max(0, logs.socks5.length - 1500));
     text += '\n```';
 
-    await ctx.reply(text, { parse_mode: 'Markdown' });
+    await ctx.reply(text);
 
   } catch (err: any) {
     await ctx.reply(`❌ Ошибка: ${err.message}`);
@@ -1225,7 +1227,7 @@ bot.command('set_workers', async (ctx) => {
       `Воркеров: ${workers}\n` +
       `Max соединений: ${workers * 60000}\n\n` +
       `MTProxy перезапущен с новыми настройками.`,
-      { parse_mode: 'Markdown' }
+     
     );
 
     queries.insertLog.run({
@@ -1277,7 +1279,7 @@ bot.command('create_subscription', async (ctx) => {
     `📝 *Создание подписки*\n\n` +
     `Название: ${name}\n\n` +
     `Выберите ноды, которые будут включены в подписку:`,
-    { parse_mode: 'Markdown', ...keyboard }
+    {  ...keyboard }
   );
 });
 
@@ -1308,7 +1310,7 @@ bot.command('subscriptions', async (ctx) => {
 
   text += `\nИспользуйте /subscription <id> для подробностей`;
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text);
 });
 
 /**
@@ -1365,7 +1367,7 @@ bot.command('subscription', async (ctx) => {
       ]
     ]);
 
-    await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+    await ctx.reply(text, {  ...keyboard });
 
   } catch (err: any) {
     await ctx.reply(`❌ Ошибка: ${err.message}`);
@@ -1440,7 +1442,7 @@ bot.action(/^sub_refresh_(\d+)$/, async (ctx) => {
       ]
     ]);
 
-    await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+    await ctx.editMessageText(text, {  ...keyboard });
     await ctx.answerCbQuery('Обновлено!');
 
   } catch (err: any) {
@@ -1487,7 +1489,7 @@ bot.action(/^sub_toggle_(\d+)$/, async (ctx) => {
         ]
       ]);
 
-      await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+      await ctx.editMessageText(text, {  ...keyboard });
     }
 
   } catch (err: any) {
@@ -1516,7 +1518,7 @@ bot.action(/^sub_delete_(\d+)$/, async (ctx) => {
     `⚠️ *Удаление подписки*\n\n` +
     `Название: ${sub.name}\n\n` +
     `Вы уверены? Это действие нельзя отменить.`,
-    { parse_mode: 'Markdown', ...keyboard }
+    {  ...keyboard }
   );
 
   await ctx.answerCbQuery();
@@ -1531,7 +1533,7 @@ bot.action(/^sub_delete_confirm_(\d+)$/, async (ctx) => {
     
     await ctx.editMessageText(
       '✅ Подписка успешно удалена',
-      { parse_mode: 'Markdown' }
+     
     );
     
     await ctx.answerCbQuery('Удалено!');
@@ -1723,7 +1725,7 @@ bot.on(message('text'), async (ctx) => {
       `Тип: Обычный\n` +
       `Домен: ${domain}\n\n` +
       `Ссылка:\n\`${link}\``,
-      { parse_mode: 'Markdown' }
+     
     );
   }
 
@@ -1783,7 +1785,7 @@ bot.on(message('text'), async (ctx) => {
       `Тип: Обычный\n` +
       `IP: ${ip}\n\n` +
       `Ссылка:\n\`${link}\``,
-      { parse_mode: 'Markdown' }
+     
     );
   }
 });
@@ -1832,7 +1834,7 @@ bot.action('manage_links', async (ctx) => {
     
     console.log('Editing message with buttons, text length:', text.length);
     const result = await ctx.editMessageText(text, {
-      parse_mode: 'Markdown',
+      
       reply_markup: {
         inline_keyboard: buttons
       }
@@ -1908,7 +1910,7 @@ bot.action('manage_links', async (ctx) => {
   buttons.push([{ text: '⬅️ Назад', callback_data: 'manage_links' }]);
 
   await ctx.editMessageText(text, {
-    parse_mode: 'Markdown',
+    
     reply_markup: {
       inline_keyboard: buttons
     }

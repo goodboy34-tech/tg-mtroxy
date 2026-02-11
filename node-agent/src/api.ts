@@ -427,11 +427,19 @@ flush
 `;
 
   // Сохраняем конфиг
-  const configPath = path.join(__dirname, '..', 'socks5', '3proxy.cfg');
+  const configPath = path.join(__dirname, '..', '..', 'socks5', '3proxy.cfg');
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, config);
 
   console.log(`[SOCKS5] Config updated with ${accounts.length} accounts`);
+
+  // Перезапускаем контейнер для применения новой конфигурации
+  try {
+    execSync('docker restart mtproxy-socks5');
+    console.log('[SOCKS5] Container restarted successfully');
+  } catch (error) {
+    console.error('[SOCKS5] Failed to restart container:', error);
+  }
 }
 
 function isContainerRunning(containerName: string): boolean {

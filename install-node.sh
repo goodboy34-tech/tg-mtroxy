@@ -26,6 +26,7 @@ if [ ! -f "$SCRIPT_PATH" ] || [ "$0" != "$SCRIPT_PATH" ]; then
     echo ""
     echo "Now running the installation..."
     echo ""
+    cd /tmp || cd /root || cd /
     exec "$SCRIPT_PATH" "$@"
     exit 0
 fi

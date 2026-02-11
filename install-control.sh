@@ -26,6 +26,7 @@ if [ ! -f "$SCRIPT_PATH" ] || [ "$0" != "$SCRIPT_PATH" ]; then
     echo ""
     echo "Now running the installation..."
     echo ""
+    cd /tmp || cd /root || cd /
     exec "$SCRIPT_PATH" "$@"
     exit 0
 fi
@@ -96,6 +97,14 @@ perform_update() {
     # Update from git
     echo "* Updating from GitHub..."
     git pull
+
+    # Ensure systemd service exists
+    if [ ! -f "/etc/systemd/system/mtproxy-control.service" ]; then
+        echo "* Recreating systemd service..."
+        create_systemd_service
+        systemctl daemon-reload
+        systemctl enable mtproxy-control
+    fi
 
     # Restart service
     systemctl daemon-reload

@@ -113,6 +113,57 @@ perform_update() {
         exit 1
     fi
 
+    # Check if .env file exists, if not, prompt for configuration
+    if [ ! -f ".env" ]; then
+        echo ""
+        echo "========================================================"
+        echo "  Control Panel Configuration Required"
+        echo "========================================================"
+        echo ""
+
+        # Request Telegram Bot Token
+        read -p "Enter Telegram Bot Token: " BOT_TOKEN
+        if [ -z "$BOT_TOKEN" ]; then
+            echo "X Bot Token cannot be empty!"
+            exit 1
+        fi
+
+        # Request Admin IDs
+        echo ""
+        read -p "Enter Admin User IDs (comma-separated): " ADMIN_IDS
+        if [ -z "$ADMIN_IDS" ]; then
+            echo "X Admin IDs cannot be empty!"
+            exit 1
+        fi
+
+        # Validate admin IDs format (should be numbers separated by commas)
+        if ! echo "$ADMIN_IDS" | grep -E '^([0-9]+,)*[0-9]+$' >/dev/null; then
+            echo "X Admin IDs should be numbers separated by commas (e.g., 123456789,987654321)"
+            exit 1
+        fi
+
+        # Create .env file
+        echo ""
+        echo "* Creating configuration..."
+
+        cat > .env <<EOF
+# Telegram Bot Configuration
+BOT_TOKEN=$BOT_TOKEN
+ADMIN_IDS=$ADMIN_IDS
+
+# Database
+DATABASE_PATH=./data/database.sqlite
+
+# Server
+PORT=3000
+NODE_ENV=production
+EOF
+
+        echo "-> Configuration created: .env"
+    else
+        echo "* Configuration file .env already exists"
+    fi
+
     # Always recreate systemd service to ensure it's up to date
     echo "* Ensuring systemd service is properly configured..."
     create_systemd_service
@@ -238,6 +289,65 @@ case "$1" in
             echo "Usage: mtproxy-control shell <service>"
         fi
         ;;
+    setup)
+        echo ""
+        echo "========================================================"
+        echo "  Control Panel Bot Configuration"
+        echo "========================================================"
+        echo ""
+
+        # Request Telegram Bot Token
+        read -p "Enter Telegram Bot Token: " BOT_TOKEN
+        if [ -z "$BOT_TOKEN" ]; then
+            echo "X Bot Token cannot be empty!"
+            exit 1
+        fi
+
+        # Request Admin IDs
+        echo ""
+        read -p "Enter Admin User IDs (comma-separated): " ADMIN_IDS
+        if [ -z "$ADMIN_IDS" ]; then
+            echo "X Admin IDs cannot be empty!"
+            exit 1
+        fi
+
+        # Validate admin IDs format (should be numbers separated by commas)
+        if ! echo "$ADMIN_IDS" | grep -E '^([0-9]+,)*[0-9]+$' >/dev/null; then
+            echo "X Admin IDs should be numbers separated by commas (e.g., 123456789,987654321)"
+            exit 1
+        fi
+
+        # Update .env file
+        if [ -f ".env" ]; then
+            # Update existing .env file
+            sed -i "s/^BOT_TOKEN=.*/BOT_TOKEN=$BOT_TOKEN/" .env
+            sed -i "s/^ADMIN_IDS=.*/ADMIN_IDS=$ADMIN_IDS/" .env
+            echo "* Configuration updated in .env file"
+        else
+            # Create new .env file
+            cat > .env <<EOF
+# Telegram Bot Configuration
+BOT_TOKEN=$BOT_TOKEN
+ADMIN_IDS=$ADMIN_IDS
+
+# Database
+DATABASE_PATH=./data/database.sqlite
+
+# Server
+PORT=3000
+NODE_ENV=production
+EOF
+            echo "* Configuration created: .env"
+        fi
+
+        # Restart service
+        systemctl daemon-reload
+        if systemctl restart mtproxy-control; then
+            echo "* Service restarted successfully"
+        else
+            echo "X Failed to restart service"
+        fi
+        ;;
     config)
         echo "* Current configuration:"
         echo "* Directory: $INSTALL_DIR"
@@ -282,6 +392,7 @@ case "$1" in
         echo "  restart   - Restart the service"
         echo "  update    - Update from GitHub"
         echo "  rebuild   - Rebuild containers"
+        echo "  setup     - Configure bot token and admin IDs"
         echo "  shell     - Open shell in container"
         echo "  config    - Show current configuration"
         echo "  backup    - Create backup archive"

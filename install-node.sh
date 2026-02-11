@@ -56,13 +56,13 @@ After=docker.service
 Requires=docker.service
 
 [Service]
-Type=simple
+Type=oneshot
+RemainAfterExit=yes
 User=root
 WorkingDirectory=$INSTALL_DIR
-ExecStart=/usr/bin/docker compose up
+ExecStart=/usr/bin/docker compose up -d
 ExecStop=/usr/bin/docker compose down
-Restart=always
-RestartSec=10
+TimeoutStartSec=300
 
 [Install]
 WantedBy=multi-user.target
@@ -101,6 +101,8 @@ perform_update() {
     if [ -f "node-agent/.env" ]; then
         ENV_BACKUP=$(cat node-agent/.env)
         echo "* Backing up existing .env file..."
+    else
+        echo "* No existing .env file found to backup"
     fi
 
     rm -rf node-agent
@@ -113,6 +115,8 @@ perform_update() {
         echo "$ENV_BACKUP" > node-agent/.env
         chmod 644 node-agent/.env
         echo "* Restored .env file..."
+    else
+        echo "* No .env backup to restore"
     fi
 
     # Download updated files
@@ -157,6 +161,112 @@ perform_update() {
     systemctl daemon-reload
     systemctl enable mtproxy-node
     systemctl restart mtproxy-node
+
+    # Create global management command
+    echo ""
+    echo "* Creating global 'mtproxy-node' command..."
+
+    cat > /usr/local/bin/mtproxy-node <<'NODE_SCRIPT_EOF'
+#!/bin/bash
+
+INSTALL_DIR="/opt/mtproxy-node"
+
+if [ ! -d "$INSTALL_DIR" ]; then
+    echo "X Node not installed in $INSTALL_DIR"
+    exit 1
+fi
+
+cd "$INSTALL_DIR"
+
+case "$1" in
+    status)
+        echo "* MTProxy Node Status:"
+        systemctl status mtproxy-node --no-pager -l
+        echo ""
+        echo "* Container status:"
+        docker compose ps
+        echo ""
+        echo "* Resources:"
+        docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+        ;;
+    logs)
+        if [ -n "$2" ]; then
+            docker compose logs -f "$2"
+        else
+            docker compose logs -f
+        fi
+        ;;
+    restart)
+        echo "* Restarting service..."
+        systemctl restart mtproxy-node
+        echo "-> Restarted"
+        ;;
+    update)
+        echo "* Updating from GitHub..."
+        curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh | bash
+        ;;
+    rebuild)
+        echo "* Rebuilding containers..."
+        systemctl stop mtproxy-node
+        docker compose down
+        docker compose up -d --build
+        systemctl start mtproxy-node
+        echo "-> Rebuilt"
+        ;;
+    setup)
+        echo ""
+        echo "========================================================"
+        echo "  Adding API TOKEN from bot"
+        echo "========================================================"
+        echo ""
+
+        read -p "Enter API TOKEN from bot: " API_TOKEN
+        if [ -n "$API_TOKEN" ]; then
+            # Update .env file
+            if [ -f "node-agent/.env" ]; then
+                sed -i "s/^API_TOKEN=.*/API_TOKEN=$API_TOKEN/" node-agent/.env
+                echo "* API TOKEN updated in .env file"
+            else
+                echo "X .env file not found"
+                exit 1
+            fi
+
+            # Restart service
+            systemctl restart mtproxy-node
+            echo "* Service restarted"
+        fi
+        ;;
+    shell)
+        if [ -n "$2" ]; then
+            docker compose exec "$2" /bin/bash
+        else
+            echo "Usage: mtproxy-node shell <service>"
+        fi
+        ;;
+    *)
+        echo "MTProxy Node Management Tool"
+        echo ""
+        echo "Usage: mtproxy-node <command>"
+        echo ""
+        echo "Commands:"
+        echo "  status    - Show service and container status"
+        echo "  logs      - Show container logs (use 'logs <service>' for specific)"
+        echo "  restart   - Restart the service"
+        echo "  update    - Update from GitHub"
+        echo "  rebuild   - Rebuild containers"
+        echo "  setup     - Configure API token"
+        echo "  shell     - Open shell in container"
+        echo ""
+        echo "Examples:"
+        echo "  mtproxy-node status"
+        echo "  mtproxy-node logs node-agent"
+        echo "  mtproxy-node setup"
+        ;;
+esac
+NODE_SCRIPT_EOF
+
+    chmod +x /usr/local/bin/mtproxy-node
+    echo "-> Global command created: mtproxy-node"
 
     # Show API KEY
     if [ -f "node-agent/.env" ]; then

@@ -57,6 +57,82 @@ function getNodeClient(nodeId: number): NodeApiClient | null {
 }
 
 /**
+ * Получить полную информацию о ноде с кнопками
+ */
+async function getNodeInfoMessage(nodeId: number): Promise<{ text: string; buttons: any[][] } | null> {
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    return null;
+  }
+
+  const client = getNodeClient(nodeId);
+  let healthInfo = '';
+  let statsInfo = '';
+
+  try {
+    if (client) {
+      const health = await client.getHealth();
+      const stats = await client.getStats();
+      
+      const cpuUsage = health.system.cpuUsage.toFixed(1);
+      const ramUsage = health.system.ramUsage.toFixed(1);
+      const uptimeHours = Math.floor(health.uptime / 3600);
+      const uptimeMinutes = Math.floor((health.uptime % 3600) / 60);
+      
+      healthInfo = `\n<b>Состояние:</b>\n` +
+                   `Статус: ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
+                   `Uptime: ${uptimeHours}ч ${uptimeMinutes}м\n` +
+                   `CPU: ${cpuUsage}%\n` +
+                   `RAM: ${ramUsage}%\n`;
+      
+      const inMb = stats.network.inMb.toFixed(2);
+      const outMb = stats.network.outMb.toFixed(2);
+      const inGb = (stats.network.inMb / 1024).toFixed(2);
+      const outGb = (stats.network.outMb / 1024).toFixed(2);
+      
+      statsInfo = `\n<b>Статистика:</b>\n` +
+                  `MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
+                  `  Telegram серверов: ${stats.mtproto.activeTargets}/${stats.mtproto.readyTargets}\n` +
+                  `SOCKS5: ${stats.socks5.connections}\n` +
+                  `Трафик: ⬇️ ${inGb} GB | ⬆️ ${outGb} GB\n`;
+    }
+  } catch (err: any) {
+    healthInfo = `\n⚠️ Не удалось получить статус: ${err.message}\n`;
+  }
+
+  const text = 
+    `📡 <b>${node.name}</b>\n\n` +
+    `ID: <code>${node.id}</code>\n` +
+    `Домен: <code>${node.domain}</code>\n` +
+    `IP: <code>${node.ip}</code>\n` +
+    `MTProto порт: ${node.mtproto_port}\n` +
+    `SOCKS5 порт: ${node.socks5_port}\n` +
+    `Воркеры: ${node.workers}\n` +
+    `CPU ядер: ${node.cpu_cores}\n` +
+    `RAM: ${node.ram_mb} MB\n` +
+    (node.ad_tag ? `AD_TAG: <code>${node.ad_tag}</code>\n` : '') +
+    healthInfo +
+    statsInfo;
+
+  const buttons = [
+    [
+      { text: '🔗 Ссылки', callback_data: `get_links_${nodeId}` },
+      { text: '🔄 Рестарт', callback_data: `restart_node_${nodeId}` }
+    ],
+    [
+      { text: '🏷️ AD_TAG', callback_data: `manage_ad_tag_${nodeId}` },
+      { text: '📋 Логи', callback_data: `get_logs_${nodeId}` }
+    ],
+    [
+      { text: '🗑️ Удалить', callback_data: `delete_node_${nodeId}` },
+      { text: '⬅️ Назад к списку', callback_data: 'back_to_nodes_list' }
+    ]
+  ];
+
+  return { text, buttons };
+}
+
+/**
  * Проверка прав админа
  */
 function isAdmin(userId: number): boolean {
@@ -227,78 +303,15 @@ bot.command('node', async (ctx) => {
       return;
     }
 
-    const node = queries.getNodeById.get(nodeId) as any;
-    if (!node) {
+    const info = await getNodeInfoMessage(nodeId);
+    if (!info) {
       await ctx.reply('❌ Нода не найдена');
       return;
     }
 
-    const client = getNodeClient(nodeId);
-    let healthInfo = '';
-    let statsInfo = '';
-
-    try {
-      if (client) {
-        const health = await client.getHealth();
-        const stats = await client.getStats();
-        
-        const cpuUsage = health.system.cpuUsage.toFixed(1);
-        const ramUsage = health.system.ramUsage.toFixed(1);
-        const uptimeHours = Math.floor(health.uptime / 3600);
-        const uptimeMinutes = Math.floor((health.uptime % 3600) / 60);
-        
-        healthInfo = `\nСтатус: ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
-                     `Uptime: ${uptimeHours}ч ${uptimeMinutes}м\n` +
-                     `CPU: ${cpuUsage}%\n` +
-                     `RAM: ${ramUsage}%\n`;
-        
-        const inMb = stats.network.inMb.toFixed(2);
-        const outMb = stats.network.outMb.toFixed(2);
-        
-        statsInfo = `\nMTProto:\n` +
-                    `  Подключений: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
-                    `  Telegram серверов: ${stats.mtproto.activeTargets}/${stats.mtproto.readyTargets}\n` +
-                    `SOCKS5:\n` +
-                    `  Подключений: ${stats.socks5.connections}\n` +
-                    `Трафик:\n` +
-                    `  ⬇️ ${inMb} MB\n` +
-                    `  ⬆️ ${outMb} MB\n`;
-      }
-    } catch (err: any) {
-      healthInfo = `\n⚠️ Не удалось получить статус: ${err.message}\n`;
-    }
-
-    const nodeInfo = 
-      `📡 Нода: ${node.name}\n\n` +
-      `ID: ${node.id}\n` +
-      `Домен: ${node.domain}\n` +
-      `IP: ${node.ip}\n` +
-      `MTProto порт: ${node.mtproto_port}\n` +
-      `SOCKS5 порт: ${node.socks5_port}\n` +
-      `Воркеры: ${node.workers}\n` +
-      `CPU ядер: ${node.cpu_cores}\n` +
-      `RAM: ${node.ram_mb} MB\n` +
-      healthInfo +
-      statsInfo;
-
-    const buttons = [
-      [
-        { text: '🔗 Ссылки', callback_data: `get_links_${node.id}` },
-        { text: '🔄 Рестарт', callback_data: `restart_node_${node.id}` }
-      ],
-      [
-        { text: '🏷️ AD_TAG', callback_data: `manage_ad_tag_${node.id}` },
-        { text: '📋 Логи', callback_data: `get_logs_${node.id}` }
-      ],
-      [
-        { text: '🗑️ Удалить', callback_data: `delete_node_${node.id}` },
-        { text: '⬅️ Назад к списку', callback_data: 'back_to_nodes_list' }
-      ]
-    ];
-
-    await ctx.reply(nodeInfo, {
+    await ctx.reply(info.text, {
       parse_mode: 'HTML',
-      reply_markup: { inline_keyboard: buttons }
+      reply_markup: { inline_keyboard: info.buttons }
     });
   } catch (err: any) {
     await ctx.reply(`❌ Ошибка при получении информации о ноде: ${err.message}`);
@@ -370,74 +383,15 @@ bot.action(/^node_info_(\d+)$/, async (ctx: any) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
   
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
+  const info = await getNodeInfoMessage(nodeId);
+  if (!info) {
     await ctx.editMessageText('❌ Нода не найдена');
     return;
   }
 
-  const client = getNodeClient(nodeId);
-  let healthInfo = '';
-  let statsInfo = '';
-
-  try {
-    if (client) {
-      const health = await client.getHealth();
-      const stats = await client.getStats();
-      
-      const cpuUsage = health.system.cpuUsage.toFixed(1);
-      const ramUsage = health.system.ramUsage.toFixed(1);
-      const uptimeHours = Math.floor(health.uptime / 3600);
-      const uptimeMinutes = Math.floor((health.uptime % 3600) / 60);
-      
-      healthInfo = `\n<b>Состояние:</b>\n` +
-                   `Статус: ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
-                   `Uptime: ${uptimeHours}ч ${uptimeMinutes}м\n` +
-                   `CPU: ${cpuUsage}%\n` +
-                   `RAM: ${ramUsage}%\n`;
-      
-      const inMb = stats.network.inMb.toFixed(2);
-      const outMb = stats.network.outMb.toFixed(2);
-      
-      statsInfo = `\n<b>Статистика:</b>\n` +
-                  `MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
-                  `SOCKS5: ${stats.socks5.connections}\n` +
-                  `Трафик: ⬇️ ${inMb} MB | ⬆️ ${outMb} MB\n`;
-    }
-  } catch (err: any) {
-    healthInfo = `\n⚠️ Не удалось получить статус: ${err.message}\n`;
-  }
-
-  const text = 
-    `📡 <b>${node.name}</b>\n\n` +
-    `ID: <code>${node.id}</code>\n` +
-    `Домен: <code>${node.domain}</code>\n` +
-    `IP: <code>${node.ip}</code>\n` +
-    `MTProto порт: ${node.mtproto_port}\n` +
-    `SOCKS5 порт: ${node.socks5_port}\n` +
-    `Воркеры: ${node.workers}\n` +
-    (node.ad_tag ? `AD_TAG: <code>${node.ad_tag}</code>\n` : '') +
-    healthInfo +
-    statsInfo;
-
-  const buttons = [
-    [
-      { text: '🔗 Ссылки', callback_data: `get_links_${nodeId}` },
-      { text: '🔄 Рестарт', callback_data: `restart_node_${nodeId}` }
-    ],
-    [
-      { text: '🏷️ AD_TAG', callback_data: `manage_ad_tag_${nodeId}` },
-      { text: '📋 Логи', callback_data: `get_logs_${nodeId}` }
-    ],
-    [
-      { text: '🗑️ Удалить', callback_data: `delete_node_${nodeId}` },
-      { text: '⬅️ Назад к списку', callback_data: 'back_to_nodes_list' }
-    ]
-  ];
-
-  await ctx.editMessageText(text, {
+  await ctx.editMessageText(info.text, {
     parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: buttons }
+    reply_markup: { inline_keyboard: info.buttons }
   });
 });
 

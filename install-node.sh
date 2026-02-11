@@ -843,7 +843,7 @@ if [ -d "$INSTALL_DIR" ]; then
     # Check if script is run interactively
     if [ -t 0 ]; then
         echo "Choose action:"
-        echo "1) Update (git pull + restart)"
+        echo "1) Update node-agent components"
         echo "2) Show API KEY"
         echo "3) Reinstall (delete everything and install anew)"
         echo "4) Exit"

@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+# Removed 'set -e' to handle directory errors gracefully
 
 # Ensure we have a valid working directory from the start
 # This is critical for environments where cwd is corrupted
@@ -8,6 +8,11 @@ if ! pwd >/dev/null 2>&1; then
         echo "X Cannot establish a valid working directory"
         exit 1
     }
+    # Verify we successfully changed directory
+    if ! pwd >/dev/null 2>&1; then
+        echo "X Still cannot access current directory after cd"
+        exit 1
+    fi
 fi
 
 # Installation script path
@@ -36,7 +41,13 @@ if [ ! -f "$SCRIPT_PATH" ] || [ "$0" != "$SCRIPT_PATH" ]; then
     echo "Now running the installation..."
     echo ""
     cd /tmp || cd /root || cd /
-    exec "$SCRIPT_PATH" "$@"
+    # Verify we can access the new directory
+    if pwd >/dev/null 2>&1; then
+        exec "$SCRIPT_PATH" "$@"
+    else
+        echo "X Cannot access directory after cd, running in current directory"
+        exec "$SCRIPT_PATH" "$@"
+    fi
     exit 0
 fi
 

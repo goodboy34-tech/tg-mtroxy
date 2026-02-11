@@ -55,13 +55,33 @@ case "${1:-}" in
   update)
     echo "🔄 Обновление из GitHub..."
     git pull origin master
-    echo "🔨 Пересборка контейнеров..."
+    echo "🔨 Пересборка всех контейнеров..."
     docker compose -f docker-compose.yml build --no-cache
     docker compose -f docker-compose.node.yml build --no-cache
     echo "🚀 Перезапуск..."
     docker compose -f docker-compose.yml up -d
     docker compose -f docker-compose.node.yml up -d
     echo "✅ Обновление завершено"
+    ;;
+    
+  update-control)
+    echo "🔄 Обновление control-panel из GitHub..."
+    git pull origin master
+    echo "🔨 Пересборка control-panel..."
+    docker compose -f docker-compose.yml build --no-cache
+    echo "🚀 Перезапуск control-panel..."
+    docker compose -f docker-compose.yml up -d
+    echo "✅ Control-panel обновлён"
+    ;;
+    
+  update-node)
+    echo "🔄 Обновление node-agent из GitHub..."
+    git pull origin master
+    echo "🔨 Пересборка node-agent..."
+    docker compose -f docker-compose.node.yml build --no-cache
+    echo "🚀 Перезапуск node-agent..."
+    docker compose -f docker-compose.node.yml up -d
+    echo "✅ Node-agent обновлён"
     ;;
     
   rebuild)
@@ -107,6 +127,8 @@ case "${1:-}" in
     echo "  logs [service]  Показать логи (опционально конкретного сервиса)"
     echo "  status     Показать статус и использование ресурсов"
     echo "  update     Обновить из GitHub и перезапустить"
+    echo "  update-control  Обновить только control-panel"
+    echo "  update-node     Обновить только node-agent"
     echo "  rebuild    Полная пересборка контейнеров"
     echo "  clean      Очистить Docker (удалит volumes!)"
     echo "  backup     Создать резервную копию данных"

@@ -517,7 +517,7 @@ bot.action(/^delete_node_(\d+)$/, async (ctx) => {
 });
 
 bot.action(/^add_secret_(\d+)$/, async (ctx) => {
-  console.log(`add_secret action triggered with callback: ${ctx.callbackQuery?.data}`);
+  console.log(`add_secret action triggered with callback: ${ctx.callbackQuery.data}`);
   const nodeId = parseInt(ctx.match[1]);
   console.log(`Parsed nodeId: ${nodeId}`);
   await ctx.answerCbQuery();

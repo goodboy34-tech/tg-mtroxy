@@ -462,7 +462,6 @@ socksmethod: username
 # User configuration
 user.privileged: root
 user.unprivileged: nobody
-user.libwrap: nobody
 
 # Client rules
 client pass {
@@ -689,7 +688,6 @@ socksmethod: username
 # User configuration
 user.privileged: root
 user.unprivileged: nobody
-user.libwrap: nobody
 
 # Client rules
 client pass {

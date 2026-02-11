@@ -409,7 +409,6 @@ socksmethod: username
 # User configuration
 user.privileged: root
 user.unprivileged: nobody
-user.libwrap: nobody
 
 # Password file (Dante will look for sockd.passwd in the same directory as config)
 

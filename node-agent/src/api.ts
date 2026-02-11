@@ -405,9 +405,7 @@ async function updateSocks5Config(accounts: Array<{ username: string; password: 
     return;
   }
 
-  // GOST v2 (ginuerzh/gost) НЕ поддерживает файлы аутентификации
-  // Используем GOST v3 (gogost/gost) с JSON конфигом
-  
+  // GOST v3 с JSON конфигом
   const gostConfig = {
     services: [{
       name: "socks5",
@@ -433,12 +431,15 @@ async function updateSocks5Config(accounts: Array<{ username: string; password: 
   fs.writeFileSync(configFile, JSON.stringify(gostConfig, null, 2));
   console.log(`[SOCKS5] GOST v3 config created with ${accounts.length} accounts`);
 
-  // Запускаем GOST v3 с JSON конфигом
-  // Монтируем в /gost.json чтобы избежать конфликта с директорией /etc
+  // ВАЖНО: node-agent работает в контейнере с volume mount
+  // DATA_DIR внутри контейнера = /app/data
+  // На хосте это монтируется из ./node-data (или где указано в docker-compose)
+  // 
+  // Решение: используем --volumes-from чтобы новый контейнер получил доступ к тому же volume
   const cmd = `docker run -d --name=mtproxy-socks5 --restart=unless-stopped ` +
               `-p ${SOCKS5_PORT}:${SOCKS5_PORT} ` +
-              `-v ${configFile}:/gost.json:ro ` +
-              `gogost/gost -C /gost.json`;
+              `--volumes-from ${process.env.HOSTNAME || 'mtproxy-node-agent'} ` +
+              `gogost/gost -C /app/data/gost.json`;
 
   try {
     execSync(cmd);

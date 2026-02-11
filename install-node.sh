@@ -261,7 +261,12 @@ case "$1" in
         ;;
     update)
         echo "* Updating from GitHub..."
-        curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh | bash
+        if command -v git >/dev/null 2>&1 && [ -d ".git" ]; then
+            git pull origin master
+        else
+            echo "* Git not available, downloading latest installer..."
+            curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh | bash
+        fi
         ;;
     rebuild)
         echo "* Rebuilding containers..."

@@ -284,6 +284,49 @@ case "$1" in
             echo "* Service restarted"
         fi
         ;;
+    config)
+        echo "* Current configuration:"
+        echo ""
+        if [ -f "node-agent/.env" ]; then
+            echo "node-agent/.env:"
+            cat node-agent/.env
+            echo ""
+        fi
+        if [ -f "docker-compose.yml" ]; then
+            echo "docker-compose.yml:"
+            cat docker-compose.yml
+            echo ""
+        fi
+        ;;
+    backup)
+        BACKUP_FILE="mtproxy-node-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+        echo "* Creating backup: $BACKUP_FILE"
+        tar -czf "$BACKUP_FILE" \
+            --exclude='node-agent/node_modules' \
+            --exclude='node-agent/*.log' \
+            --exclude='socks5/data' \
+            --exclude='socks5/logs' \
+            .
+        echo "-> Backup created: $BACKUP_FILE"
+        ;;
+    restore)
+        if [ -n "$2" ]; then
+            BACKUP_FILE="$2"
+            if [ -f "$BACKUP_FILE" ]; then
+                echo "* Restoring from backup: $BACKUP_FILE"
+                systemctl stop mtproxy-node
+                docker compose down
+                tar -xzf "$BACKUP_FILE"
+                docker compose up -d
+                systemctl start mtproxy-node
+                echo "-> Restored from backup"
+            else
+                echo "X Backup file not found: $BACKUP_FILE"
+            fi
+        else
+            echo "Usage: mtproxy-node restore <backup-file>"
+        fi
+        ;;
     shell)
         if [ -n "$2" ]; then
             docker compose exec "$2" /bin/bash
@@ -303,6 +346,9 @@ case "$1" in
         echo "  update    - Update from GitHub"
         echo "  rebuild   - Rebuild containers"
         echo "  setup     - Configure API token"
+        echo "  config    - Show current configuration"
+        echo "  backup    - Create backup archive"
+        echo "  restore   - Restore from backup"
         echo "  shell     - Open shell in container"
         echo ""
         echo "Examples:"

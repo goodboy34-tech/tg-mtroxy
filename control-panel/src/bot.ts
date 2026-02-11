@@ -403,17 +403,61 @@ bot.action(/^delete_node_(\d+)$/, async (ctx) => {
 bot.action(/^add_secret_(\d+)$/, async (ctx) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
-  // Перенаправляем на команду add_secret — создаём фейковый update
-  const fakeUpdate: any = { update_id: 0, message: { text: `/add_secret ${nodeId}`, from: ctx.from, chat: ctx.chat } };
-  await bot.handleUpdate(fakeUpdate);
+
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  // Устанавливаем состояние ожидания секрета
+  userStates.set(ctx.from!.id, { action: 'add_secret', nodeId });
+
+  await ctx.editMessageText(
+    `➕ *Добавление MTProto секрета для ${node.name}*\n\n` +
+    'Отправьте секрет в формате:\n' +
+    '```\n' +
+    'dd1234567890abcdef1234567890abcdef\n' +
+    '```\n\n' +
+    'Или используйте /generate_secret для генерации нового.\n\n' +
+    'Отправьте /cancel для отмены.',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [[{ text: '⬅️ Назад', callback_data: `manage_node_links_${nodeId}` }]]
+      }
+    }
+  );
 });
 
-bot.action(/^add_socks5_(\d+)$/, async (ctx) => {
+bot.action(/^add_socks5_(\d+)$/, async (ctx: any) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
-  // Перенаправляем на команду add_socks5 — создаём фейковый update
-  const fakeUpdate: any = { update_id: 0, message: { text: `/add_socks5 ${nodeId}`, from: ctx.from, chat: ctx.chat } };
-  await bot.handleUpdate(fakeUpdate);
+
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  // Устанавливаем состояние ожидания SOCKS5 аккаунта
+  userStates.set(ctx.from!.id, { action: 'add_socks5', nodeId });
+
+  await ctx.editMessageText(
+    `➕ *Добавление SOCKS5 аккаунта для ${node.name}*\n\n` +
+    'Отправьте данные аккаунта в формате:\n' +
+    '```\n' +
+    'username: myuser\n' +
+    'password: mypass\n' +
+    '```\n\n' +
+    'Отправьте /cancel для отмены.',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [[{ text: '⬅️ Назад', callback_data: `manage_node_links_${nodeId}` }]]
+      }
+    }
+  );
 });
 
 // ─── ОБРАБОТЧИКИ ГЛАВНОГО МЕНЮ ───

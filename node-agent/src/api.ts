@@ -15,6 +15,7 @@ const INTERNAL_IP = process.env.INTERNAL_IP || '';
 const MTPROTO_PORT = parseInt(process.env.MTPROTO_PORT || '443');
 const SOCKS5_PORT = parseInt(process.env.SOCKS5_PORT || '1080');
 const WORKERS = parseInt(process.env.WORKERS || '2');
+const AD_TAG = process.env.AD_TAG || ''; // Опциональный рекламный тег
 
 // Путь к файлам конфигурации
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -375,6 +376,12 @@ async function restartMtProto(): Promise<void> {
   // Если есть NAT info
   if (INTERNAL_IP && DOMAIN) {
     cmd += `--env NAT_INFO=${INTERNAL_IP}:${DOMAIN} `;
+  }
+
+  // Если есть AD_TAG (рекламный тег)
+  if (AD_TAG) {
+    cmd += `--env TAG=${AD_TAG} `;
+    console.log(`[MTProto] Using AD_TAG: ${AD_TAG}`);
   }
 
   cmd += 'telegrammessenger/proxy:latest';

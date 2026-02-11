@@ -14,6 +14,17 @@ const db: InstanceType<typeof Database> = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
+// ─── Миграции ───
+// Добавляем новые колонки если их нет
+try {
+  db.exec(`ALTER TABLE nodes ADD COLUMN ad_tag TEXT DEFAULT NULL`);
+  console.log('[DB] Migration: Added ad_tag column to nodes table');
+} catch (err: any) {
+  if (!err.message.includes('duplicate column name')) {
+    console.error('[DB] Migration error:', err.message);
+  }
+}
+
 // ─── Инициализация таблиц ───
 db.exec(`
   -- Таблица серверных нод
@@ -128,15 +139,15 @@ export const queries: Queries = {
   getNodeByDomain: db.prepare(`SELECT * FROM nodes WHERE domain = ?`),
   
   insertNode: db.prepare(`
-    INSERT INTO nodes (name, domain, ip, api_url, api_token, mtproto_port, socks5_port, workers, cpu_cores, ram_mb, status)
-    VALUES (@name, @domain, @ip, @api_url, @api_token, @mtproto_port, @socks5_port, @workers, @cpu_cores, @ram_mb, @status)
+    INSERT INTO nodes (name, domain, ip, api_url, api_token, mtproto_port, socks5_port, workers, cpu_cores, ram_mb, status, ad_tag)
+    VALUES (@name, @domain, @ip, @api_url, @api_token, @mtproto_port, @socks5_port, @workers, @cpu_cores, @ram_mb, @status, @ad_tag)
   `),
   
   updateNode: db.prepare(`
     UPDATE nodes 
     SET name = @name, domain = @domain, ip = @ip, api_url = @api_url, 
         mtproto_port = @mtproto_port, socks5_port = @socks5_port, workers = @workers,
-        cpu_cores = @cpu_cores, ram_mb = @ram_mb, updated_at = datetime('now')
+        cpu_cores = @cpu_cores, ram_mb = @ram_mb, ad_tag = @ad_tag, updated_at = datetime('now')
     WHERE id = @id
   `),
 

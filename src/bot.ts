@@ -300,11 +300,10 @@ bot.command('node', async (ctx) => {
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔗 Получить ссылки', `links_${node.id}`)],
+        [Markup.button.callback('🔗 Получить ссылки', `get_links_${node.id}`)],
         [Markup.button.callback('➕ MTProto', `add_secret_${node.id}`), Markup.button.callback('➕ SOCKS5', `add_socks5_${node.id}`)],
-        [Markup.button.callback('🔄 Перезапустить', `restart_node_${node.id}`), Markup.button.callback('📋 Логи', `logs_${node.id}`)],
-        [Markup.button.callback('🗑️ Удалить ноду', `confirm_delete_${node.id}`)],
-        [Markup.button.callback('⬅️ Назад', 'show_nodes')]
+        [Markup.button.callback('🔄 Перезапустить', `restart_node_${node.id}`), Markup.button.callback('📋 Логи', `logs_node_${node.id}`)],
+        [Markup.button.callback('🗑️ Удалить ноду', `confirm_delete_node_${node.id}`), Markup.button.callback('⬅️ Назад', 'show_nodes')]
       ])
     }
   );
@@ -1225,13 +1224,15 @@ bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
   const socks5Accounts = queries.getNodeSocks5Accounts.all(nodeId) as any[];
   
   let text = `🔗 *Управление ссылками - ${node.name}*\n\n`;
-  const buttons = [];
+  const buttons: any[][] = [];
   
   // MTProto ссылки
   if (secrets.length > 0) {
     text += `🟣 *MTProto (${secrets.length}):*\n`;
     for (const secret of secrets) {
-      text += `   \`${secret.secret}\`\n`;
+      const type = secret.is_fake_tls ? '🔒 Fake-TLS' : '🔓 Обычный';
+      text += `   ${type}: \`${secret.secret}\`\n`;
+      if (secret.description) text += `   _${secret.description}_\n`;
       buttons.push([Markup.button.callback(`🗑️ Удалить MTProto ${secret.secret.slice(-8)}`, `delete_mtproto_${secret.id}`)]);
     }
     text += '\n';
@@ -1241,7 +1242,8 @@ bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
   if (socks5Accounts.length > 0) {
     text += `🔵 *SOCKS5 (${socks5Accounts.length}):*\n`;
     for (const account of socks5Accounts) {
-      text += `   \`${account.username}\`\n`;
+      text += `   👤 \`${account.username}\`\n`;
+      if (account.description) text += `   _${account.description}_\n`;
       buttons.push([Markup.button.callback(`🗑️ Удалить SOCKS5 ${account.username}`, `delete_socks5_${account.id}`)]);
     }
     text += '\n';
@@ -1251,9 +1253,8 @@ bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
     text += '📭 Ссылок пока нет.\n\n';
   }
   
-  // Добавляем кнопки для создания новых ссылок
-  buttons.push([Markup.button.callback('➕ MTProto', `add_secret_${nodeId}`)]);
-  buttons.push([Markup.button.callback('➕ SOCKS5', `add_socks5_${nodeId}`)]);
+  // Кнопки добавления
+  buttons.push([Markup.button.callback('➕ MTProto', `add_secret_${nodeId}`), Markup.button.callback('➕ SOCKS5', `add_socks5_${nodeId}`)]);
   buttons.push([Markup.button.callback('⬅️ Назад', 'manage_links')]);
   
   await ctx.editMessageText(text, {
@@ -1270,12 +1271,70 @@ bot.action(/^add_secret_(\d+)$/, async (ctx) => {
   await bot.handleUpdate({ message: ctx.message } as any);
 });
 
-bot.action(/^add_socks5_(\d+)$/, async (ctx) => {
+bot.action(/^get_links_(\d+)$/, async (ctx) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
-  // Перенаправляем на команду add_socks5
-  ctx.message = { text: `/add_socks5 ${nodeId}` } as any;
+  // Перенаправляем на команду links
+  ctx.message = { text: `/links ${nodeId}` } as any;
   await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+bot.action(/^restart_node_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду restart_node
+  ctx.message = { text: `/restart_node ${nodeId}` } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+bot.action(/^logs_node_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  await ctx.answerCbQuery();
+  // Перенаправляем на команду logs
+  ctx.message = { text: `/logs ${nodeId}` } as any;
+  await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+bot.action(/^confirm_delete_node_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  const node = queries.getNodeById.get(nodeId) as any;
+  
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  await ctx.editMessageText(
+    `⚠️ *Удаление ноды*\n\n` +
+    `Вы уверены, что хотите удалить ноду "${node.name}"?\n\n` +
+    `Это действие нельзя отменить!`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('❌ Да, удалить', `delete_node_${nodeId}`)],
+        [Markup.button.callback('✅ Отмена', 'show_nodes')]
+      ])
+    }
+  );
+});
+
+bot.action(/^delete_node_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  const node = queries.getNodeById.get(nodeId) as any;
+  
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  // Удаляем все связанные данные
+  queries.deleteNode.run(nodeId);
+  
+  await ctx.answerCbQuery('Нода удалена');
+  await ctx.editMessageText(
+    `✅ *Нода "${node.name}" успешно удалена!*`,
+    Markup.inlineKeyboard([[Markup.button.callback('⬅️ К списку нод', 'show_nodes')]])
+  );
 });
 
 // ─── УДАЛЕНИЕ ССЫЛОК ───
@@ -1348,40 +1407,6 @@ bot.action(/^delete_socks5_(\d+)$/, async (ctx) => {
   // Обновляем сообщение
   ctx.match = [null, account.node_id.toString()];
   await bot.actions.get('manage_node_links_' + account.node_id)?.(ctx);
-});
-
-// ─── ОБРАБОТЧИКИ КНОПОК НОДЫ ───
-
-bot.action(/^links_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-  // Перенаправляем на команду links
-  ctx.message = { text: `/links ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
-});
-
-bot.action(/^restart_node_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-  // Перенаправляем на команду restart_node
-  ctx.message = { text: `/restart_node ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
-});
-
-bot.action(/^logs_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-  // Перенаправляем на команду logs
-  ctx.message = { text: `/logs ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
-});
-
-bot.action(/^confirm_delete_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-  // Перенаправляем на команду remove_node
-  ctx.message = { text: `/remove_node ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
 });
 
 // ═══════════════════════════════════════════════

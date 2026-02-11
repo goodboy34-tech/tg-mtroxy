@@ -394,7 +394,7 @@ case "$1" in
             echo "* Configuration updated in .env file"
         else
             # Create new .env file
-            cat > .env <<EOF
+            cat > .env <<ENV_EOF
 # Telegram Bot Configuration
 BOT_TOKEN=$BOT_TOKEN
 ADMIN_IDS=$ADMIN_IDS
@@ -405,7 +405,7 @@ DATABASE_PATH=./data/database.sqlite
 # Server
 PORT=3000
 NODE_ENV=production
-EOF
+ENV_EOF
             echo "* Configuration created: .env"
         fi
 

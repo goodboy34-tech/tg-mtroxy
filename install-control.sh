@@ -319,6 +319,18 @@ case "$1" in
         fi
         ;;
     setup)
+        # Check if running interactively
+        if [ ! -t 0 ]; then
+            echo "X This command requires an interactive terminal."
+            echo "   Please run from your host system:"
+            echo "   mtproxy-control setup"
+            echo ""
+            echo "   Or run interactively in the container:"
+            echo "   docker compose exec mtproxy-control /bin/bash"
+            echo "   Then run: mtproxy-control setup"
+            exit 1
+        fi
+
         echo ""
         echo "========================================================"
         echo "  Control Panel Bot Configuration"

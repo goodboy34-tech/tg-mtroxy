@@ -426,6 +426,11 @@ services:
       - "3000:3000"
     networks:
       - mtproxy-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   socks5:
     image: ginuerzh/gost:latest
@@ -436,6 +441,11 @@ services:
       - "1080:1080"
     networks:
       - mtproxy-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   mtproxy-network:
@@ -597,6 +607,11 @@ services:
       - "3000:3000"
     networks:
       - mtproxy-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   socks5:
     image: ginuerzh/gost:latest
@@ -607,6 +622,11 @@ services:
       - "1080:1080"
     networks:
       - mtproxy-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   mtproxy-network:

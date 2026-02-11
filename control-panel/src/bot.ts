@@ -639,36 +639,6 @@ bot.action('add_node', async (ctx: any) => {
   );
 });
 
-bot.action('show_stats', async (ctx: any) => {
-  console.log('show_stats action triggered');
-  await ctx.answerCbQuery();
-
-  const nodes = queries.getActiveNodes.all([]) as any[];
-  const allStats = queries.getAllNodesLatestStats.all([]) as any[];
-
-  let text = '📊 <b>Общая статистика</b>\n\n';
-  text += `Нод активно: ${nodes.length}\n\n`;
-
-  let totalMtprotoConnections = 0;
-  let totalSocks5Connections = 0;
-
-  for (const stat of allStats) {
-    totalMtprotoConnections += stat.mtproto_connections || 0;
-    totalSocks5Connections += stat.socks5_connections || 0;
-
-    text += `<b>${stat.node_name}</b>\n`;
-    text += `  MTProto: ${stat.mtproto_connections}/${stat.mtproto_max}\n`;
-    text += `  SOCKS5: ${stat.socks5_connections}\n`;
-    text += `  CPU: ${stat.cpu_usage?.toFixed(1)}% | RAM: ${stat.ram_usage?.toFixed(1)}%\n\n`;
-  }
-
-  text += `<b>Итого:</b>\n`;
-  text += `MTProto подключений: ${totalMtprotoConnections}\n`;
-  text += `SOCKS5 подключений: ${totalSocks5Connections}\n`;
-
-  await ctx.reply(text, { parse_mode: 'HTML' });
-});
-
 bot.action('show_help', async (ctx: any) => {
   console.log('show_help action triggered');
   await ctx.answerCbQuery();
@@ -1007,25 +977,29 @@ bot.action(/^add_secret_ip_(dd|normal)_(\d+)_([a-f0-9]{32})$/, async (ctx: any) 
 // ═══════════════════════════════════════════════
 
 bot.command('stats', async (ctx) => {
+  await showStats(ctx);
+});
+
+bot.action('show_stats', async (ctx: any) => {
+  await ctx.answerCbQuery();
+  await showStats(ctx, true);
+});
+
+bot.action('refresh_stats', async (ctx: any) => {
+  await ctx.answerCbQuery('🔄 Обновление...');
+  await showStats(ctx, true);
+});
+
+async function showStats(ctx: any, isEdit: boolean = false) {
   const nodes = queries.getActiveNodes.all([]) as any[];
-  const allStats = queries.getAllNodesLatestStats.all([]) as any[];
   
   if (nodes.length === 0) {
-    return ctx.reply('📭 Нет активных нод. Добавьте ноду через /add_node');
+    const text = '📭 Нет активных нод. Добавьте ноду через /add_node';
+    return isEdit ? ctx.editMessageText(text) : ctx.reply(text);
   }
 
-  let text = '📊 <b>Общая статистика</b>\n\n';
-  text += `Нод активно: ${nodes.length}\n`;
-  text += `Статистика от: ${allStats.length} нод\n\n`;
-
-  if (allStats.length === 0) {
-    text += '⚠️ Нет данных статистики.\n';
-    text += 'Возможные причины:\n';
-    text += '- Ноды недавно добавлены (подождите 5 минут)\n';
-    text += '- Ноды недоступны\n';
-    text += '- Проверьте /health\n';
-    return ctx.reply(text, { parse_mode: 'HTML' });
-  }
+  let text = '📊 <b>Статистика прокси</b>\n';
+  text += `⏰ ${new Date().toLocaleString('ru-RU')}\n\n`;
 
   let totalMtprotoConnections = 0;
   let totalMtprotoMax = 0;
@@ -1034,35 +1008,125 @@ bot.command('stats', async (ctx) => {
   let avgRam = 0;
   let totalNetworkIn = 0;
   let totalNetworkOut = 0;
+  let onlineNodes = 0;
+  let offlineNodes = 0;
 
-  for (const stat of allStats) {
-    totalMtprotoConnections += stat.mtproto_connections || 0;
-    totalMtprotoMax += stat.mtproto_max || 0;
-    totalSocks5Connections += stat.socks5_connections || 0;
-    avgCpu += stat.cpu_usage || 0;
-    avgRam += stat.ram_usage || 0;
-    totalNetworkIn += stat.network_in_mb || 0;
-    totalNetworkOut += stat.network_out_mb || 0;
-    
-    text += `🖥 <b>${stat.node_name}</b>\n`;
-    text += `   MTProto: ${stat.mtproto_connections}/${stat.mtproto_max} подключений\n`;
-    text += `   SOCKS5: ${stat.socks5_connections} подключений\n`;
-    text += `   CPU: ${stat.cpu_usage?.toFixed(1)}% | RAM: ${stat.ram_usage?.toFixed(1)}%\n`;
-    text += `   Network: ↓${stat.network_in_mb?.toFixed(1)}MB ↑${stat.network_out_mb?.toFixed(1)}MB\n\n`;
+  // Собираем статистику по каждой ноде
+  for (const node of nodes) {
+    const client = getNodeClient(node.id);
+    if (!client) continue;
+
+    try {
+      const health = await client.getHealth();
+      const stats = await client.getStats();
+
+      if (health.status === 'healthy') {
+        onlineNodes++;
+      } else {
+        offlineNodes++;
+      }
+
+      totalMtprotoConnections += stats.mtproto.connections || 0;
+      totalMtprotoMax += stats.mtproto.maxConnections || 0;
+      totalSocks5Connections += stats.socks5.connections || 0;
+      avgCpu += health.system.cpuUsage || 0;
+      avgRam += health.system.ramUsage || 0;
+      totalNetworkIn += stats.network.inMb || 0;
+      totalNetworkOut += stats.network.outMb || 0;
+
+      // Статус ноды
+      const statusEmoji = health.status === 'healthy' ? '🟢' : '🔴';
+      const uptimeHours = Math.floor(health.uptime / 3600);
+      const uptimeDays = Math.floor(uptimeHours / 24);
+      const uptimeStr = uptimeDays > 0 ? `${uptimeDays}д` : `${uptimeHours}ч`;
+
+      text += `${statusEmoji} <b>${node.name}</b> <code>${uptimeStr}</code>\n`;
+      
+      // MTProto
+      const mtprotoPercent = stats.mtproto.maxConnections > 0 
+        ? Math.round((stats.mtproto.connections / stats.mtproto.maxConnections) * 100)
+        : 0;
+      const mtprotoBar = generateProgressBar(mtprotoPercent);
+      text += `   🔷 MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections} ${mtprotoBar}\n`;
+      
+      // SOCKS5
+      if (stats.socks5.connections > 0) {
+        text += `   🔵 SOCKS5: ${stats.socks5.connections} активных\n`;
+      }
+      
+      // Система
+      const cpuBar = generateProgressBar(Math.round(health.system.cpuUsage));
+      const ramBar = generateProgressBar(Math.round(health.system.ramUsage));
+      text += `   💻 CPU: ${health.system.cpuUsage.toFixed(1)}% ${cpuBar}\n`;
+      text += `   🧠 RAM: ${health.system.ramUsage.toFixed(1)}% ${ramBar}\n`;
+      text += `   💾 Disk: ${health.system.diskUsage}%\n`;
+      
+      // Сеть
+      text += `   🌐 ↓${stats.network.inMb.toFixed(1)}MB ↑${stats.network.outMb.toFixed(1)}MB\n\n`;
+
+    } catch (err: any) {
+      offlineNodes++;
+      text += `🔴 <b>${node.name}</b> - <i>недоступна</i>\n`;
+      text += `   ⚠️ ${err.message}\n\n`;
+    }
   }
 
-  avgCpu = avgCpu / allStats.length;
-  avgRam = avgRam / allStats.length;
+  // Средние значения
+  const totalNodes = onlineNodes + offlineNodes;
+  if (onlineNodes > 0) {
+    avgCpu = avgCpu / onlineNodes;
+    avgRam = avgRam / onlineNodes;
+  }
 
-  text += `📈 <b>Итого по всем нодам:</b>\n`;
-  text += `MTProto: ${totalMtprotoConnections}/${totalMtprotoMax}\n`;
-  text += `SOCKS5: ${totalSocks5Connections}\n`;
-  text += `Средний CPU: ${avgCpu.toFixed(1)}%\n`;
-  text += `Средний RAM: ${avgRam.toFixed(1)}%\n`;
-  text += `Суммарный трафик: ↓${totalNetworkIn.toFixed(1)}MB ↑${totalNetworkOut.toFixed(1)}MB\n`;
+  // Итоговая статистика
+  text += `━━━━━━━━━━━━━━━\n`;
+  text += `📈 <b>Общая статистика:</b>\n\n`;
+  text += `🖥 Нод: ${onlineNodes} online / ${offlineNodes} offline из ${totalNodes}\n`;
+  text += `👥 Всего подключений:\n`;
+  text += `   • MTProto: <b>${totalMtprotoConnections}</b>/${totalMtprotoMax}\n`;
+  text += `   • SOCKS5: <b>${totalSocks5Connections}</b>\n`;
+  text += `📊 Средняя нагрузка:\n`;
+  text += `   • CPU: ${avgCpu.toFixed(1)}%\n`;
+  text += `   • RAM: ${avgRam.toFixed(1)}%\n`;
+  text += `🌐 Суммарный трафик:\n`;
+  text += `   • ↓ ${(totalNetworkIn / 1024).toFixed(2)} GB\n`;
+  text += `   • ↑ ${(totalNetworkOut / 1024).toFixed(2)} GB\n`;
 
-  await ctx.reply(text, { parse_mode: 'HTML' });
-});
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '🔄 Обновить', callback_data: 'refresh_stats' }],
+      [{ text: '⬅️ Назад', callback_data: 'back_to_main' }]
+    ]
+  };
+
+  try {
+    if (isEdit) {
+      await ctx.editMessageText(text, {
+        parse_mode: 'HTML',
+        reply_markup: keyboard
+      });
+    } else {
+      await ctx.reply(text, {
+        parse_mode: 'HTML',
+        reply_markup: keyboard
+      });
+    }
+  } catch (err) {
+    console.error('Error showing stats:', err);
+  }
+}
+
+// Функция для генерации прогресс-бара
+function generateProgressBar(percent: number, length: number = 10): string {
+  const filled = Math.round((percent / 100) * length);
+  const empty = length - filled;
+  
+  let bar = '';
+  for (let i = 0; i < filled; i++) bar += '█';
+  for (let i = 0; i < empty; i++) bar += '░';
+  
+  return bar;
+}
 
 bot.command('health', async (ctx) => {
   const nodes = queries.getActiveNodes.all([]) as any[];

@@ -242,11 +242,7 @@ case "$1" in
         echo "* Current configuration:"
         echo "* Directory: $INSTALL_DIR"
         echo ""
-        if [ -f "control-panel/.env" ]; then
-            echo "* control-panel/.env:"
-            cat control-panel/.env
-            echo ""
-        elif [ -f ".env" ]; then
+        if [ -f ".env" ]; then
             echo "* .env:"
             cat .env
             echo ""
@@ -306,9 +302,9 @@ SCRIPT_EOF
 # Show bot info function
 show_bot_info() {
     echo ""
-    if [ -f "$INSTALL_DIR/control-panel/.env" ]; then
-        BOT_TOKEN=$(grep "^BOT_TOKEN=" "$INSTALL_DIR/control-panel/.env" | cut -d '=' -f2)
-        ADMIN_IDS=$(grep "^ADMIN_IDS=" "$INSTALL_DIR/control-panel/.env" | cut -d '=' -f2)
+    if [ -f "$INSTALL_DIR/.env" ]; then
+        BOT_TOKEN=$(grep "^BOT_TOKEN=" "$INSTALL_DIR/.env" | cut -d '=' -f2)
+        ADMIN_IDS=$(grep "^ADMIN_IDS=" "$INSTALL_DIR/.env" | cut -d '=' -f2)
         IP=$(curl -s ifconfig.me)
         if [ -n "$BOT_TOKEN" ]; then
             echo "Control Panel Information:"
@@ -397,7 +393,7 @@ perform_install() {
     echo ""
     echo "* Creating configuration..."
 
-    cat > control-panel/.env <<EOF
+    cat > .env <<EOF
 # Telegram Bot Configuration
 BOT_TOKEN=$BOT_TOKEN
 ADMIN_IDS=$ADMIN_IDS
@@ -410,7 +406,7 @@ PORT=3000
 NODE_ENV=production
 EOF
 
-    echo "-> Configuration created: control-panel/.env"
+    echo "-> Configuration created: .env"
 
     # Firewall setup
     echo ""

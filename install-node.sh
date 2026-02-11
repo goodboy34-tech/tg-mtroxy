@@ -1,6 +1,35 @@
 #!/bin/bash
 set -e
 
+# Installation script path
+SCRIPT_PATH="/usr/local/bin/install-node.sh"
+
+# If script is run from URL, install it locally first
+if [ ! -f "$SCRIPT_PATH" ] || [ "$0" != "$SCRIPT_PATH" ]; then
+    echo "========================================================"
+    echo "  Installing MTProxy Node Script"
+    echo "========================================================"
+    echo ""
+
+    # Root check
+    if [ "$EUID" -ne 0 ]; then
+        echo "X Run script with root privileges:"
+        echo "   sudo bash <(curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh)"
+        exit 1
+    fi
+
+    echo "* Downloading script to $SCRIPT_PATH..."
+    curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh -o "$SCRIPT_PATH"
+    chmod +x "$SCRIPT_PATH"
+
+    echo "-> Script installed successfully!"
+    echo ""
+    echo "Now running the installation..."
+    echo ""
+    exec "$SCRIPT_PATH" "$@"
+    exit 0
+fi
+
 echo "========================================================"
 echo "  MTProxy Node - Installation"
 echo "========================================================"
@@ -9,7 +38,7 @@ echo ""
 # Root check
 if [ "$EUID" -ne 0 ]; then
     echo "X Run script with root privileges:"
-    echo "   sudo bash install-node.sh"
+    echo "   sudo $SCRIPT_PATH"
     exit 1
 fi
 

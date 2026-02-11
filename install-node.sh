@@ -183,6 +183,20 @@ services:
     networks:
       - mtproxy-network
 
+  socks5:
+    image: ghcr.io/txthinking/socks5:latest
+    container_name: mtproxy-socks5
+    restart: unless-stopped
+    environment:
+      - Socks5_User=${SOCKS5_USER:-}
+      - Socks5_Password=${SOCKS5_PASSWORD:-}
+    volumes:
+      - ./socks5:/etc/3proxy:ro
+    ports:
+      - "1080:1080"
+    networks:
+      - mtproxy-network
+
 networks:
   mtproxy-network:
     driver: bridge
@@ -440,6 +454,20 @@ services:
       - ./node-data:/app/data
     ports:
       - "3000:3000"
+    networks:
+      - mtproxy-network
+
+  socks5:
+    image: ghcr.io/txthinking/socks5:latest
+    container_name: mtproxy-socks5
+    restart: unless-stopped
+    environment:
+      - Socks5_User=${SOCKS5_USER:-}
+      - Socks5_Password=${SOCKS5_PASSWORD:-}
+    volumes:
+      - ./socks5:/etc/3proxy:ro
+    ports:
+      - "1080:1080"
     networks:
       - mtproxy-network
 

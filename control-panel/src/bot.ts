@@ -333,14 +333,21 @@ bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
 
+  console.log(`get_links action triggered for node ${nodeId}`);
+
   const node = queries.getNodeById.get(nodeId) as any;
   if (!node) {
+    console.log(`Node ${nodeId} not found`);
     await ctx.answerCbQuery('Нода не найдена');
     return;
   }
 
+  console.log(`Node found: ${node.name}, domain: ${node.domain}, port: ${node.mtproto_port}`);
+
   const secrets = queries.getNodeSecrets.all(nodeId) as any[];
   const socks5Accounts = queries.getNodeSocks5Accounts.all(nodeId) as any[];
+
+  console.log(`Secrets count: ${secrets.length}, SOCKS5 accounts: ${socks5Accounts.length}`);
 
   if (secrets.length === 0 && socks5Accounts.length === 0) {
     await ctx.answerCbQuery('Ссылок нет');

@@ -328,28 +328,101 @@ bot.action('cancel', async (ctx) => {
 
 // ─── НОВЫЕ ОБРАБОТЧИКИ КНОПОК ───
 
-bot.action(/^get_links_(\d+)$/, async (ctx) => {
+bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
-  // Перенаправляем на команду links — создаём фейковый update
-  const fakeUpdate: any = { update_id: 0, message: { text: `/links ${nodeId}`, from: ctx.from, chat: ctx.chat } };
-  await bot.handleUpdate(fakeUpdate);
+
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  const secrets = queries.getNodeSecrets.all(nodeId) as any[];
+  const socks5Accounts = queries.getNodeSocks5Accounts.all(nodeId) as any[];
+
+  if (secrets.length === 0 && socks5Accounts.length === 0) {
+    await ctx.answerCbQuery('Ссылок нет');
+    return;
+  }
+
+  let text = `🔗 *Ссылки для ${node.name}*\n\n`;
+
+  // MTProto ссылки
+  if (secrets.length > 0) {
+    text += `🟣 *MTProto:*\n`;
+    for (const secret of secrets) {
+      const type = secret.is_fake_tls ? 'Fake-TLS' : 'Обычный';
+      text += `   ${type}: \`${secret.secret}\`\n`;
+      if (secret.description) text += `   _${secret.description}_\n`;
+    }
+    text += '\n';
+  }
+
+  // SOCKS5 аккаунты
+  if (socks5Accounts.length > 0) {
+    text += `🔵 *SOCKS5:*\n`;
+    for (const account of socks5Accounts) {
+      text += `   👤 \`${account.username}:${account.password}\`\n`;
+      if (account.description) text += `   _${account.description}_\n`;
+    }
+  }
+
+  await ctx.reply(text, { parse_mode: 'Markdown' });
 });
 
-bot.action(/^restart_node_(\d+)$/, async (ctx) => {
+bot.action(/^restart_node_(\d+)$/, async (ctx: any) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
-  // Перенаправляем на команду restart_node — создаём фейковый update
-  const fakeUpdate: any = { update_id: 0, message: { text: `/restart_node ${nodeId}`, from: ctx.from, chat: ctx.chat } };
-  await bot.handleUpdate(fakeUpdate);
+
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  const client = getNodeClient(nodeId);
+  if (!client) {
+    await ctx.answerCbQuery('Не удалось подключиться к ноде');
+    return;
+  }
+
+  try {
+    await client.rebootNode();
+    await ctx.answerCbQuery('Нода перезапущена');
+  } catch (error) {
+    console.error('Failed to restart node:', error);
+    await ctx.answerCbQuery('Ошибка перезапуска');
+  }
 });
 
-bot.action(/^logs_node_(\d+)$/, async (ctx) => {
+bot.action(/^logs_node_(\d+)$/, async (ctx: any) => {
   const nodeId = parseInt(ctx.match[1]);
   await ctx.answerCbQuery();
-  // Перенаправляем на команду logs — создаём фейковый update
-  const fakeUpdate: any = { update_id: 0, message: { text: `/logs ${nodeId}`, from: ctx.from, chat: ctx.chat } };
-  await bot.handleUpdate(fakeUpdate);
+
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  const client = getNodeClient(nodeId);
+  if (!client) {
+    await ctx.answerCbQuery('Не удалось подключиться к ноде');
+    return;
+  }
+
+  try {
+    const logs = await client.getLogs(50);
+    let text = `📋 *Логи для ${node.name}*\n\n`;
+    text += '*MTProto:*\n```\n' + logs.mtproto + '\n```\n\n';
+    text += '*SOCKS5:*\n```\n' + logs.socks5 + '\n```\n\n';
+    text += '*Agent:*\n```\n' + logs.agent + '\n```';
+    await ctx.reply(text, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Failed to get logs:', error);
+    await ctx.answerCbQuery('Ошибка получения логов');
+  }
 });
 
 bot.action(/^confirm_delete_node_(\d+)$/, async (ctx) => {

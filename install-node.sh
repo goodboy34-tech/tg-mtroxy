@@ -83,7 +83,8 @@ User=root
 WorkingDirectory=$INSTALL_DIR
 ExecStart=/usr/bin/docker compose up -d
 ExecStop=/usr/bin/docker compose down
-TimeoutStartSec=300
+TimeoutStartSec=900
+TimeoutStopSec=120
 
 [Install]
 WantedBy=multi-user.target
@@ -800,6 +801,19 @@ EOF
         echo "   443/tcp  - MTProxy"
         echo "   1080/tcp - SOCKS5"
         echo "   3000/tcp - Node API"
+    fi
+
+    # Pre-build Docker images before starting service
+    echo ""
+    echo "* Pre-building Docker images (this may take 5-10 minutes on first install)..."
+    cd "$INSTALL_DIR" || exit 1
+    docker compose build --pull
+    
+    if [ $? -ne 0 ]; then
+        echo "! Warning: Image build failed, but continuing..."
+        echo "! The service will build images on first start"
+    else
+        echo "-> Images built successfully"
     fi
 
     # Create and start systemd service

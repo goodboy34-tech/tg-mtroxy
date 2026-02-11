@@ -93,7 +93,9 @@ perform_update() {
         exit 1
     fi
 
-    # Ensure node-agent directory exists and has proper permissions
+    # Clean and recreate node-agent directory
+    echo "* Preparing node-agent directory..."
+    rm -rf node-agent
     mkdir -p node-agent/src
     chown -R root:root node-agent
     chmod -R 755 node-agent
@@ -111,7 +113,6 @@ perform_update() {
     echo "Downloading updates..."
     for file in "${FILES[@]}"; do
         echo "  * $file"
-        rm -f "node-agent/$file"  # Remove if exists
         if ! curl -fsSL "$REPO_URL/$file" -o "node-agent/$file"; then
             echo "X Failed to download $file"
             exit 1
@@ -121,7 +122,6 @@ perform_update() {
 
     # Load updated api.ts
     echo "  / src/api.ts"
-    rm -f "node-agent/src/api.ts"  # Remove if exists
     if ! curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"; then
         echo "X Failed to download src/api.ts"
         exit 1

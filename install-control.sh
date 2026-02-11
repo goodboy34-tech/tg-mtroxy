@@ -121,49 +121,51 @@ perform_update() {
         echo "========================================================"
         echo ""
 
-        echo "Please provide your Telegram Bot Token from @BotFather"
-        echo "Example: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-        echo ""
+        # Check if running interactively
+        if [ -t 0 ]; then
+            echo "Please provide your Telegram Bot Token from @BotFather"
+            echo "Example: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+            echo ""
 
-        # Request Telegram Bot Token with retry
-        while true; do
-            read -p "Enter Telegram Bot Token: " BOT_TOKEN
-            if [ -n "$BOT_TOKEN" ] && [ "$BOT_TOKEN" != "" ]; then
-                break
-            else
-                echo "X Bot Token cannot be empty! Please try again."
-                echo ""
-            fi
-        done
-
-        echo ""
-        echo "Please provide Admin User IDs (comma-separated)"
-        echo "You can get your user ID from @userinfobot"
-        echo "Example: 123456789,987654321"
-        echo ""
-
-        # Request Admin IDs with retry
-        while true; do
-            read -p "Enter Admin User IDs (comma-separated): " ADMIN_IDS
-            if [ -n "$ADMIN_IDS" ] && [ "$ADMIN_IDS" != "" ]; then
-                # Validate admin IDs format (should be numbers separated by commas)
-                if echo "$ADMIN_IDS" | grep -E '^([0-9]+,)*[0-9]+$' >/dev/null; then
+            # Request Telegram Bot Token with retry
+            while true; do
+                read -p "Enter Telegram Bot Token: " BOT_TOKEN
+                if [ -n "$BOT_TOKEN" ] && [ "$BOT_TOKEN" != "" ]; then
                     break
                 else
-                    echo "X Admin IDs should be numbers separated by commas (e.g., 123456789,987654321)"
+                    echo "X Bot Token cannot be empty! Please try again."
                     echo ""
                 fi
-            else
-                echo "X Admin IDs cannot be empty! Please try again."
-                echo ""
-            fi
-        done
+            done
 
-        # Create .env file
-        echo ""
-        echo "* Creating configuration..."
+            echo ""
+            echo "Please provide Admin User IDs (comma-separated)"
+            echo "You can get your user ID from @userinfobot"
+            echo "Example: 123456789,987654321"
+            echo ""
 
-        cat > .env <<EOF
+            # Request Admin IDs with retry
+            while true; do
+                read -p "Enter Admin User IDs (comma-separated): " ADMIN_IDS
+                if [ -n "$ADMIN_IDS" ] && [ "$ADMIN_IDS" != "" ]; then
+                    # Validate admin IDs format (should be numbers separated by commas)
+                    if echo "$ADMIN_IDS" | grep -E '^([0-9]+,)*[0-9]+$' >/dev/null; then
+                        break
+                    else
+                        echo "X Admin IDs should be numbers separated by commas (e.g., 123456789,987654321)"
+                        echo ""
+                    fi
+                else
+                    echo "X Admin IDs cannot be empty! Please try again."
+                    echo ""
+                fi
+            done
+
+            # Create .env file
+            echo ""
+            echo "* Creating configuration..."
+
+            cat > .env <<EOF
 # Telegram Bot Configuration
 BOT_TOKEN=$BOT_TOKEN
 ADMIN_IDS=$ADMIN_IDS
@@ -176,7 +178,13 @@ PORT=3000
 NODE_ENV=production
 EOF
 
-        echo "-> Configuration created: .env"
+            echo "-> Configuration created: .env"
+        else
+            echo "X Configuration required but running non-interactively!"
+            echo "   Please run: mtproxy-control setup"
+            echo "   to configure the bot token and admin IDs."
+            exit 1
+        fi
     else
         echo "* Configuration file .env already exists"
     fi

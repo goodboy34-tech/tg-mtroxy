@@ -83,6 +83,7 @@ EOF
 
 # Update function
 perform_update() {
+    local mode="$1"
     echo ""
     echo "-> Updating..."
 
@@ -122,7 +123,7 @@ perform_update() {
         echo ""
 
         # Check if running interactively
-        if [ -t 0 ]; then
+        if [ "$mode" = "interactive" ]; then
             echo "Please provide your Telegram Bot Token from @BotFather"
             echo "Example: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
             echo ""
@@ -667,7 +668,7 @@ if [ -d "$INSTALL_DIR" ]; then
 
         case $choice in
             1)
-                perform_update
+                perform_update "interactive"
                 ;;
             2)
                 show_bot_info
@@ -699,7 +700,7 @@ if [ -d "$INSTALL_DIR" ]; then
         esac
     else
         echo "Script run non-interactively. Performing update..."
-        perform_update
+        perform_update "non-interactive"
     fi
 else
     # New installation

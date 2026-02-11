@@ -128,6 +128,13 @@ perform_update() {
     fi
     chmod 644 "node-agent/src/api.ts"
 
+    # Download docker-compose configuration
+    echo "  * docker-compose.yml"
+    if ! curl -fsSL "https://raw.githubusercontent.com/goodboy34-tech/eeee/master/docker-compose.node.yml" -o "docker-compose.yml"; then
+        echo "X Failed to download docker-compose.node.yml"
+        exit 1
+    fi
+
     # Create systemd service
     create_systemd_service
 
@@ -251,6 +258,12 @@ perform_install() {
     curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
 
     echo "-> node-agent downloaded"
+
+    # Download docker-compose configuration
+    echo ""
+    echo "* Downloading docker-compose configuration..."
+    curl -fsSL "https://raw.githubusercontent.com/goodboy34-tech/eeee/master/docker-compose.node.yml" -o "docker-compose.yml"
+    echo "-> docker-compose.yml downloaded"
 
     echo ""
     echo "========================================================"

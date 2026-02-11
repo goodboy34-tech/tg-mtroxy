@@ -1123,32 +1123,35 @@ bot.on(message('text'), async (ctx) => {
       
       const apiUrl = `http://${data.ip}:3000`;
       
-      // Создаем клиента для проверки
-      const testClient = new NodeApiClient(apiUrl, data.api_key);
-      
-      try {
-        // Проверяем подключение
-        const health = await testClient.getHealth();
-        
-        // Добавляем ноду в БД
-        const result = queries.insertNode.run({
-          name: data.name,
-          domain: data.ip, // Используем IP как домен
-          ip: data.ip,
-          api_url: apiUrl,
-          api_token: data.api_key,
-          mtproto_port: 443,
-          socks5_port: 1080,
-          workers: 2,
-          cpu_cores: health.system?.cpuCores || 2,
-          ram_mb: health.system?.ramMb || 2048,
-          status: 'online',
-        });
+      // Добавляем ноду в БД сразу
+      const result = queries.insertNode.run({
+        name: data.name,
+        domain: data.ip,
+        ip: data.ip,
+        api_url: apiUrl,
+        api_token: data.api_key,
+        mtproto_port: 443,
+        socks5_port: 1080,
+        workers: 2,
+        cpu_cores: 2,
+        ram_mb: 2048,
+        status: 'pending',
+      });
 
         const nodeId = (result as any).lastInsertRowid;
-
-        // Регистрируем клиента
-        nodeClients.set(nodeId, testClient);
+      
+      try {
+        // Получаем клиента через getNodeClient
+        const testClient = getNodeClient(nodeId);
+        if (!testClient) {
+          throw new Error('Не удалось создать API клиента');
+        }
+        
+        // Проверяем подключение
+        await testClient.getHealth();
+        
+        // Обновляем статус на online
+        queries.updateNodeStatus.run({ status: 'online', id: nodeId });
 
         // Очищаем состояние
         userStates.delete(userId);
@@ -1167,10 +1170,13 @@ bot.on(message('text'), async (ctx) => {
         );
 
       } catch (apiErr: any) {
+        // Удаляем ноду если не удалось подключиться
+        queries.deleteNode.run(nodeId);
+        
         await ctx.reply(
           `❌ Не удалось подключиться к ноде:\n${apiErr.message}\n\n` +
           `Проверьте:\n` +
-          `- Нода запущена\n` +
+          `- Нода запущена (mtproxy-node status)\n` +
           `- Порт 3000 открыт\n` +
           `- API KEY правильный\n\n` +
           `Попробуйте снова или /cancel`

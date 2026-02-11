@@ -13,6 +13,93 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Директория установки
+INSTALL_DIR="/opt/mtproxy-node"
+
+# Проверка на существующую установку
+if [ -d "$INSTALL_DIR" ]; then
+    echo "📦 Обнаружена существующая установка"
+    echo ""
+    echo "Выберите действие:"
+    echo "1) Обновить (git pull + перезапуск)"
+    echo "2) Показать API KEY"
+    echo "3) Переустановить (удалить всё и установить заново)"
+    echo "4) Выход"
+    echo ""
+    read -p "Ваш выбор (1-4): " choice
+    
+    case $choice in
+        1)
+            echo ""
+            echo "🔄 Обновление..."
+            cd "$INSTALL_DIR"
+            git pull
+            docker compose down
+            docker compose up -d --build
+            
+            # Показываем API KEY
+            if [ -f "node-agent/.env" ]; then
+                API_KEY=$(grep "^API_KEY=" node-agent/.env | cut -d '=' -f2)
+                if [ -n "$API_KEY" ]; then
+                    IP=$(curl -s ifconfig.me)
+                    echo ""
+                    echo "✅ Обновление завершено!"
+                    echo ""
+                    echo "📋 Данные для добавления в бот:"
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "name: Node-1"
+                    echo "ip: $IP"
+                    echo "api_key: $API_KEY"
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                fi
+            fi
+            exit 0
+            ;;
+        2)
+            echo ""
+            if [ -f "$INSTALL_DIR/node-agent/.env" ]; then
+                API_KEY=$(grep "^API_KEY=" "$INSTALL_DIR/node-agent/.env" | cut -d '=' -f2)
+                IP=$(curl -s ifconfig.me)
+                if [ -n "$API_KEY" ]; then
+                    echo "📋 Данные для добавления в бот:"
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "name: Node-1"
+                    echo "ip: $IP"
+                    echo "api_key: $API_KEY"
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                else
+                    echo "❌ API_KEY не найден в .env файле"
+                fi
+            else
+                echo "❌ Файл .env не найден"
+            fi
+            exit 0
+            ;;
+        3)
+            echo ""
+            echo "⚠️  ВНИМАНИЕ! Все данные будут удалены!"
+            read -p "Продолжить? (yes/no): " confirm
+            if [ "$confirm" != "yes" ]; then
+                echo "Отменено"
+                exit 0
+            fi
+            cd "$INSTALL_DIR"
+            docker compose down -v
+            cd /
+            rm -rf "$INSTALL_DIR"
+            echo "✅ Старая установка удалена"
+            ;;
+        4)
+            echo "Выход"
+            exit 0
+            ;;
+        *)
+            echo "❌ Неверный выбор"
+            exit 1
+            ;;
+    esac
+fi
+
 # Функция для настройки после установки
 setup_api_token() {
     echo ""

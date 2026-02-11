@@ -233,15 +233,20 @@ perform_update() {
         echo "* Backup created in \$BACKUP_DIR"
 
         # Download updated files (only code files, not configs)
-        REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
+        REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master"
         
         echo "* Downloading updates..."
         mkdir -p node-agent/src
-        curl -fsSL "\$REPO_URL/package.json" -o "node-agent/package.json"
-        curl -fsSL "\$REPO_URL/package-lock.json" -o "node-agent/package-lock.json"
-        curl -fsSL "\$REPO_URL/tsconfig.json" -o "node-agent/tsconfig.json"
-        curl -fsSL "\$REPO_URL/Dockerfile" -o "node-agent/Dockerfile"
-        curl -fsSL "\$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
+        
+        # Download docker-compose.node.yml
+        curl -fsSL "\$REPO_URL/docker-compose.node.yml" -o "docker-compose.node.yml"
+        
+        # Download node-agent files
+        curl -fsSL "\$REPO_URL/node-agent/package.json" -o "node-agent/package.json"
+        curl -fsSL "\$REPO_URL/node-agent/package-lock.json" -o "node-agent/package-lock.json"
+        curl -fsSL "\$REPO_URL/node-agent/tsconfig.json" -o "node-agent/tsconfig.json"
+        curl -fsSL "\$REPO_URL/node-agent/Dockerfile" -o "node-agent/Dockerfile"
+        curl -fsSL "\$REPO_URL/node-agent/src/api.ts" -o "node-agent/src/api.ts"
 
         # Restore configuration files
         echo "* Restoring configuration files..."

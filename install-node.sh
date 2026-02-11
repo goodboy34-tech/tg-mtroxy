@@ -81,8 +81,8 @@ Type=oneshot
 RemainAfterExit=yes
 User=root
 WorkingDirectory=$INSTALL_DIR
-ExecStart=/usr/bin/docker compose up -d
-ExecStop=/usr/bin/docker compose down
+ExecStart=/usr/bin/docker compose -f docker-compose.node.yml up -d
+ExecStop=/usr/bin/docker compose -f docker-compose.node.yml down
 TimeoutStartSec=300
 
 [Install]
@@ -100,6 +100,7 @@ create_mtproxy_command() {
 #!/bin/bash
 
 MT_PROXY_DIR="/opt/mtproxy-node"
+COMPOSE_FILE="docker-compose.node.yml"
 
 # Debug output
 echo "DEBUG: MT_PROXY_DIR='\$MT_PROXY_DIR'" >&2
@@ -188,10 +189,8 @@ perform_update() {
         fi
 
         echo "* Rebuilding containers..."
-        cd node-agent
-        docker compose build --no-cache
-        docker compose up -d
-        cd ..
+        docker compose -f \$COMPOSE_FILE build --no-cache
+        docker compose -f \$COMPOSE_FILE up -d
 
         echo ""
         echo "✓ Update completed successfully!"
@@ -228,11 +227,9 @@ perform_update() {
         curl -fsSL "\$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
 
         echo "* Rebuilding container..."
-        cd node-agent
-        docker compose down
-        docker compose build --no-cache
-        docker compose up -d
-        cd ..
+        docker compose -f \$COMPOSE_FILE down
+        docker compose -f \$COMPOSE_FILE build --no-cache
+        docker compose -f \$COMPOSE_FILE up -d
 
         echo "✓ Update completed!"
     fi
@@ -248,16 +245,16 @@ case "\$1" in
         systemctl status mtproxy-node --no-pager -l
         echo ""
         echo "* Container status:"
-        docker compose ps
+        docker compose -f \$COMPOSE_FILE ps
         echo ""
         echo "* Resources:"
         docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
         ;;
     logs)
         if [ -n "\$2" ]; then
-            docker compose logs -f "\$2"
+            docker compose -f \$COMPOSE_FILE logs -f "\$2"
         else
-            docker compose logs -f
+            docker compose -f \$COMPOSE_FILE logs -f
         fi
         ;;
     restart)
@@ -273,8 +270,8 @@ case "\$1" in
     rebuild)
         echo "* Rebuilding containers..."
         systemctl stop mtproxy-node
-        docker compose down
-        docker compose up -d --build
+        docker compose -f \$COMPOSE_FILE down
+        docker compose -f \$COMPOSE_FILE up -d --build
         systemctl start mtproxy-node
         echo "-> Rebuilt"
         ;;
@@ -304,11 +301,11 @@ case "\$1" in
         # Restart node-agent
         echo ""
         echo "* Restarting node-agent..."
-        docker compose restart node-agent
+        docker compose -f \$COMPOSE_FILE restart node-agent
 
         echo ""
         echo "-> Done! Check connection:"
-        echo "   docker compose logs -f node-agent"
+        echo "   docker compose -f \$COMPOSE_FILE logs -f node-agent"
         ;;
     config)
         echo "* Current configuration:"
@@ -329,10 +326,10 @@ case "\$1" in
         if [ -z "\$2" ]; then
             echo "Usage: mtproxy-node shell <service>"
             echo "Available services:"
-            docker compose ps --services
+            docker compose -f \$COMPOSE_FILE ps --services
             exit 1
         fi
-        docker compose exec "\$2" /bin/sh
+        docker compose -f \$COMPOSE_FILE exec "\$2" /bin/sh
         ;;
     proxy-link)
         echo "* MTProxy links:"
@@ -349,12 +346,12 @@ case "\$1" in
         echo "* Recreating SOCKS5 container..."
         
         # Stop and remove SOCKS5 container
-        docker compose stop socks5
-        docker compose rm -f socks5
+        docker compose -f \$COMPOSE_FILE stop socks5
+        docker compose -f \$COMPOSE_FILE rm -f socks5
         
         # Start with default credentials (will be updated via bot)
         echo "* Starting SOCKS5 container with GOST..."
-        docker compose up -d socks5
+        docker compose -f \$COMPOSE_FILE up -d socks5
         
         echo "-> SOCKS5 container recreated"
         echo "   Use bot to add SOCKS5 accounts"
@@ -600,7 +597,7 @@ perform_reinstall() {
         exit 0
     fi
     cd "$INSTALL_DIR"
-    docker compose down -v
+    docker compose -f docker-compose.node.yml down -v 2>/dev/null || true
     cd /
     rm -rf "$INSTALL_DIR"
     echo "-> Old installation removed"
@@ -638,84 +635,32 @@ perform_install() {
     echo "* External IP: $EXTERNAL_IP"
 
     echo ""
-    echo "* Downloading node-agent..."
-    mkdir -p "$INSTALL_DIR/node-agent"
-    cd "$INSTALL_DIR"
+    echo "* Cloning repository from GitHub..."
+    
+    # Clone entire repository to get git history
+    if [ -d "$INSTALL_DIR/.git" ]; then
+        echo "* Repository already exists, updating..."
+        cd "$INSTALL_DIR"
+        git fetch origin master
+        git reset --hard origin/master
+    else
+        # Clone repository with only node-agent related files
+        git clone --depth 1 https://github.com/goodboy34-tech/eeee.git "$INSTALL_DIR"
+        cd "$INSTALL_DIR"
+    fi
+    
+    echo "-> Repository cloned/updated"
 
-    # Download only necessary node-agent files from GitHub
-    REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
-    FILES=(
-        "package.json"
-        "package-lock.json"
-        "tsconfig.json"
-        "Dockerfile"
-        ".env.example"
-    )
-
-    echo "Downloading files..."
-    for file in "${FILES[@]}"; do
-        echo "  * $file"
-        curl -fsSL "$REPO_URL/$file" -o "node-agent/$file"
-    done
-
-    # Load src directory
-    echo "  / src/"
-    mkdir -p node-agent/src
-    curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
-
-    echo "-> node-agent downloaded"
-
-    # Create docker-compose configuration
+    # Use docker-compose.node.yml from repository
     echo ""
-    echo "* Creating docker-compose configuration..."
-
-    cat > docker-compose.yml <<'DOCKER_COMPOSE_EOF'
-services:
-  node-agent:
-    build:
-      context: ./node-agent
-      dockerfile: Dockerfile
-    container_name: mtproxy-node-agent
-    restart: unless-stopped
-    env_file:
-      - ./node-agent/.env
-    environment:
-      - NODE_ENV=production
-      - API_PORT=3000
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./node-data:/app/data
-    ports:
-      - "3000:3000"
-    networks:
-      - mtproxy-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  socks5:
-    image: ginuerzh/gost:latest
-    container_name: mtproxy-socks5
-    restart: unless-stopped
-    command: ["-L=socks5://testuser:testpass@:1080"]
-    ports:
-      - "1080:1080"
-    networks:
-      - mtproxy-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-networks:
-  mtproxy-network:
-    driver: bridge
-DOCKER_COMPOSE_EOF
-
-    echo "-> docker-compose.yml created"
+    echo "* Using docker-compose.node.yml from repository..."
+    
+    if [ ! -f "docker-compose.node.yml" ]; then
+        echo "X docker-compose.node.yml not found in repository!"
+        exit 1
+    fi
+    
+    echo "-> docker-compose configuration ready"
 
     echo ""
     echo "========================================================"
@@ -879,16 +824,16 @@ case "$1" in
         systemctl status mtproxy-node --no-pager -l
         echo ""
         echo "* Container status:"
-        docker compose ps
+        docker compose -f docker-compose.node.yml ps
         echo ""
         echo "* Resources:"
         docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
         ;;
     logs)
         if [ -n "$2" ]; then
-            docker compose logs -f "$2"
+            docker compose -f docker-compose.node.yml logs -f "$2"
         else
-            docker compose logs -f
+            docker compose -f docker-compose.node.yml logs -f
         fi
         ;;
     restart)
@@ -904,8 +849,8 @@ case "$1" in
     rebuild)
         echo "* Rebuilding containers..."
         systemctl stop mtproxy-node
-        docker compose down
-        docker compose up -d --build
+        docker compose -f docker-compose.node.yml down
+        docker compose -f docker-compose.node.yml up -d --build
         systemctl start mtproxy-node
         echo "-> Rebuilt"
         ;;
@@ -1031,7 +976,7 @@ EOF
         echo "-> SOCKS5 configuration recreated"
         
         # Start SOCKS5 container
-        docker compose up -d socks5
+        docker compose -f docker-compose.node.yml up -d socks5
         echo "-> SOCKS5 container started"
         ;;
     "")

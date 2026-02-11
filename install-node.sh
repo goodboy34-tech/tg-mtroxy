@@ -115,6 +115,48 @@ cd "\$MT_PROXY_DIR" || {
 }
 
 # ═══════════════════════════════════════════════
+# UPDATE FUNCTION
+# ═══════════════════════════════════════════════
+
+perform_update() {
+    echo ""
+    echo "-> Updating node-agent from GitHub..."
+
+    # Backup existing .env file
+    ENV_BACKUP=""
+    if [ -f "node-agent/.env" ]; then
+        ENV_BACKUP=\$(cat node-agent/.env)
+        echo "* Backing up .env file..."
+    fi
+
+    # Clean and recreate node-agent directory
+    rm -rf node-agent
+    mkdir -p node-agent/src
+
+    # Restore .env file
+    if [ -n "\$ENV_BACKUP" ]; then
+        echo "\$ENV_BACKUP" > node-agent/.env
+        echo "* Restored .env file"
+    fi
+
+    # Download updated files from GitHub
+    REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
+    
+    echo "* Downloading updates..."
+    curl -fsSL "\$REPO_URL/package.json" -o "node-agent/package.json"
+    curl -fsSL "\$REPO_URL/package-lock.json" -o "node-agent/package-lock.json"
+    curl -fsSL "\$REPO_URL/tsconfig.json" -o "node-agent/tsconfig.json"
+    curl -fsSL "\$REPO_URL/Dockerfile" -o "node-agent/Dockerfile"
+    curl -fsSL "\$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
+
+    echo "* Rebuilding container..."
+    docker compose down node-agent
+    docker compose up -d --build node-agent
+
+    echo "* Update completed!"
+}
+
+# ═══════════════════════════════════════════════
 # COMMAND HANDLER
 # ═══════════════════════════════════════════════
 

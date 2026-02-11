@@ -579,7 +579,8 @@ case "$1" in
         ;;
     update)
         echo "* Updating from GitHub..."
-        curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh | bash
+        perform_update
+        echo "-> Update completed"
         ;;
     rebuild)
         echo "* Rebuilding containers..."
@@ -723,7 +724,7 @@ EOF
         echo "  status       - show status and resources"
         echo "  logs [service] - show logs (Ctrl+C to exit)"
         echo "  restart      - restart all services"
-        echo "  update       - update from GitHub"
+        echo "  update       - update node-agent and components from GitHub"
         echo "  rebuild      - rebuild containers"
         echo "  setup        - add/update API TOKEN from bot"
         echo "  config       - show current configuration"

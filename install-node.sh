@@ -92,6 +92,225 @@ EOF
     echo "-> Systemd service created: mtproxy-node.service"
 }
 
+# Create global management command function
+create_mtproxy_command() {
+    echo "* Creating global 'mtproxy-node' command..."
+
+    cat > /usr/local/bin/mtproxy-node <<NODE_SCRIPT_EOF
+#!/bin/bash
+
+INSTALL_DIR="/opt/mtproxy-node"
+
+if [ \\! -d "\\\$INSTALL_DIR" ]; then
+    echo "X Node not installed in \\\$INSTALL_DIR"
+    exit 1
+fi
+
+cd "\\\$INSTALL_DIR" || {
+    echo "X Cannot change to directory \\\$INSTALL_DIR"
+    exit 1
+}
+
+# ═══════════════════════════════════════════════
+# COMMAND HANDLER
+# ═══════════════════════════════════════════════
+
+case "\\\$1" in
+    status)
+        echo "* MTProxy Node Status:"
+        systemctl status mtproxy-node --no-pager -l
+        echo ""
+        echo "* Container status:"
+        docker compose ps
+        echo ""
+        echo "* Resources:"
+        docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+        ;;
+    logs)
+        if [ -n "\\\$2" ]; then
+            docker compose logs -f "\\\$2"
+        else
+            docker compose logs -f
+        fi
+        ;;
+    restart)
+        echo "* Restarting service..."
+        systemctl restart mtproxy-node
+        echo "-> Restarted"
+        ;;
+    update)
+        echo "* Updating from GitHub..."
+        perform_update
+        echo "-> Update completed"
+        ;;
+    rebuild)
+        echo "* Rebuilding containers..."
+        systemctl stop mtproxy-node
+        docker compose down
+        docker compose up -d --build
+        systemctl start mtproxy-node
+        echo "-> Rebuilt"
+        ;;
+    setup)
+        echo ""
+        echo "========================================================"
+        echo "  Adding API TOKEN from bot"
+        echo "========================================================"
+        echo ""
+
+        read -p "Enter API TOKEN from bot: " API_TOKEN
+
+        if [ -z "\\\$API_TOKEN" ]; then
+            echo "X API TOKEN cannot be empty!"
+            return 1
+        fi
+
+        # Add API_TOKEN to .env
+        if grep -q "^API_TOKEN=" node-agent/.env 2>/dev/null; then
+            sed -i "s/^API_TOKEN=.*/API_TOKEN=\\\$API_TOKEN/" node-agent/.env
+            echo "-> API TOKEN updated"
+        else
+            echo "API_TOKEN=\\\$API_TOKEN" >> node-agent/.env
+            echo "-> API TOKEN added"
+        fi
+
+        # Restart node-agent
+        echo ""
+        echo "* Restarting node-agent..."
+        docker compose restart node-agent
+
+        echo ""
+        echo "-> Done! Check connection:"
+        echo "   docker compose logs -f node-agent"
+        ;;
+    config)
+        echo "* Current configuration:"
+        echo "* Directory: \\\$INSTALL_DIR"
+        echo ""
+        if [ -f ".env" ]; then
+            echo "* .env:"
+            cat .env
+            echo ""
+        fi
+        if [ -f "node-agent/.env" ]; then
+            echo "* node-agent/.env:"
+            cat node-agent/.env
+            echo ""
+        fi
+        ;;
+    shell)
+        if [ -z "\\\$2" ]; then
+            echo "Usage: mtproxy-node shell <service>"
+            echo "Available services:"
+            docker compose ps --services
+            exit 1
+        fi
+        docker compose exec "\\\$2" /bin/sh
+        ;;
+    proxy-link)
+        echo "* MTProxy links:"
+        # Look for links in logs
+        SECRET_LINE=\\$(docker logs mtproxy 2>&1 | grep -E "tg://|t.me/proxy" | head -1 || echo "")
+        if [ -n "\\\$SECRET_LINE" ]; then
+            echo "\\\$SECRET_LINE"
+        else
+            echo "X Link not found in logs"
+            echo "   MTProxy may not be running yet"
+        fi
+        ;;
+    recreate-socks5)
+        echo "* Recreating SOCKS5 configuration..."
+        
+        # Stop SOCKS5 container
+        docker compose stop socks5
+        
+        # Remove old config
+        rm -rf socks5/
+        
+        # Create new configuration
+        mkdir -p socks5
+        
+        # Create Dante configuration
+        cat > socks5/sockd.conf <<EOF
+# Dante SOCKS5 Server Configuration
+# Generated automatically by install script
+
+logoutput: /dev/stdout
+
+# Internal interface
+internal: 0.0.0.0 port = 1080
+
+# External interface (use eth0 in Docker)
+external: eth0
+
+# Authentication methods
+clientmethod: none
+socksmethod: username
+
+# User configuration
+user.privileged: root
+user.unprivileged: nobody
+
+# Client rules
+client pass {
+  from: 0.0.0.0/0 to: 0.0.0.0/0
+  log: connect disconnect error
+}
+
+# SOCKS rules
+socks pass {
+  from: 0.0.0.0/0 to: 0.0.0.0/0
+  protocol: tcp udp
+  log: connect disconnect error
+}
+EOF
+
+        # Create password file
+        cat > socks5/sockd.passwd <<EOF
+testuser:testpass
+EOF
+
+        echo "-> SOCKS5 configuration recreated"
+        
+        # Start SOCKS5 container
+        docker compose up -d socks5
+        echo "-> SOCKS5 container started"
+        ;;
+    "")
+        echo "* MTProxy Node Manager"
+        echo ""
+        echo "Usage: mtproxy-node <command>"
+        echo ""
+        echo "Commands:"
+        echo "  status       - show status and resources"
+        echo "  logs [service] - show logs (Ctrl+C to exit)"
+        echo "  restart      - restart all services"
+        echo "  update       - update node-agent and components from GitHub"
+        echo "  rebuild      - rebuild containers"
+        echo "  setup        - add/update API TOKEN from bot"
+        echo "  config       - show current configuration"
+        echo "  shell <service> - open shell in container"
+        echo "  proxy-link   - show MTProxy link"
+        echo "  recreate-socks5 - recreate SOCKS5 configuration"
+        echo ""
+        echo "Examples:"
+        echo "  mtproxy-node status"
+        echo "  mtproxy-node logs node-agent"
+        echo "  mtproxy-node setup"
+        ;;
+    *)
+        echo "X Unknown command: \\\$1"
+        echo "Use 'mtproxy-node' for command list"
+        exit 1
+        ;;
+esac
+NODE_SCRIPT_EOF
+
+    chmod +x /usr/local/bin/mtproxy-node
+
+    echo "-> 'mtproxy-node' command created"
+}
+
 # Update function
 perform_update() {
     echo ""
@@ -227,6 +446,9 @@ DOCKER_COMPOSE_EOF
 
     # Create systemd service
     create_systemd_service
+
+    # Create global management command
+    create_mtproxy_command
 
     # Restart service
     systemctl daemon-reload
@@ -530,10 +752,7 @@ EOF
     systemctl status mtproxy-node --no-pager -l
 
     # Create global management command
-    echo ""
-    echo "* Creating global 'mtproxy-node' command..."
-
-    cat > /usr/local/bin/mtproxy-node <<NODE_SCRIPT_EOF
+    create_mtproxy_command
 #!/bin/bash
 
 INSTALL_DIR="/opt/mtproxy-node"

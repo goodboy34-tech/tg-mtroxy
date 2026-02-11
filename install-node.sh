@@ -95,10 +95,25 @@ perform_update() {
 
     # Clean and recreate node-agent directory
     echo "* Preparing node-agent directory..."
+
+    # Backup existing .env file if it exists
+    ENV_BACKUP=""
+    if [ -f "node-agent/.env" ]; then
+        ENV_BACKUP=$(cat node-agent/.env)
+        echo "* Backing up existing .env file..."
+    fi
+
     rm -rf node-agent
     mkdir -p node-agent/src
     chown -R root:root node-agent
     chmod -R 755 node-agent
+
+    # Restore .env file if it existed
+    if [ -n "$ENV_BACKUP" ]; then
+        echo "$ENV_BACKUP" > node-agent/.env
+        chmod 644 node-agent/.env
+        echo "* Restored .env file..."
+    fi
 
     # Download updated files
     REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"

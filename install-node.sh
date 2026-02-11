@@ -45,6 +45,32 @@ fi
 # Installation directory
 INSTALL_DIR="/opt/mtproxy-node"
 
+# Create systemd service function
+create_systemd_service() {
+    echo "* Creating systemd service..."
+
+    cat > /etc/systemd/system/mtproxy-node.service <<EOF
+[Unit]
+Description=MTProxy Node Service
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$INSTALL_DIR
+ExecStart=/usr/bin/docker compose up
+ExecStop=/usr/bin/docker compose down
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    echo "-> Systemd service created: mtproxy-node.service"
+}
+
 # Update function
 perform_update() {
     echo ""
@@ -69,6 +95,7 @@ perform_update() {
 
     # Ensure node-agent directory exists and has proper permissions
     mkdir -p node-agent/src
+    chown -R root:root node-agent
     chmod -R 755 node-agent
 
     # Download updated files
@@ -84,22 +111,30 @@ perform_update() {
     echo "Downloading updates..."
     for file in "${FILES[@]}"; do
         echo "  * $file"
+        rm -f "node-agent/$file"  # Remove if exists
         if ! curl -fsSL "$REPO_URL/$file" -o "node-agent/$file"; then
             echo "X Failed to download $file"
             exit 1
         fi
+        chmod 644 "node-agent/$file"
     done
 
     # Load updated api.ts
     echo "  / src/api.ts"
+    rm -f "node-agent/src/api.ts"  # Remove if exists
     if ! curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"; then
         echo "X Failed to download src/api.ts"
         exit 1
     fi
+    chmod 644 "node-agent/src/api.ts"
 
-    # Restart containers
-    docker compose down
-    docker compose up -d --build
+    # Create systemd service
+    create_systemd_service
+
+    # Restart service
+    systemctl daemon-reload
+    systemctl enable mtproxy-node
+    systemctl restart mtproxy-node
 
     # Show API KEY
     if [ -f "node-agent/.env" ]; then
@@ -312,19 +347,22 @@ COMPOSE_EOF
         echo "   3000/tcp - Node API"
     fi
 
-    # Start containers
+    # Create and start systemd service
     echo ""
-    echo "* Starting MTProxy Node..."
-    docker compose up -d --build
+    echo "* Creating and starting MTProxy Node service..."
+    create_systemd_service
+    systemctl daemon-reload
+    systemctl enable mtproxy-node
+    systemctl start mtproxy-node
 
     echo ""
-    echo "* Waiting for containers to start..."
+    echo "* Waiting for service to start..."
     sleep 10
 
     # Check status
     echo ""
-    echo "* Container status:"
-    docker compose ps
+    echo "* Service status:"
+    systemctl status mtproxy-node --no-pager -l
 
     # Create global management command
     echo ""
@@ -345,6 +383,9 @@ cd "$INSTALL_DIR"
 case "$1" in
     status)
         echo "* MTProxy Node Status:"
+        systemctl status mtproxy-node --no-pager -l
+        echo ""
+        echo "* Container status:"
         docker compose ps
         echo ""
         echo "* Resources:"
@@ -358,8 +399,8 @@ case "$1" in
         fi
         ;;
     restart)
-        echo "* Restarting all services..."
-        docker compose restart
+        echo "* Restarting service..."
+        systemctl restart mtproxy-node
         echo "-> Restarted"
         ;;
     update)
@@ -368,8 +409,10 @@ case "$1" in
         ;;
     rebuild)
         echo "* Rebuilding containers..."
+        systemctl stop mtproxy-node
         docker compose down
         docker compose up -d --build
+        systemctl start mtproxy-node
         echo "-> Rebuilt"
         ;;
     setup)

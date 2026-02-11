@@ -314,7 +314,6 @@ case "$1" in
         rm -f /tmp/install-control-new.sh /tmp/create_cmd.sh
         echo "-> Update completed!"
         ;;
-        ;;
     rebuild)
         echo "* Rebuilding containers..."
         systemctl stop mtproxy-control

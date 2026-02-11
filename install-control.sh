@@ -70,7 +70,7 @@ Type=oneshot
 RemainAfterExit=yes
 User=root
 WorkingDirectory=$INSTALL_DIR
-ExecStart=/usr/bin/docker compose up -d
+ExecStart=/bin/bash -c "set -a && source .env && /usr/bin/docker compose up -d"
 ExecStop=/usr/bin/docker compose down
 TimeoutStartSec=300
 

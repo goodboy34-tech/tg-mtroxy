@@ -563,35 +563,6 @@ EOF
 
     echo "-> .env created"
 
-    # Create docker-compose for standalone node
-    echo ""
-    echo "* Creating docker-compose.yml..."
-
-    cat > docker-compose.yml <<'COMPOSE_EOF'
-services:
-  node-agent:
-    build:
-      context: ./node-agent
-      dockerfile: Dockerfile
-    container_name: mtproxy-node-agent
-    restart: unless-stopped
-    env_file:
-      - ./node-agent/.env
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./data:/app/data
-    ports:
-      - "${API_PORT:-3000}:3000"
-    networks:
-      - mtproxy-network
-
-networks:
-  mtproxy-network:
-    driver: bridge
-COMPOSE_EOF
-
-    echo "-> docker-compose.yml created"
-
     # Firewall setup
     echo ""
     read -p "Setup firewall automatically? (y/n): " -n 1 -r

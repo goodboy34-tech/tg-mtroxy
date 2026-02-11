@@ -636,15 +636,52 @@ async function getSocks5Stats() {
 
 async function getNetworkStats() {
   try {
-    // Пробуем разные интерфейсы: eth0, ens3, enp0s3 и т.д.
-    const interfaces = ['eth0', 'ens3', 'enp0s3', 'ens18', 'venet0'];
+    // Метод 1: Читаем /proc/net/dev для всех интерфейсов
+    try {
+      const netDev = fs.readFileSync('/proc/net/dev', 'utf8');
+      const lines = netDev.split('\n');
+      
+      let totalRx = 0;
+      let totalTx = 0;
+      
+      // Пропускаем первые 2 строки (заголовки)
+      for (let i = 2; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        // Формат: "eth0: 123456 ..."
+        const parts = line.split(/\s+/);
+        if (parts.length < 10) continue;
+        
+        const iface = parts[0].replace(':', '');
+        // Пропускаем loopback и docker интерфейсы
+        if (iface === 'lo' || iface.startsWith('docker')) continue;
+        
+        const rxBytes = parseInt(parts[1]) || 0;
+        const txBytes = parseInt(parts[9]) || 0;
+        
+        totalRx += rxBytes;
+        totalTx += txBytes;
+      }
+      
+      if (totalRx > 0 || totalTx > 0) {
+        return {
+          inMb: totalRx / 1024 / 1024,
+          outMb: totalTx / 1024 / 1024,
+        };
+      }
+    } catch (e) {
+      // Продолжаем к следующему методу
+    }
+    
+    // Метод 2: Пробуем конкретные интерфейсы через /sys/class/net
+    const interfaces = ['eth0', 'ens3', 'enp0s3', 'ens18', 'venet0', 'ens5'];
     
     for (const iface of interfaces) {
       try {
         const rxPath = `/sys/class/net/${iface}/statistics/rx_bytes`;
         const txPath = `/sys/class/net/${iface}/statistics/tx_bytes`;
         
-        // Проверяем существование файлов
         if (fs.existsSync(rxPath) && fs.existsSync(txPath)) {
           const rxBytes = parseInt(fs.readFileSync(rxPath, 'utf8').trim());
           const txBytes = parseInt(fs.readFileSync(txPath, 'utf8').trim());
@@ -659,21 +696,43 @@ async function getNetworkStats() {
       }
     }
     
-    // Fallback: используем Docker stats для контейнеров
+    // Метод 3 (Fallback): Docker stats для MTProxy контейнера
     try {
-      const mtprotoStats = execSync(
-        "docker stats --no-stream --format '{{.NetIO}}' mtproxy 2>/dev/null"
+      // Используем docker inspect для получения накопительной статистики
+      const statsJson = execSync(
+        "docker stats --no-stream --format '{{json .}}' mtproxy 2>/dev/null",
+        { timeout: 5000 }
       ).toString().trim();
       
-      // Формат: "1.2MB / 3.4MB"
-      const [rxStr, txStr] = mtprotoStats.split(' / ');
-      const rxMb = parseFloat(rxStr.replace(/[^0-9.]/g, '')) || 0;
-      const txMb = parseFloat(txStr.replace(/[^0-9.]/g, '')) || 0;
-      
-      return { inMb: rxMb, outMb: txMb };
+      if (statsJson) {
+        const stats = JSON.parse(statsJson);
+        const netIO = stats.NetIO || '';
+        
+        // Формат: "1.2MB / 3.4MB" или "1.2GB / 3.4GB"
+        const [rxStr, txStr] = netIO.split(' / ');
+        
+        let rxMb = 0;
+        let txMb = 0;
+        
+        if (rxStr) {
+          const rxValue = parseFloat(rxStr.replace(/[^0-9.]/g, '')) || 0;
+          rxMb = rxStr.includes('GB') ? rxValue * 1024 : rxValue;
+          if (rxStr.includes('kB') || rxStr.includes('KB')) rxMb = rxValue / 1024;
+        }
+        
+        if (txStr) {
+          const txValue = parseFloat(txStr.replace(/[^0-9.]/g, '')) || 0;
+          txMb = txStr.includes('GB') ? txValue * 1024 : txValue;
+          if (txStr.includes('kB') || txStr.includes('KB')) txMb = txValue / 1024;
+        }
+        
+        return { inMb: rxMb, outMb: txMb };
+      }
     } catch (e) {
-      return { inMb: 0, outMb: 0 };
+      // Последний fallback
     }
+    
+    return { inMb: 0, outMb: 0 };
   } catch {
     return { inMb: 0, outMb: 0 };
   }

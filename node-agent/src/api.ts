@@ -468,8 +468,38 @@ function isContainerRunning(containerName: string): boolean {
 
 async function getCpuUsage(): Promise<number> {
   try {
-    const result = await execAsync("top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | sed 's/%us,//'");
-    return parseFloat(result.stdout.trim()) || 0;
+    // Способ 1: top (GNU/Linux)
+    try {
+      const result = await execAsync("top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | sed 's/%us,//'");
+      const cpu = parseFloat(result.stdout.trim());
+      if (!isNaN(cpu)) return cpu;
+    } catch (e) {}
+    
+    // Способ 2: mpstat (если установлен)
+    try {
+      const result = await execAsync("mpstat 1 1 | awk '/Average:/ {print 100-$NF}'");
+      const cpu = parseFloat(result.stdout.trim());
+      if (!isNaN(cpu)) return cpu;
+    } catch (e) {}
+    
+    // Способ 3: /proc/stat (универсальный Linux)
+    try {
+      const stat1 = fs.readFileSync('/proc/stat', 'utf8').split('\n')[0].split(/\s+/).slice(1).map(Number);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const stat2 = fs.readFileSync('/proc/stat', 'utf8').split('\n')[0].split(/\s+/).slice(1).map(Number);
+      
+      const idle1 = stat1[3];
+      const idle2 = stat2[3];
+      const total1 = stat1.reduce((a, b) => a + b, 0);
+      const total2 = stat2.reduce((a, b) => a + b, 0);
+      
+      const totalDiff = total2 - total1;
+      const idleDiff = idle2 - idle1;
+      
+      return ((totalDiff - idleDiff) / totalDiff) * 100;
+    } catch (e) {}
+    
+    return 0;
   } catch {
     return 0;
   }
@@ -529,20 +559,87 @@ async function getMtProtoStats() {
 }
 
 async function getSocks5Stats() {
-  // SOCKS5 статистика (если поддерживается прокси-сервером)
-  // Для Dante нужна отдельная реализация
-  return { connections: 0 };
+  try {
+    // GOST v3 не предоставляет статистику через API
+    // Но мы можем подсчитать активные соединения через netstat/ss
+    
+    // Пробуем ss (более современный)
+    try {
+      const result = execSync(
+        `ss -tn state established 2>/dev/null | grep :${SOCKS5_PORT} | wc -l`
+      ).toString().trim();
+      
+      const connections = parseInt(result) || 0;
+      return { connections };
+    } catch (e) {
+      // Fallback: netstat
+      try {
+        const result = execSync(
+          `netstat -tn 2>/dev/null | grep :${SOCKS5_PORT} | grep ESTABLISHED | wc -l`
+        ).toString().trim();
+        
+        const connections = parseInt(result) || 0;
+        return { connections };
+      } catch (e2) {
+        // Последний fallback: Docker stats
+        try {
+          const containerStats = execSync(
+            "docker stats --no-stream --format '{{.NetIO}}' mtproxy-socks5 2>/dev/null"
+          ).toString().trim();
+          
+          // Если контейнер активен и есть трафик - считаем что есть соединения
+          const hasTraffic = containerStats && containerStats !== '0B / 0B';
+          return { connections: hasTraffic ? 1 : 0 };
+        } catch (e3) {
+          return { connections: 0 };
+        }
+      }
+    }
+  } catch {
+    return { connections: 0 };
+  }
 }
 
 async function getNetworkStats() {
   try {
-    const rxResult = await execAsync("cat /sys/class/net/eth0/statistics/rx_bytes");
-    const txResult = await execAsync("cat /sys/class/net/eth0/statistics/tx_bytes");
+    // Пробуем разные интерфейсы: eth0, ens3, enp0s3 и т.д.
+    const interfaces = ['eth0', 'ens3', 'enp0s3', 'ens18', 'venet0'];
     
-    return {
-      inMb: parseInt(rxResult.stdout.trim()) / 1024 / 1024,
-      outMb: parseInt(txResult.stdout.trim()) / 1024 / 1024,
-    };
+    for (const iface of interfaces) {
+      try {
+        const rxPath = `/sys/class/net/${iface}/statistics/rx_bytes`;
+        const txPath = `/sys/class/net/${iface}/statistics/tx_bytes`;
+        
+        // Проверяем существование файлов
+        if (fs.existsSync(rxPath) && fs.existsSync(txPath)) {
+          const rxBytes = parseInt(fs.readFileSync(rxPath, 'utf8').trim());
+          const txBytes = parseInt(fs.readFileSync(txPath, 'utf8').trim());
+          
+          return {
+            inMb: rxBytes / 1024 / 1024,
+            outMb: txBytes / 1024 / 1024,
+          };
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+    
+    // Fallback: используем Docker stats для контейнеров
+    try {
+      const mtprotoStats = execSync(
+        "docker stats --no-stream --format '{{.NetIO}}' mtproxy 2>/dev/null"
+      ).toString().trim();
+      
+      // Формат: "1.2MB / 3.4MB"
+      const [rxStr, txStr] = mtprotoStats.split(' / ');
+      const rxMb = parseFloat(rxStr.replace(/[^0-9.]/g, '')) || 0;
+      const txMb = parseFloat(txStr.replace(/[^0-9.]/g, '')) || 0;
+      
+      return { inMb: rxMb, outMb: txMb };
+    } catch (e) {
+      return { inMb: 0, outMb: 0 };
+    }
   } catch {
     return { inMb: 0, outMb: 0 };
   }

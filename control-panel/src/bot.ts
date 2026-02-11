@@ -143,8 +143,7 @@ bot.help(async (ctx) => {
     '/restart_node &lt;id&gt; - перезапустить прокси\n\n' +
     '<b>Получение доступов:</b>\n' +
     '/links &lt;node_id&gt; - получить все ссылки\n' +
-    '/add_secret &lt;node_id&gt; - добавить секрет\n' +
-    '/add_socks5 &lt;node_id&gt; - добавить SOCKS5 аккаунт\n\n' +
+    'Используйте кнопки для добавления MTProto и SOCKS5\n\n' +
     '<b>Подписки:</b>\n' +
     '/create_subscription &lt;название&gt; - создать подписку\n' +
     '/subscriptions - список всех подписок\n' +
@@ -1000,99 +999,8 @@ bot.action(/^add_secret_ip_(dd|normal)_(\d+)_([a-f0-9]{32})$/, async (ctx: any) 
 });
 
 // ─── SOCKS5 ───
-
-bot.command('add_socks5', async (ctx) => {
-  const nodeId = parseInt(ctx.message.text.split(' ')[1]);
-  if (!nodeId) {
-    return ctx.reply('Использование: /add_socks5 <node_id>');
-  }
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    return ctx.reply('❌ Нода не найдена');
-  }
-
-  // Генерируем username и password
-  const username = `user_${crypto.randomBytes(4).toString('hex')}`;
-  const password = SecretGenerator.generatePassword();
-  
-  await ctx.reply(
-    `🔐 *Добавление SOCKS5 аккаунта*\n\n` +
-    `Нода: ${node.name}\n` +
-    `Username: \`${username}\`\n` +
-    `Password: \`${password}\`\n\n` +
-    `Подтвердите добавление:`,
-    {
-      
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('✅ Добавить', `add_socks5_confirm_${nodeId}_${username}_${password}`)],
-        [Markup.button.callback('❌ Отмена', 'cancel')],
-      ])
-    }
-  );
-});
-
-bot.action(/^add_socks5_confirm_(\d+)_([^_]+)_([^_]+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  const username = ctx.match[2];
-  const password = ctx.match[3];
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  const client = getNodeClient(nodeId);
-  if (!client) {
-    await ctx.answerCbQuery('Не удалось подключиться к ноде');
-    return;
-  }
-
-  try {
-    // Добавляем в БД
-    queries.insertSocks5Account.run({
-      node_id: nodeId,
-      username,
-      password,
-      description: `Added by admin ${ctx.from!.id}`,
-    });
-
-    // Отправляем на Node Agent для обновления конфига
-    await client.addSocks5Account({ username, password });
-
-    // Генерируем ссылки
-    const tgLink = `tg://socks?server=${node.domain}&port=${node.socks5_port}&user=${username}&pass=${password}`;
-    const tmeLink = `https://t.me/socks?server=${node.domain}&port=${node.socks5_port}&user=${username}&pass=${password}`;
-
-    await ctx.answerCbQuery('SOCKS5 аккаунт добавлен!');
-    await ctx.editMessageText(
-      `✅ *SOCKS5 прокси успешно создан!*\n\n` +
-      `🌐 *Нода:* ${node.name}\n` +
-      `👤 *Username:* \`${username}\`\n` +
-      `🔑 *Password:* \`${password}\`\n\n` +
-      `───────────────\n\n` +
-      `🔗 *Deep Link для Telegram:*\n` +
-      `\`${tgLink}\`\n\n` +
-      `👇 *Подключить в 1 клик:*\n` +
-      `[🚀 Добавить прокси](${tgLink})`,
-      {
-        parse_mode: 'Markdown',
-        link_preview_options: { is_disabled: true }
-      }
-    );
-
-    queries.insertLog.run({
-      node_id: nodeId,
-      level: 'info',
-      message: 'SOCKS5 account added',
-      details: `Username: ${username}, Admin: ${ctx.from!.id}`,
-    });
-  } catch (err: any) {
-    await ctx.answerCbQuery('Ошибка при добавлении');
-    await ctx.reply(`❌ Ошибка: ${err.message}`);
-  }
-});
+// SOCKS5 аккаунты добавляются через кнопку "➕ SOCKS5" в интерфейсе управления ссылками
+// (см. bot.action(/^add_socks5_(\d+)$/) и обработчик текста в bot.on(message('text')))
 
 // ═══════════════════════════════════════════════
 // МОНИТОРИНГ
@@ -1857,6 +1765,102 @@ bot.on(message('text'), async (ctx) => {
       `Ссылка:\n<code>${link}</code>`,
       { parse_mode: 'HTML' }
     );
+  }
+
+  // ─── Добавление SOCKS5 аккаунта ───
+  if (state.action === 'add_socks5') {
+    const lines = text.trim().split('\n');
+    let username = '';
+    let password = '';
+
+    // Парсим данные
+    for (const line of lines) {
+      const [key, ...valueParts] = line.split(':');
+      if (!key || valueParts.length === 0) continue;
+      
+      const value = valueParts.join(':').trim();
+      const cleanKey = key.trim().toLowerCase();
+      
+      if (cleanKey === 'username') username = value;
+      if (cleanKey === 'password') password = value;
+    }
+
+    // Валидация
+    if (!username || !password) {
+      await ctx.reply(
+        '❌ Некорректный формат. Отправьте данные в формате:\n\n' +
+        'username: myuser\n' +
+        'password: mypass\n\n' +
+        'Или /cancel для отмены.'
+      );
+      return;
+    }
+
+    const node = queries.getNodeById.get(state.nodeId) as any;
+    if (!node) {
+      await ctx.reply('❌ Нода не найдена');
+      userStates.delete(userId);
+      return;
+    }
+
+    const client = getNodeClient(state.nodeId!);
+    if (!client) {
+      await ctx.reply('❌ Не удалось подключиться к ноде');
+      userStates.delete(userId);
+      return;
+    }
+
+    try {
+      // Добавляем в БД
+      queries.insertSocks5Account.run({
+        node_id: state.nodeId,
+        username,
+        password,
+        description: `Added by admin ${userId}`,
+      });
+
+      // Отправляем на Node Agent
+      await client.addSocks5Account({ username, password });
+
+      // Генерируем ссылки
+      const tgLink = ProxyLinkGenerator.generateSocks5TgLink(
+        node.domain,
+        node.socks5_port,
+        username,
+        password
+      );
+
+      userStates.delete(userId);
+
+      await ctx.reply(
+        `✅ *SOCKS5 прокси успешно создан!*\n\n` +
+        `🌐 *Нода:* ${node.name}\n` +
+        `👤 *Username:* \`${username}\`\n` +
+        `🔑 *Password:* \`${password}\`\n\n` +
+        `───────────────\n\n` +
+        `🔗 *Deep Link:*\n` +
+        `\`${tgLink}\`\n\n` +
+        `👇 *Подключить в 1 клик:*`,
+        {
+          parse_mode: 'Markdown',
+          link_preview_options: { is_disabled: true },
+          ...Markup.inlineKeyboard([
+            [Markup.button.url('🚀 Подключить прокси', tgLink)]
+          ])
+        }
+      );
+
+      queries.insertLog.run({
+        node_id: state.nodeId,
+        level: 'info',
+        message: 'SOCKS5 account added',
+        details: `Username: ${username}, Admin: ${userId}`,
+      });
+
+    } catch (err: any) {
+      await ctx.reply(`❌ Ошибка при добавлении: ${err.message}`);
+      userStates.delete(userId);
+    }
   }
 });
 

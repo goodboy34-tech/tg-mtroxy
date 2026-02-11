@@ -393,41 +393,35 @@ async function updateSocks5Config(accounts: Array<{ username: string; password: 
   // GOST использует аргументы командной строки для конфигурации
   // Формат: -L=socks5://user1:pass1,user2:pass2@:1080
   
+  console.log(`[SOCKS5] Updating GOST config with ${accounts.length} accounts`);
+
+  // Останавливаем старый контейнер
+  try {
+    execSync('docker stop mtproxy-socks5 || true');
+    execSync('docker rm mtproxy-socks5 || true');
+  } catch (error) {
+    console.log('[SOCKS5] No existing container to remove');
+  }
+
   if (accounts.length === 0) {
-    console.log('[SOCKS5] No accounts to configure');
+    console.log('[SOCKS5] No accounts, SOCKS5 disabled');
     return;
   }
 
   // Генерируем строку аутентификации для GOST
   const authStrings = accounts.map(acc => `${acc.username}:${acc.password}`).join(',');
-  const gostCommand = `-L=socks5://${authStrings}@:${SOCKS5_PORT}`;
+  const gostArg = `-L=socks5://${authStrings}@:${SOCKS5_PORT}`;
 
-  console.log(`[SOCKS5] Updating GOST config with ${accounts.length} accounts`);
+  // Запускаем новый контейнер с аргументами
+  const cmd = `docker run -d --name=mtproxy-socks5 --restart=unless-stopped ` +
+              `-p ${SOCKS5_PORT}:${SOCKS5_PORT} ` +
+              `ginuerzh/gost ${gostArg}`;
 
-  // Обновляем docker-compose.yml с новой командой
-  const composeFilePath = path.join(__dirname, '..', '..', 'docker-compose.yml');
-  
   try {
-    let composeContent = fs.readFileSync(composeFilePath, 'utf-8');
-    
-    // Заменяем команду для socks5 контейнера
-    const commandRegex = /(socks5:[\s\S]*?command:\s*\[)([^\]]+)(\])/;
-    const newCommand = `"${gostCommand}"`;
-    
-    if (commandRegex.test(composeContent)) {
-      composeContent = composeContent.replace(commandRegex, `$1${newCommand}$3`);
-      fs.writeFileSync(composeFilePath, composeContent);
-      console.log('[SOCKS5] docker-compose.yml updated');
-    } else {
-      console.error('[SOCKS5] Could not find socks5 command in docker-compose.yml');
-      return;
-    }
-
-    // Перезапускаем контейнер для применения новой конфигурации
-    execSync('docker compose up -d --force-recreate socks5', { cwd: path.join(__dirname, '..', '..') });
-    console.log('[SOCKS5] Container recreated successfully');
+    execSync(cmd);
+    console.log('[SOCKS5] Container started successfully');
   } catch (error) {
-    console.error('[SOCKS5] Failed to update config:', error);
+    console.error('[SOCKS5] Failed to start container:', error);
     throw error;
   }
 }

@@ -197,11 +197,13 @@ services:
       - mtproxy-network
 
   socks5:
-    image: tarampampam/3proxy:latest
+    image: vimagick/dante:latest
     container_name: mtproxy-socks5
     restart: unless-stopped
+    command: ["sockd", "-f", "/etc/sockd.conf"]
     volumes:
-      - ./socks5/3proxy.cfg:/etc/3proxy/3proxy.cfg:ro
+      - ./socks5/sockd.conf:/etc/sockd.conf:ro
+      - ./socks5/sockd.passwd:/etc/sockd.passwd:ro
     ports:
       - "1080:1080"
     networks:
@@ -366,11 +368,13 @@ services:
       - mtproxy-network
 
   socks5:
-    image: tarampampam/3proxy:latest
+    image: vimagick/dante:latest
     container_name: mtproxy-socks5
     restart: unless-stopped
+    command: ["sockd", "-f", "/etc/sockd.conf"]
     volumes:
-      - ./socks5/3proxy.cfg:/etc/3proxy/3proxy.cfg:ro
+      - ./socks5/sockd.conf:/etc/sockd.conf:ro
+      - ./socks5/sockd.passwd:/etc/sockd.passwd:ro
     ports:
       - "1080:1080"
     networks:
@@ -420,6 +424,53 @@ API_PORT=3000
 EOF
 
     echo "-> .env created"
+
+    # Create initial SOCKS5 configuration
+    echo ""
+    echo "* Creating initial SOCKS5 configuration..."
+
+    mkdir -p socks5
+
+    # Create Dante configuration
+    cat > socks5/sockd.conf <<EOF
+# Dante SOCKS5 Server Configuration
+# Generated automatically by install script
+
+logoutput: /dev/stdout
+
+# Internal interface
+internal: 0.0.0.0 port = 1080
+
+# External interface
+external: 0.0.0.0
+
+# Authentication methods
+clientmethod: none
+socksmethod: username
+
+# User configuration
+user.privileged: root
+user.unprivileged: nobody
+user.libwrap: nobody
+
+# Client rules
+client pass {
+  from: 0.0.0.0/0 to: 0.0.0.0/0
+  log: connect disconnect error
+}
+
+# SOCKS rules
+socks pass {
+  from: 0.0.0.0/0 to: 0.0.0.0/0
+  protocol: tcp udp
+  log: connect disconnect error
+}
+EOF
+
+    # Create empty password file
+    touch socks5/sockd.passwd
+
+    echo "-> SOCKS5 configuration created"
 
     # Firewall setup
     echo ""

@@ -532,16 +532,15 @@ bot.action(/^add_secret_(\d+)$/, async (ctx) => {
   userStates.set(ctx.from!.id, { action: 'add_secret', nodeId });
 
   await ctx.editMessageText(
-    `➕ *Добавление MTProto секрета для ${node.name}*
+    `➕ Добавление MTProto секрета для ${node.name}
 
 Отправьте секрет в формате:
-\`dd1234567890abcdef1234567890abcdef\`
+dd1234567890abcdef1234567890abcdef
 
 Или используйте /generate_secret для генерации нового.
 
 Отправьте /cancel для отмены.`,
     {
-      parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [[{ text: '⬅️ Назад', callback_data: `manage_node_links_${nodeId}` }]]
       }

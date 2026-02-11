@@ -58,7 +58,7 @@ if [ -d "$INSTALL_DIR" ]; then
         2)
             echo ""
             if [ -f "$INSTALL_DIR/node-agent/.env" ]; then
-                API_KEY=$(grep "^API_KEY=" "$INSTALL_DIR/node-agent/.env" | cut -d '=' -f2)
+                API_KEY=$(grep "^API_TOKEN=" "$INSTALL_DIR/node-agent/.env" | cut -d '=' -f2)
                 IP=$(curl -s ifconfig.me)
                 if [ -n "$API_KEY" ]; then
                     echo "📋 Данные для добавления в бот:"
@@ -68,7 +68,7 @@ if [ -d "$INSTALL_DIR" ]; then
                     echo "api_key: $API_KEY"
                     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 else
-                    echo "❌ API_KEY не найден в .env файле"
+                    echo "❌ API_TOKEN не найден в .env файле"
                 fi
             else
                 echo "❌ Файл .env не найден"
@@ -251,11 +251,7 @@ FILES=(
     "package-lock.json"
     "tsconfig.json"
     "Dockerfile"
-    ".dockerignore"
-)
-
-DIRS=(
-    "src"
+    ".env.example"
 )
 
 echo "Загрузка файлов node-agent..."
@@ -267,9 +263,7 @@ done
 # Загружаем src директорию
 echo "  📁 src/"
 mkdir -p node-agent/src
-curl -fsSL "$REPO_URL/src/index.ts" -o "node-agent/src/index.ts"
 curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
-curl -fsSL "$REPO_URL/src/docker.ts" -o "node-agent/src/docker.ts"
 
 echo "✅ node-agent загружен"
 
@@ -290,7 +284,7 @@ echo "📝 Создание конфигурации node-agent..."
 # Минимальная конфигурация - всё остальное настраивается через API
 cat > node-agent/.env <<EOF
 # API Configuration
-API_KEY=$API_KEY
+API_TOKEN=$API_KEY
 API_PORT=3000
 
 # Node Environment
@@ -305,7 +299,7 @@ echo "📝 Создание .env для docker-compose..."
 
 cat > .env <<EOF
 # API Configuration
-API_KEY=$API_KEY
+API_TOKEN=$API_KEY
 API_PORT=3000
 EOF
 
@@ -573,7 +567,6 @@ echo "   mtproxy-node setup       - добавить API TOKEN"
 echo "   mtproxy-node config      - показать конфигурацию"
 echo "   mtproxy-node update      - обновление"
 echo ""
-echo "📂 Директория установки: $INSTALL_DIR"
+echo "📂 Директория: $INSTALL_DIR"
 echo ""
 echo "════════════════════════════════════════════════════"
-echo ""

@@ -67,8 +67,9 @@ perform_update() {
         exit 1
     fi
 
-    # Ensure node-agent directory exists
+    # Ensure node-agent directory exists and has proper permissions
     mkdir -p node-agent/src
+    chmod -R 755 node-agent
 
     # Download updated files
     REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
@@ -83,12 +84,18 @@ perform_update() {
     echo "Downloading updates..."
     for file in "${FILES[@]}"; do
         echo "  * $file"
-        curl -fsSL "$REPO_URL/$file" -o "node-agent/$file"
+        if ! curl -fsSL "$REPO_URL/$file" -o "node-agent/$file"; then
+            echo "X Failed to download $file"
+            exit 1
+        fi
     done
 
     # Load updated api.ts
     echo "  / src/api.ts"
-    curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
+    if ! curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"; then
+        echo "X Failed to download src/api.ts"
+        exit 1
+    fi
 
     # Restart containers
     docker compose down

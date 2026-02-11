@@ -542,7 +542,16 @@ if [ ! -d "$INSTALL_DIR" ]; then
     exit 1
 fi
 
-cd "$INSTALL_DIR"
+cd "$INSTALL_DIR" || {
+    echo "X Cannot change to directory $INSTALL_DIR"
+    exit 1
+}
+
+# Verify we can access the current directory
+if ! pwd >/dev/null 2>&1; then
+    echo "X Cannot access current directory after cd"
+    exit 1
+fi
 
 case "$1" in
     status)

@@ -11,22 +11,27 @@ cd "$PROJECT_ROOT"
 case "${1:-}" in
   start)
     echo "🚀 Запуск всех сервисов..."
-    docker compose up -d
+    docker compose -f docker-compose.yml up -d
+    docker compose -f docker-compose.node.yml up -d
     echo "✅ Сервисы запущены"
-    docker compose ps
+    docker compose -f docker-compose.yml ps
+    docker compose -f docker-compose.node.yml ps
     ;;
     
   stop)
     echo "🛑 Остановка всех сервисов..."
-    docker compose down
+    docker compose -f docker-compose.yml down
+    docker compose -f docker-compose.node.yml down
     echo "✅ Сервисы остановлены"
     ;;
     
   restart)
     echo "🔄 Перезапуск всех сервисов..."
-    docker compose restart
+    docker compose -f docker-compose.yml restart
+    docker compose -f docker-compose.node.yml restart
     echo "✅ Сервисы перезапущены"
-    docker compose ps
+    docker compose -f docker-compose.yml ps
+    docker compose -f docker-compose.node.yml ps
     ;;
     
   logs)
@@ -39,7 +44,8 @@ case "${1:-}" in
     
   status)
     echo "📊 Статус сервисов:"
-    docker compose ps
+    docker compose -f docker-compose.yml ps
+    docker compose -f docker-compose.node.yml ps
     echo ""
     echo "📈 Использование ресурсов:"
     docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" \
@@ -50,24 +56,31 @@ case "${1:-}" in
     echo "🔄 Обновление из GitHub..."
     git pull origin master
     echo "🔨 Пересборка контейнеров..."
-    docker compose build --no-cache
+    docker compose -f docker-compose.yml build --no-cache
+    docker compose -f docker-compose.node.yml build --no-cache
     echo "🚀 Перезапуск..."
-    docker compose up -d
+    docker compose -f docker-compose.yml up -d
+    docker compose -f docker-compose.node.yml up -d
     echo "✅ Обновление завершено"
     ;;
     
   rebuild)
     echo "🔨 Полная пересборка..."
-    docker compose down
-    docker compose build --no-cache
-    docker compose up -d
+    docker compose -f docker-compose.yml down
+    docker compose -f docker-compose.node.yml down
+    docker compose -f docker-compose.yml build --no-cache
+    docker compose -f docker-compose.node.yml build --no-cache
+    docker compose -f docker-compose.yml up -d
+    docker compose -f docker-compose.node.yml up -d
     echo "✅ Пересборка завершена"
-    docker compose ps
+    docker compose -f docker-compose.yml ps
+    docker compose -f docker-compose.node.yml ps
     ;;
     
   clean)
     echo "🧹 Очистка Docker..."
-    docker compose down -v
+    docker compose -f docker-compose.yml down -v
+    docker compose -f docker-compose.node.yml down -v
     docker system prune -af
     echo "✅ Очистка завершена"
     ;;

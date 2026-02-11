@@ -92,6 +92,9 @@ bot.use(async (ctx, next) => {
   }
 
   console.log('User is admin, proceeding with update type:', ctx.updateType);
+  if (ctx.callbackQuery) {
+    console.log('Callback query data:', ctx.callbackQuery.data);
+  }
   return next();
 });
 
@@ -415,7 +418,7 @@ bot.action(/^add_socks5_(\d+)$/, async (ctx) => {
 
 // ─── ОБРАБОТЧИКИ ГЛАВНОГО МЕНЮ ───
 
-bot.action('show_nodes', async (ctx) => {
+bot.action('show_nodes', async (ctx: any) => {
   console.log('show_nodes action triggered');
   await ctx.answerCbQuery();
 
@@ -442,7 +445,7 @@ bot.action('show_nodes', async (ctx) => {
   await ctx.reply(text, { parse_mode: 'Markdown' });
 });
 
-bot.action('add_node', async (ctx) => {
+bot.action('add_node', async (ctx: any) => {
   console.log('add_node action triggered');
   await ctx.answerCbQuery();
 
@@ -460,7 +463,7 @@ bot.action('add_node', async (ctx) => {
   );
 });
 
-bot.action('show_stats', async (ctx) => {
+bot.action('show_stats', async (ctx: any) => {
   console.log('show_stats action triggered');
   await ctx.answerCbQuery();
 
@@ -490,7 +493,7 @@ bot.action('show_stats', async (ctx) => {
   await ctx.reply(text, { parse_mode: 'Markdown' });
 });
 
-bot.action('show_help', async (ctx) => {
+bot.action('show_help', async (ctx: any) => {
   console.log('show_help action triggered');
   await ctx.answerCbQuery();
 
@@ -521,7 +524,7 @@ bot.action('show_help', async (ctx) => {
   );
 });
 
-bot.action('back_to_main', async (ctx) => {
+bot.action('back_to_main', async (ctx: any) => {
   console.log('back_to_main action triggered');
   await ctx.answerCbQuery();
 

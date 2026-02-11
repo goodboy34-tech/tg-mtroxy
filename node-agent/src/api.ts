@@ -68,8 +68,9 @@ app.get('/health', async (req, res) => {
     const diskUsage = await getDiskUsage();
     const uptime = getUptime();
 
-    // Статус healthy если MTProto работает (SOCKS5 опционален)
-    const status = mtprotoRunning ? 'healthy' : 'unhealthy';
+    // Node agent работает - всегда healthy
+    // MTProto и SOCKS5 опциональны (могут не быть созданы)
+    const status = 'healthy';
 
     res.json({
       status,

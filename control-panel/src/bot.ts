@@ -1043,15 +1043,23 @@ async function showStats(ctx: any, isEdit: boolean = false) {
       text += `${statusEmoji} <b>${node.name}</b> <code>${uptimeStr}</code>\n`;
       
       // MTProto
-      const mtprotoPercent = stats.mtproto.maxConnections > 0 
-        ? Math.round((stats.mtproto.connections / stats.mtproto.maxConnections) * 100)
-        : 0;
-      const mtprotoBar = generateProgressBar(mtprotoPercent);
-      text += `   🔷 MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections} ${mtprotoBar}\n`;
+      if (health.mtproto.running) {
+        const mtprotoPercent = stats.mtproto.maxConnections > 0 
+          ? Math.round((stats.mtproto.connections / stats.mtproto.maxConnections) * 100)
+          : 0;
+        const mtprotoBar = generateProgressBar(mtprotoPercent);
+        text += `   🔷 MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections} ${mtprotoBar}\n`;
+      } else {
+        text += `   🔷 MTProto: <i>не настроен</i>\n`;
+      }
       
       // SOCKS5
-      if (stats.socks5.connections > 0) {
-        text += `   🔵 SOCKS5: ${stats.socks5.connections} активных\n`;
+      if (health.socks5.running) {
+        if (stats.socks5.connections > 0) {
+          text += `   🔵 SOCKS5: ${stats.socks5.connections} активных\n`;
+        } else {
+          text += `   🔵 SOCKS5: настроен, нет подключений\n`;
+        }
       }
       
       // Система

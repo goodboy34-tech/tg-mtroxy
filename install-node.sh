@@ -240,10 +240,38 @@ if [ -d "$INSTALL_DIR" ]; then
 fi
 
 echo ""
-echo "📥 Клонирование репозитория..."
-git clone https://github.com/goodboy34-tech/eeee.git "$INSTALL_DIR"
-
+echo "📥 Загрузка node-agent..."
+mkdir -p "$INSTALL_DIR/node-agent"
 cd "$INSTALL_DIR"
+
+# Скачиваем только нужные файлы node-agent из GitHub
+REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
+FILES=(
+    "package.json"
+    "package-lock.json"
+    "tsconfig.json"
+    "Dockerfile"
+    ".dockerignore"
+)
+
+DIRS=(
+    "src"
+)
+
+echo "Загрузка файлов node-agent..."
+for file in "${FILES[@]}"; do
+    echo "  📄 $file"
+    curl -fsSL "$REPO_URL/$file" -o "node-agent/$file"
+done
+
+# Загружаем src директорию
+echo "  📁 src/"
+mkdir -p node-agent/src
+curl -fsSL "$REPO_URL/src/index.ts" -o "node-agent/src/index.ts"
+curl -fsSL "$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
+curl -fsSL "$REPO_URL/src/docker.ts" -o "node-agent/src/docker.ts"
+
+echo "✅ node-agent загружен"
 
 echo ""
 echo "════════════════════════════════════════════════════"

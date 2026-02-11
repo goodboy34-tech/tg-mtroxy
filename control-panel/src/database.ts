@@ -157,6 +157,12 @@ export const queries: Queries = {
     WHERE id = @id
   `),
   
+  updateNodeAdTag: db.prepare(`
+    UPDATE nodes 
+    SET ad_tag = @ad_tag, updated_at = datetime('now')
+    WHERE id = @id
+  `),
+  
   deactivateNode: db.prepare(`
     UPDATE nodes SET is_active = 0, updated_at = datetime('now')
     WHERE id = ?

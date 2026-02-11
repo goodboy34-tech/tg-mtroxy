@@ -170,6 +170,10 @@ export class NodeApiClient {
     return this.request('POST', '/mtproto/config', config);
   }
 
+  async updateAdTag(tag: string | null): Promise<{ success: boolean }> {
+    return this.request('POST', '/mtproto/config', { tag: tag || undefined });
+  }
+
   // ═══════════════════════════════════════════════
   // SOCKS5 MANAGEMENT
   // ═══════════════════════════════════════════════

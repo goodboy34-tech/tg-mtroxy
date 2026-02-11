@@ -1394,6 +1394,74 @@ bot.command('set_workers', async (ctx) => {
   }
 });
 
+// ─── SET AD_TAG ───
+
+bot.command('set_ad_tag', async (ctx) => {
+  const args = ctx.message.text.split(' ').slice(1);
+  const nodeId = parseInt(args[0]);
+  const adTag = args[1];
+
+  if (!nodeId || !adTag) {
+    return ctx.reply(
+      '🏷️ *Установка рекламного тега*\n\n' +
+      'Использование: `/set_ad_tag <node_id> <ad_tag>`\n\n' +
+      'AD\\_TAG - это 16-значный hex тег для монетизации трафика MTProxy.\n' +
+      'Получить можно у @MTProxybot после регистрации канала.\n\n' +
+      'Примеры:\n' +
+      '`/set_ad_tag 1 a1b2c3d4e5f67890`\n' +
+      '`/set_ad_tag 2 none` - удалить тег',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    return ctx.reply('❌ Нода не найдена');
+  }
+
+  // Валидация AD_TAG (должен быть 16 hex символов или 'none')
+  const finalAdTag = adTag.toLowerCase() === 'none' ? null : adTag;
+  if (finalAdTag && !/^[a-f0-9]{16}$/i.test(finalAdTag)) {
+    return ctx.reply('❌ Неверный формат AD_TAG. Должно быть 16 hex символов (a-f, 0-9)');
+  }
+
+  const client = getNodeClient(nodeId);
+  if (!client) {
+    return ctx.reply('❌ Не удалось подключиться к ноде');
+  }
+
+  try {
+    await ctx.reply(`⏳ ${finalAdTag ? 'Установка' : 'Удаление'} AD_TAG...`);
+    
+    // Отправляем запрос на Node Agent для обновления MTProxy конфига
+    await client.updateAdTag(finalAdTag);
+    
+    // Обновляем в БД
+    queries.updateNodeAdTag.run({
+      id: nodeId,
+      ad_tag: finalAdTag,
+    });
+
+    await ctx.reply(
+      `✅ *AD\\_TAG ${finalAdTag ? 'установлен' : 'удалён'}!*\n\n` +
+      `Нода: ${node.name}\n` +
+      (finalAdTag ? `Тег: \`${finalAdTag}\`` : 'Тег удалён') + '\n\n' +
+      `MTProxy перезапущен с новыми настройками.`,
+      { parse_mode: 'Markdown' }
+    );
+
+    queries.insertLog.run({
+      node_id: nodeId,
+      level: 'info',
+      message: finalAdTag ? 'AD_TAG set' : 'AD_TAG removed',
+      details: `AD_TAG: ${finalAdTag || 'none'}, Admin: ${ctx.from!.id}`,
+    });
+
+  } catch (err: any) {
+    await ctx.reply(`❌ Ошибка: ${err.message}`);
+  }
+});
+
 // ═══════════════════════════════════════════════
 // УПРАВЛЕНИЕ ПОДПИСКАМИ
 // ═══════════════════════════════════════════════

@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Ensure we have a valid working directory
+cd /tmp 2>/dev/null || cd /root 2>/dev/null || cd / 2>/dev/null || true
+
 # Installation script path
 SCRIPT_PATH="/usr/local/bin/install-node.sh"
 
@@ -85,7 +88,10 @@ perform_update() {
         exit 1
     fi
 
-    cd "$INSTALL_DIR"
+    cd "$INSTALL_DIR" || {
+        echo "X Failed to change to installation directory $INSTALL_DIR"
+        exit 1
+    }
 
     # Check write permissions
     if [ ! -w "$INSTALL_DIR" ]; then

@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Ensure we have a valid working directory
+cd /tmp 2>/dev/null || cd /root 2>/dev/null || cd / 2>/dev/null || true
+
 # Installation script path
 SCRIPT_PATH="/usr/local/bin/install-control.sh"
 
@@ -85,7 +88,10 @@ perform_update() {
         exit 1
     fi
 
-    cd "$INSTALL_DIR"
+    cd "$INSTALL_DIR" || {
+        echo "X Failed to change to installation directory $INSTALL_DIR"
+        exit 1
+    }
 
     # Check write permissions
     if [ ! -w "$INSTALL_DIR" ]; then
@@ -96,7 +102,10 @@ perform_update() {
 
     # Update from git
     echo "* Updating from GitHub..."
-    git pull
+    if ! git pull; then
+        echo "X Failed to update from GitHub"
+        exit 1
+    fi
 
     # Ensure systemd service exists
     if [ ! -f "/etc/systemd/system/mtproxy-control.service" ]; then

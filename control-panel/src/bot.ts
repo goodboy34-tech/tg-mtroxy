@@ -354,8 +354,23 @@ bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
     text += `🟣 *MTProto:*\n`;
     for (const secret of secrets) {
       const type = secret.is_fake_tls ? 'Fake-TLS' : 'Обычный';
-      text += `   ${type}: \`${secret.secret}\`\n`;
+      const link = ProxyLinkGenerator.generateMtProtoLink(
+        node.domain,
+        node.mtproto_port,
+        secret.secret,
+        secret.is_fake_tls
+      );
+      const webLink = ProxyLinkGenerator.generateMtProtoWebLink(
+        node.domain,
+        node.mtproto_port,
+        secret.secret,
+        secret.is_fake_tls
+      );
+      
+      text += `   ${type}:\n`;
       if (secret.description) text += `   _${secret.description}_\n`;
+      text += `   \`${link}\`\n`;
+      text += `   [Подключить](${webLink})\n`;
     }
     text += '\n';
   }
@@ -364,8 +379,23 @@ bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
   if (socks5Accounts.length > 0) {
     text += `🔵 *SOCKS5:*\n`;
     for (const account of socks5Accounts) {
-      text += `   👤 \`${account.username}:${account.password}\`\n`;
+      const tgLink = ProxyLinkGenerator.generateSocks5TgLink(
+        node.domain,
+        node.socks5_port,
+        account.username,
+        account.password
+      );
+      const tmeLink = ProxyLinkGenerator.generateSocks5TmeLink(
+        node.domain,
+        node.socks5_port,
+        account.username,
+        account.password
+      );
+      
+      text += `   👤 ${account.username}\n`;
       if (account.description) text += `   _${account.description}_\n`;
+      text += `   \`${tgLink}\`\n`;
+      text += `   [Подключить](${tmeLink})\n`;
     }
   }
 

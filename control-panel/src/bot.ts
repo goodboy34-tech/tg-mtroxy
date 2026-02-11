@@ -416,6 +416,7 @@ bot.action(/^add_socks5_(\d+)$/, async (ctx) => {
 // ─── ОБРАБОТЧИКИ ГЛАВНОГО МЕНЮ ───
 
 bot.action('show_nodes', async (ctx) => {
+  console.log('show_nodes action triggered');
   await ctx.answerCbQuery();
 
   const nodes = queries.getAllNodes.all([]) as any[];
@@ -442,6 +443,7 @@ bot.action('show_nodes', async (ctx) => {
 });
 
 bot.action('add_node', async (ctx) => {
+  console.log('add_node action triggered');
   await ctx.answerCbQuery();
 
   // Устанавливаем состояние ожидания данных ноды
@@ -459,6 +461,7 @@ bot.action('add_node', async (ctx) => {
 });
 
 bot.action('show_stats', async (ctx) => {
+  console.log('show_stats action triggered');
   await ctx.answerCbQuery();
 
   const nodes = queries.getActiveNodes.all([]) as any[];
@@ -488,6 +491,7 @@ bot.action('show_stats', async (ctx) => {
 });
 
 bot.action('show_help', async (ctx) => {
+  console.log('show_help action triggered');
   await ctx.answerCbQuery();
 
   await ctx.reply(
@@ -518,6 +522,7 @@ bot.action('show_help', async (ctx) => {
 });
 
 bot.action('back_to_main', async (ctx) => {
+  console.log('back_to_main action triggered');
   await ctx.answerCbQuery();
 
   await ctx.reply(

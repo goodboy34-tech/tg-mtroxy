@@ -361,6 +361,8 @@ bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
     text += `🟣 *MTProto:*\n`;
     for (const secret of secrets) {
       const type = secret.is_fake_tls ? 'Fake-TLS' : 'Обычный';
+      console.log(`Generating link for secret: ${secret.secret}, domain: ${node.domain}, port: ${node.mtproto_port}, fake_tls: ${secret.is_fake_tls}`);
+      
       const link = ProxyLinkGenerator.generateMtProtoLink(
         node.domain,
         node.mtproto_port,
@@ -373,6 +375,9 @@ bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
         secret.secret,
         secret.is_fake_tls
       );
+      
+      console.log(`Generated link: ${link}`);
+      console.log(`Generated webLink: ${webLink}`);
       
       text += `   ${type}:\n`;
       if (secret.description) text += `   _${secret.description}_\n`;
@@ -1857,8 +1862,15 @@ bot.action('manage_links', async (ctx) => {
     text += `🟣 *MTProto (${secrets.length}):*\n`;
     for (const secret of secrets) {
       const type = secret.is_fake_tls ? '🔒 Fake-TLS' : '🔓 Обычный';
-      text += `   ${type}: \`${secret.secret}\`\n`;
+      const link = ProxyLinkGenerator.generateMtProtoLink(
+        node.domain,
+        node.mtproto_port,
+        secret.secret,
+        secret.is_fake_tls
+      );
+      text += `   ${type}:\n`;
       if (secret.description) text += `   _${secret.description}_\n`;
+      text += `   \`${link}\`\n`;
       buttons.push([{ text: `🗑️ Удалить MTProto ${secret.secret.slice(-8)}`, callback_data: `delete_mtproto_${secret.id}` }]);
     }
     text += '\n';
@@ -1868,8 +1880,15 @@ bot.action('manage_links', async (ctx) => {
   if (socks5Accounts.length > 0) {
     text += `🔵 *SOCKS5 (${socks5Accounts.length}):*\n`;
     for (const account of socks5Accounts) {
-      text += `   👤 \`${account.username}\`\n`;
+      const tgLink = ProxyLinkGenerator.generateSocks5TgLink(
+        node.domain,
+        node.socks5_port,
+        account.username,
+        account.password
+      );
+      text += `   👤 ${account.username}:\n`;
       if (account.description) text += `   _${account.description}_\n`;
+      text += `   \`${tgLink}\`\n`;
       buttons.push([{ text: `🗑️ Удалить SOCKS5 ${account.username}`, callback_data: `delete_socks5_${account.id}` }]);
     }
     text += '\n';

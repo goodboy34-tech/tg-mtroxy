@@ -934,24 +934,53 @@ bot.action('show_nodes', async (ctx: any) => {
   const nodes = queries.getAllNodes.all([]) as any[];
 
   if (nodes.length === 0) {
-    return ctx.reply('📭 Нет добавленных нод.\n\nИспользуйте /add_node для добавления.');
+    await ctx.editMessageText('📭 Нет добавленных нод.\n\nИспользуйте /add_node для добавления.');
+    return;
   }
 
   let text = '📡 <b>Список нод:</b>\n\n';
+  const buttons: any[][] = [];
 
   for (const node of nodes) {
-    const statusEmoji = node.status === 'online' ? '🟢' :
+    const statusEmoji = node.status === 'online' ? '🟢' : 
                        node.status === 'offline' ? '🔴' : '🟡';
-
+    
+    const client = getNodeClient(node.id);
+    let statsLine = '';
+    
+    // Получаем статистику для каждой ноды
+    try {
+      if (client) {
+        const stats = await client.getStats();
+        statsLine = `   📊 MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections} | SOCKS5: ${stats.socks5.connections}\n` +
+                   `   🌐 Трафик: ↓${(stats.network.inMb / 1024).toFixed(2)} GB ↑${(stats.network.outMb / 1024).toFixed(2)} GB\n`;
+      }
+    } catch (err) {
+      statsLine = `   ⚠️ Статистика недоступна\n`;
+    }
+    
     text += `${statusEmoji} <b>${node.name}</b>\n`;
-    text += `   ID: <code>${node.id}</code>\n`;
+    text += `   ID: ${node.id}\n`;
     text += `   Домен: <code>${node.domain}</code>\n`;
-    text += `   Статус: ${node.status}\n`;
-    text += `   Воркеры: ${node.workers}\n`;
-    text += `   /node ${node.id}\n\n`;
+    text += `   Статус: ${node.status} | Воркеры: ${node.workers}\n`;
+    text += statsLine;
+    text += '\n';
+    
+    // Добавляем кнопки для каждой ноды
+    buttons.push([
+      { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` },
+      { text: '🔗', callback_data: `get_links_${node.id}` },
+      { text: '🔄', callback_data: `restart_node_${node.id}` }
+    ]);
   }
+  
+  // Кнопка обновления списка
+  buttons.push([{ text: '🔄 Обновить список', callback_data: 'refresh_nodes_list' }]);
 
-  await ctx.reply(text, { parse_mode: 'HTML' });
+  await ctx.editMessageText(text, { 
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: buttons }
+  });
 });
 
 bot.action('add_node', async (ctx: any) => {

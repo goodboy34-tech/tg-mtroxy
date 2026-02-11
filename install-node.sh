@@ -154,6 +154,12 @@ perform_update() {
         exit 1
     fi
 
+    # Verify the file is not empty
+    if [ ! -s "docker-compose.yml" ]; then
+        echo "X Downloaded docker-compose.yml is empty"
+        exit 1
+    fi
+
     # Create systemd service
     create_systemd_service
 
@@ -387,7 +393,16 @@ perform_install() {
     # Download docker-compose configuration
     echo ""
     echo "* Downloading docker-compose configuration..."
-    curl -fsSL "https://raw.githubusercontent.com/goodboy34-tech/eeee/master/docker-compose.node.yml" -o "docker-compose.yml"
+    if ! curl -fsSL "https://raw.githubusercontent.com/goodboy34-tech/eeee/master/docker-compose.node.yml" -o "docker-compose.yml"; then
+        echo "X Failed to download docker-compose.node.yml"
+        exit 1
+    fi
+
+    # Verify the file is not empty
+    if [ ! -s "docker-compose.yml" ]; then
+        echo "X Downloaded docker-compose.yml is empty"
+        exit 1
+    fi
     echo "-> docker-compose.yml downloaded"
 
     echo ""

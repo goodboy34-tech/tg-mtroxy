@@ -72,13 +72,26 @@ function escapeMarkdown(text: string): string {
  * Middleware для проверки админа
  */
 bot.use(async (ctx, next) => {
-  if (!ctx.from) return;
-  
-  if (!isAdmin(ctx.from.id)) {
-    await ctx.reply('⛔ У вас нет доступа к этому боту.');
+  // Для callback query пользователь находится в ctx.callbackQuery.from
+  const userId = ctx.from?.id || ctx.callbackQuery?.from?.id;
+
+  if (!userId) {
+    console.log('No user found in ctx');
     return;
   }
 
+  if (!isAdmin(userId)) {
+    console.log('User not admin:', userId);
+    // Для callback query отвечаем через answerCbQuery
+    if (ctx.callbackQuery) {
+      await ctx.answerCbQuery('⛔ У вас нет доступа к этому боту.');
+    } else {
+      await ctx.reply('⛔ У вас нет доступа к этому боту.');
+    }
+    return;
+  }
+
+  console.log('User is admin, proceeding with update type:', ctx.updateType);
   return next();
 });
 
@@ -1342,44 +1355,54 @@ bot.on(message('text'), async (ctx) => {
 // ═══════════════════════════════════════════════
 
 bot.action('manage_links', async (ctx) => {
-  await ctx.answerCbQuery();
-  const nodes = queries.getAllNodes.all([]) as any[];
-  
-  if (nodes.length === 0) {
-    return ctx.editMessageText('📭 Нет добавленных нод.\n\nСначала добавьте ноду через /add_node', {
+  try {
+    await ctx.answerCbQuery();
+    console.log('manage_links action triggered by user:', ctx.from?.id);
+
+    const nodes = queries.getAllNodes.all([]) as any[];
+    console.log('Found nodes:', nodes.length);
+
+    if (nodes.length === 0) {
+      console.log('No nodes found, showing message');
+      return ctx.editMessageText('📭 Нет добавленных нод.\n\nСначала добавьте ноду через /add_node', {
+        reply_markup: {
+          inline_keyboard: [[{ text: '⬅️ Назад', callback_data: 'back_to_main' }]]
+        }
+      });
+    }
+
+    let text = '🔗 *Управление ссылками*\n\nВыберите ноду для управления ссылками:\n\n';
+
+    const buttons = [];
+    for (const node of nodes) {
+      const statusEmoji = node.status === 'online' ? '🟢' :
+                         node.status === 'offline' ? '🔴' : '🟡';
+
+      text += `${statusEmoji} *${node.name}*\n`;
+
+      // Получаем количество ссылок
+      const secrets = queries.getNodeSecrets.all(node.id) as any[];
+      const socks5Accounts = queries.getNodeSocks5Accounts.all(node.id) as any[];
+      const totalLinks = secrets.length + socks5Accounts.length;
+
+      text += `   Ссылок: ${totalLinks}\n\n`;
+
+      buttons.push([{ text: `${node.name} (${totalLinks})`, callback_data: `manage_node_links_${node.id}` }]);
+    }
+
+    buttons.push([{ text: '⬅️ Назад', callback_data: 'back_to_main' }]);
+
+    console.log('Editing message with buttons');
+    await ctx.editMessageText(text, {
+      parse_mode: 'Markdown',
       reply_markup: {
-        inline_keyboard: [[{ text: '⬅️ Назад', callback_data: 'back_to_main' }]]
+        inline_keyboard: buttons
       }
     });
+  } catch (error) {
+    console.error('Error in manage_links action:', error);
+    await ctx.answerCbQuery('Произошла ошибка');
   }
-
-  let text = '🔗 *Управление ссылками*\n\nВыберите ноду для управления ссылками:\n\n';
-  
-  const buttons = [];
-  for (const node of nodes) {
-    const statusEmoji = node.status === 'online' ? '🟢' : 
-                       node.status === 'offline' ? '🔴' : '🟡';
-    
-    text += `${statusEmoji} *${node.name}*\n`;
-    
-    // Получаем количество ссылок
-    const secrets = queries.getNodeSecrets.all(node.id) as any[];
-    const socks5Accounts = queries.getNodeSocks5Accounts.all(node.id) as any[];
-    const totalLinks = secrets.length + socks5Accounts.length;
-    
-    text += `   Ссылок: ${totalLinks}\n\n`;
-    
-    buttons.push([{ text: `${node.name} (${totalLinks})`, callback_data: `manage_node_links_${node.id}` }]);
-  }
-  
-  buttons.push([{ text: '⬅️ Назад', callback_data: 'back_to_main' }]);
-  
-  await ctx.editMessageText(text, {
-    parse_mode: 'Markdown',
-    reply_markup: {
-      inline_keyboard: buttons
-    }
-  });
 });
 
 async function showManageNodeLinks(ctx: any, nodeId: number) {

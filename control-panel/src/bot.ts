@@ -1010,25 +1010,56 @@ bot.command('stats', async (ctx) => {
   const nodes = queries.getActiveNodes.all([]) as any[];
   const allStats = queries.getAllNodesLatestStats.all([]) as any[];
   
+  if (nodes.length === 0) {
+    return ctx.reply('📭 Нет активных нод. Добавьте ноду через /add_node');
+  }
+
   let text = '📊 <b>Общая статистика</b>\n\n';
-  text += `Нод активно: ${nodes.length}\n\n`;
+  text += `Нод активно: ${nodes.length}\n`;
+  text += `Статистика от: ${allStats.length} нод\n\n`;
+
+  if (allStats.length === 0) {
+    text += '⚠️ Нет данных статистики.\n';
+    text += 'Возможные причины:\n';
+    text += '- Ноды недавно добавлены (подождите 5 минут)\n';
+    text += '- Ноды недоступны\n';
+    text += '- Проверьте /health\n';
+    return ctx.reply(text, { parse_mode: 'HTML' });
+  }
 
   let totalMtprotoConnections = 0;
+  let totalMtprotoMax = 0;
   let totalSocks5Connections = 0;
+  let avgCpu = 0;
+  let avgRam = 0;
+  let totalNetworkIn = 0;
+  let totalNetworkOut = 0;
 
   for (const stat of allStats) {
     totalMtprotoConnections += stat.mtproto_connections || 0;
+    totalMtprotoMax += stat.mtproto_max || 0;
     totalSocks5Connections += stat.socks5_connections || 0;
+    avgCpu += stat.cpu_usage || 0;
+    avgRam += stat.ram_usage || 0;
+    totalNetworkIn += stat.network_in_mb || 0;
+    totalNetworkOut += stat.network_out_mb || 0;
     
-    text += `<b>${stat.node_name}</b>\n`;
-    text += `  MTProto: ${stat.mtproto_connections}/${stat.mtproto_max}\n`;
-    text += `  SOCKS5: ${stat.socks5_connections}\n`;
-    text += `  CPU: ${stat.cpu_usage?.toFixed(1)}% | RAM: ${stat.ram_usage?.toFixed(1)}%\n\n`;
+    text += `🖥 <b>${stat.node_name}</b>\n`;
+    text += `   MTProto: ${stat.mtproto_connections}/${stat.mtproto_max} подключений\n`;
+    text += `   SOCKS5: ${stat.socks5_connections} подключений\n`;
+    text += `   CPU: ${stat.cpu_usage?.toFixed(1)}% | RAM: ${stat.ram_usage?.toFixed(1)}%\n`;
+    text += `   Network: ↓${stat.network_in_mb?.toFixed(1)}MB ↑${stat.network_out_mb?.toFixed(1)}MB\n\n`;
   }
 
-  text += `<b>Итого:</b>\n`;
-  text += `MTProto подключений: ${totalMtprotoConnections}\n`;
-  text += `SOCKS5 подключений: ${totalSocks5Connections}\n`;
+  avgCpu = avgCpu / allStats.length;
+  avgRam = avgRam / allStats.length;
+
+  text += `📈 <b>Итого по всем нодам:</b>\n`;
+  text += `MTProto: ${totalMtprotoConnections}/${totalMtprotoMax}\n`;
+  text += `SOCKS5: ${totalSocks5Connections}\n`;
+  text += `Средний CPU: ${avgCpu.toFixed(1)}%\n`;
+  text += `Средний RAM: ${avgRam.toFixed(1)}%\n`;
+  text += `Суммарный трафик: ↓${totalNetworkIn.toFixed(1)}MB ↑${totalNetworkOut.toFixed(1)}MB\n`;
 
   await ctx.reply(text, { parse_mode: 'HTML' });
 });

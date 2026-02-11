@@ -299,8 +299,11 @@ bot.command('node', async (ctx) => {
     statsInfo +
     `\n*Команды:*\n` +
     `/links ${node.id} - получить ссылки\n` +
+    `/add_secret ${node.id} - добавить MTProto\n` +
+    `/add_socks5 ${node.id} - добавить SOCKS5\n` +
     `/restart_node ${node.id} - перезапустить\n` +
-    `/logs ${node.id} - показать логи`,
+    `/logs ${node.id} - показать логи\n` +
+    `/remove_node ${node.id} - удалить ноду`,
     { parse_mode: 'Markdown' }
   );
 });
@@ -1272,6 +1275,78 @@ bot.action(/^add_socks5_(\d+)$/, async (ctx) => {
   // Перенаправляем на команду add_socks5
   ctx.message = { text: `/add_socks5 ${nodeId}` } as any;
   await bot.handleUpdate({ message: ctx.message } as any);
+});
+
+// ─── УДАЛЕНИЕ ССЫЛОК ───
+
+bot.action(/^delete_mtproto_(\d+)$/, async (ctx) => {
+  const secretId = parseInt(ctx.match[1]);
+  const secret = queries.getSecretById.get(secretId) as any;
+  
+  if (!secret) {
+    await ctx.answerCbQuery('Секрет не найден');
+    return;
+  }
+
+  const node = queries.getNodeById.get(secret.node_id) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  // Удаляем из БД
+  queries.deactivateSecret.run(secretId);
+
+  // Отправляем на Node Agent для обновления конфига
+  const client = getNodeClient(secret.node_id);
+  if (client) {
+    try {
+      await client.removeMtProtoSecret(secret.secret);
+    } catch (err) {
+      console.error('Failed to remove secret from node:', err);
+    }
+  }
+
+  await ctx.answerCbQuery('MTProto секрет удален');
+  
+  // Обновляем сообщение
+  ctx.match = [null, secret.node_id.toString()];
+  await bot.actions.get('manage_node_links_' + secret.node_id)?.(ctx);
+});
+
+bot.action(/^delete_socks5_(\d+)$/, async (ctx) => {
+  const accountId = parseInt(ctx.match[1]);
+  const account = queries.getSocks5AccountById.get(accountId) as any;
+  
+  if (!account) {
+    await ctx.answerCbQuery('Аккаунт не найден');
+    return;
+  }
+
+  const node = queries.getNodeById.get(account.node_id) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  // Удаляем из БД
+  queries.deactivateSocks5Account.run(accountId);
+
+  // Отправляем на Node Agent для обновления конфига
+  const client = getNodeClient(account.node_id);
+  if (client) {
+    try {
+      await client.removeSocks5Account(account.username);
+    } catch (err) {
+      console.error('Failed to remove SOCKS5 account from node:', err);
+    }
+  }
+
+  await ctx.answerCbQuery('SOCKS5 аккаунт удален');
+  
+  // Обновляем сообщение
+  ctx.match = [null, account.node_id.toString()];
+  await bot.actions.get('manage_node_links_' + account.node_id)?.(ctx);
 });
 
 // ═══════════════════════════════════════════════

@@ -185,6 +185,38 @@ app.post('/mtproto/workers', async (req, res) => {
   }
 });
 
+app.post('/mtproto/config', async (req, res) => {
+  try {
+    const { workers, tag, natInfo } = req.body;
+    
+    // Обновляем конфиг
+    if (workers) {
+      if (workers < 1 || workers > 32) {
+        return res.status(400).json({ error: 'Invalid workers count (1-32)' });
+      }
+      process.env.WORKERS = workers.toString();
+    }
+    
+    if (tag !== undefined) {
+      process.env.AD_TAG = tag || '';
+    }
+    
+    if (natInfo) {
+      // Формат: internal_ip:external_domain
+      const [ip, domain] = natInfo.split(':');
+      if (ip) process.env.INTERNAL_IP = ip;
+      if (domain) process.env.DOMAIN = domain;
+    }
+    
+    // Перезапускаем с новым конфигом
+    await restartMtProto();
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ═══════════════════════════════════════════════
 // SOCKS5 MANAGEMENT
 // ═══════════════════════════════════════════════

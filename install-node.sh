@@ -840,16 +840,16 @@ if [ -d "$INSTALL_DIR" ]; then
     echo "* Existing installation detected"
     echo ""
 
-    # Check if script is run interactively
-    if [ -t 0 ]; then
-        echo "Choose action:"
-        echo "1) Update node-agent components"
-        echo "2) Show API KEY"
-        echo "3) Reinstall (delete everything and install anew)"
-        echo "4) Exit"
-        echo ""
-        read -p "Your choice (1-4): " choice
-
+    # Always try to show menu for existing installations
+    echo "Choose action:"
+    echo "1) Update node-agent components"
+    echo "2) Show API KEY"
+    echo "3) Reinstall (delete everything and install anew)"
+    echo "4) Exit"
+    echo ""
+    
+    # Try to read input, fallback to automatic update if not possible
+    if read -t 10 -p "Your choice (1-4) [or wait 10s for auto-update]: " choice 2>/dev/null; then
         case $choice in
             1)
                 perform_update
@@ -864,13 +864,17 @@ if [ -d "$INSTALL_DIR" ]; then
                 echo "Exit"
                 exit 0
                 ;;
+            "")
+                echo "No choice made, performing update..."
+                perform_update
+                ;;
             *)
-                echo "X Invalid choice"
-                exit 1
+                echo "X Invalid choice, performing update..."
+                perform_update
                 ;;
         esac
     else
-        echo "Script run non-interactively. Performing update..."
+        echo "Non-interactive mode detected. Performing automatic update..."
         perform_update
     fi
 else

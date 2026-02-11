@@ -325,13 +325,6 @@ case "$1" in
         echo "========================================================"
         echo ""
 
-        # Check if running interactively
-        if ! [ -t 0 ]; then
-            echo "X This command must be run interactively (not in scripts or pipes)"
-            echo "   Run: mtproxy-control setup"
-            exit 1
-        fi
-
         echo "Please provide your Telegram Bot Token from @BotFather"
         echo "Example: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
         echo ""

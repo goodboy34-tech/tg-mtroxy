@@ -536,12 +536,12 @@ bot.command('add_secret', async (ctx) => {
     `🔐 *Добавление MTProto секрета*\n\n` +
     `Нода: ${node.name}\n` +
     `Секрет: \`${secret}\`\n\n` +
-    `Выберите тип:`,
+    `Выберите тип подключения:`,
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔒 Fake-TLS (dd) - рекомендуется', `add_secret_dd_${nodeId}_${secret}`)],
-        [Markup.button.callback('🔓 Обычный', `add_secret_normal_${nodeId}_${secret}`)],
+        [Markup.button.callback('🌐 Домен', `add_secret_domain_${nodeId}_${secret}`)],
+        [Markup.button.callback('� IP адрес', `add_secret_ip_${nodeId}_${secret}`)],
         [Markup.button.callback('❌ Отмена', 'cancel')],
       ])
     }

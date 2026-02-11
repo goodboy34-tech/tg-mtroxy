@@ -2155,6 +2155,7 @@ bot.on(message('text'), async (ctx) => {
         cpu_cores: 2,
         ram_mb: 2048,
         status: 'pending',
+        ad_tag: null, // По умолчанию не установлен
       });
 
         const nodeId = (result as any).lastInsertRowid;

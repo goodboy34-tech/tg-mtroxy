@@ -262,24 +262,21 @@ bot.command('node', async (ctx) => {
       healthInfo +
       statsInfo;
 
+    const buttons = [
+      [
+        { text: '🔗 Ссылки', callback_data: `get_links_${node.id}` },
+        { text: '🔄 Рестарт', callback_data: `restart_node_${node.id}` }
+      ],
+      [
+        { text: '📋 Логи', callback_data: `get_logs_${node.id}` },
+        { text: '🗑️ Удалить', callback_data: `delete_node_${node.id}` }
+      ],
+      [{ text: '⬅️ Назад к списку', callback_data: 'back_to_nodes_list' }]
+    ];
+
     await ctx.reply(nodeInfo, {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '🔗 Получить ссылки', callback_data: `get_links_${node.id}` }],
-          [
-            { text: '➕ MTProto', callback_data: `add_secret_${node.id}` },
-            { text: '➕ SOCKS5', callback_data: `add_socks5_${node.id}` }
-          ],
-          [
-            { text: '🔄 Перезапустить', callback_data: `restart_node_${node.id}` },
-            { text: '📋 Логи', callback_data: `logs_node_${node.id}` }
-          ],
-          [
-            { text: '🗑️ Удалить ноду', callback_data: `confirm_delete_node_${node.id}` },
-            { text: '⬅️ Назад', callback_data: 'show_nodes' }
-          ]
-        ]
-      }
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: buttons }
     });
   } catch (err: any) {
     await ctx.reply(`❌ Ошибка при получении информации о ноде: ${err.message}`);

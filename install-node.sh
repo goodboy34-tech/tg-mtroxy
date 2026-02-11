@@ -162,13 +162,24 @@ perform_update() {
     
     echo "* Configuration restored"
 
-    echo "* Rebuilding container..."
-    docker compose build --no-cache
-    docker compose up -d
+    echo "* Stopping containers..."
+    docker compose down
+    
+    echo "* Removing old images..."
+    docker image prune -f
+    
+    echo "* Rebuilding containers from scratch..."
+    docker compose build --no-cache --pull
+    
+    echo "* Starting updated containers..."
+    docker compose up -d --force-recreate
 
     echo ""
     echo "✓ Update completed!"
     echo "  Backup kept in: \$BACKUP_DIR"
+    echo ""
+    echo "* Verify containers are running:"
+    docker compose ps
 }
 
 # ═══════════════════════════════════════════════

@@ -242,7 +242,11 @@ case "$1" in
         echo "* Current configuration:"
         echo "* Directory: $INSTALL_DIR"
         echo ""
-        if [ -f ".env" ]; then
+        if [ -f "control-panel/.env" ]; then
+            echo "* control-panel/.env:"
+            cat control-panel/.env
+            echo ""
+        elif [ -f ".env" ]; then
             echo "* .env:"
             cat .env
             echo ""
@@ -304,18 +308,21 @@ show_bot_info() {
     echo ""
     if [ -f "$INSTALL_DIR/control-panel/.env" ]; then
         BOT_TOKEN=$(grep "^BOT_TOKEN=" "$INSTALL_DIR/control-panel/.env" | cut -d '=' -f2)
+        ADMIN_IDS=$(grep "^ADMIN_IDS=" "$INSTALL_DIR/control-panel/.env" | cut -d '=' -f2)
         IP=$(curl -s ifconfig.me)
         if [ -n "$BOT_TOKEN" ]; then
             echo "Control Panel Information:"
             echo "==============================================="
             echo "Server IP: $IP"
             echo "Bot Token: $BOT_TOKEN"
+            echo "Admin IDs: $ADMIN_IDS"
             echo "Web Panel: http://$IP:3000"
             echo "==============================================="
             echo ""
             echo "To access the web panel:"
             echo "1. Open http://$IP:3000 in your browser"
             echo "2. Use the bot token above to authenticate"
+            echo "3. Admin users: $ADMIN_IDS"
         else
             echo "X BOT_TOKEN not found in .env file"
         fi
@@ -372,6 +379,20 @@ perform_install() {
         exit 1
     fi
 
+    # Request Admin IDs
+    echo ""
+    read -p "Enter Admin User IDs (comma-separated): " ADMIN_IDS
+    if [ -z "$ADMIN_IDS" ]; then
+        echo "X Admin IDs cannot be empty!"
+        exit 1
+    fi
+
+    # Validate admin IDs format (should be numbers separated by commas)
+    if ! echo "$ADMIN_IDS" | grep -E '^([0-9]+,)*[0-9]+$' >/dev/null; then
+        echo "X Admin IDs should be numbers separated by commas (e.g., 123456789,987654321)"
+        exit 1
+    fi
+
     # Create .env for control-panel
     echo ""
     echo "* Creating configuration..."
@@ -379,6 +400,7 @@ perform_install() {
     cat > control-panel/.env <<EOF
 # Telegram Bot Configuration
 BOT_TOKEN=$BOT_TOKEN
+ADMIN_IDS=$ADMIN_IDS
 
 # Database
 DATABASE_PATH=./data/database.sqlite

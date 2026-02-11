@@ -1360,11 +1360,11 @@ bot.action('manage_links', async (ctx) => {
     console.log('manage_links action triggered by user:', ctx.from?.id);
 
     const nodes = queries.getAllNodes.all([]) as any[];
-    console.log('Found nodes:', nodes.length);
+    console.log('Found nodes:', nodes.length, 'nodes data:', nodes);
 
     if (nodes.length === 0) {
       console.log('No nodes found, showing message');
-      return ctx.editMessageText('📭 Нет добавленных нод.\n\nСначала добавьте ноду через /add_node', {
+      return await ctx.editMessageText('📭 Нет добавленных нод.\n\nСначала добавьте ноду через /add_node', {
         reply_markup: {
           inline_keyboard: [[{ text: '⬅️ Назад', callback_data: 'back_to_main' }]]
         }
@@ -1375,37 +1375,40 @@ bot.action('manage_links', async (ctx) => {
 
     const buttons = [];
     for (const node of nodes) {
-      const statusEmoji = node.status === 'online' ? '🟢' :
+      const statusEmoji = node.status === 'online' ? '🟢' : 
                          node.status === 'offline' ? '🔴' : '🟡';
-
+      
       text += `${statusEmoji} *${node.name}*\n`;
-
+      
       // Получаем количество ссылок
       const secrets = queries.getNodeSecrets.all(node.id) as any[];
       const socks5Accounts = queries.getNodeSocks5Accounts.all(node.id) as any[];
       const totalLinks = secrets.length + socks5Accounts.length;
-
+      
       text += `   Ссылок: ${totalLinks}\n\n`;
-
+      
       buttons.push([{ text: `${node.name} (${totalLinks})`, callback_data: `manage_node_links_${node.id}` }]);
     }
-
+    
     buttons.push([{ text: '⬅️ Назад', callback_data: 'back_to_main' }]);
-
-    console.log('Editing message with buttons');
-    await ctx.editMessageText(text, {
+    
+    console.log('Editing message with buttons, text length:', text.length);
+    const result = await ctx.editMessageText(text, {
       parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: buttons
       }
     });
+    console.log('Edit result:', result);
   } catch (error) {
     console.error('Error in manage_links action:', error);
-    await ctx.answerCbQuery('Произошла ошибка');
+    try {
+      await ctx.answerCbQuery('Произошла ошибка');
+    } catch (e) {
+      console.error('Error answering callback query:', e);
+    }
   }
-});
-
-async function showManageNodeLinks(ctx: any, nodeId: number) {
+});async function showManageNodeLinks(ctx: any, nodeId: number) {
   const node = queries.getNodeById.get(nodeId) as any;
   if (!node) {
     await ctx.answerCbQuery('Нода не найдена');

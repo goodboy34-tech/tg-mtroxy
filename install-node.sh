@@ -101,13 +101,13 @@ create_mtproxy_command() {
 
 INSTALL_DIR="/opt/mtproxy-node"
 
-if [ \\! -d "\\\$INSTALL_DIR" ]; then
-    echo "X Node not installed in \\\$INSTALL_DIR"
+if [ ! -d "\$INSTALL_DIR" ]; then
+    echo "X Node not installed in \$INSTALL_DIR"
     exit 1
 fi
 
-cd "\\\$INSTALL_DIR" || {
-    echo "X Cannot change to directory \\\$INSTALL_DIR"
+cd "\$INSTALL_DIR" || {
+    echo "X Cannot change to directory \$INSTALL_DIR"
     exit 1
 }
 
@@ -115,7 +115,7 @@ cd "\\\$INSTALL_DIR" || {
 # COMMAND HANDLER
 # ═══════════════════════════════════════════════
 
-case "\\\$1" in
+case "$1" in
     status)
         echo "* MTProxy Node Status:"
         systemctl status mtproxy-node --no-pager -l
@@ -127,8 +127,8 @@ case "\\\$1" in
         docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
         ;;
     logs)
-        if [ -n "\\\$2" ]; then
-            docker compose logs -f "\\\$2"
+        if [ -n "$2" ]; then
+            docker compose logs -f "$2"
         else
             docker compose logs -f
         fi
@@ -160,17 +160,17 @@ case "\\\$1" in
 
         read -p "Enter API TOKEN from bot: " API_TOKEN
 
-        if [ -z "\\\$API_TOKEN" ]; then
+        if [ -z "$API_TOKEN" ]; then
             echo "X API TOKEN cannot be empty!"
             return 1
         fi
 
         # Add API_TOKEN to .env
         if grep -q "^API_TOKEN=" node-agent/.env 2>/dev/null; then
-            sed -i "s/^API_TOKEN=.*/API_TOKEN=\\\$API_TOKEN/" node-agent/.env
+            sed -i "s/^API_TOKEN=.*/API_TOKEN=$API_TOKEN/" node-agent/.env
             echo "-> API TOKEN updated"
         else
-            echo "API_TOKEN=\\\$API_TOKEN" >> node-agent/.env
+            echo "API_TOKEN=$API_TOKEN" >> node-agent/.env
             echo "-> API TOKEN added"
         fi
 
@@ -185,7 +185,7 @@ case "\\\$1" in
         ;;
     config)
         echo "* Current configuration:"
-        echo "* Directory: \\\$INSTALL_DIR"
+        echo "* Directory: $INSTALL_DIR"
         echo ""
         if [ -f ".env" ]; then
             echo "* .env:"
@@ -199,20 +199,20 @@ case "\\\$1" in
         fi
         ;;
     shell)
-        if [ -z "\\\$2" ]; then
+        if [ -z "$2" ]; then
             echo "Usage: mtproxy-node shell <service>"
             echo "Available services:"
             docker compose ps --services
             exit 1
         fi
-        docker compose exec "\\\$2" /bin/sh
+        docker compose exec "$2" /bin/sh
         ;;
     proxy-link)
         echo "* MTProxy links:"
         # Look for links in logs
-        SECRET_LINE=\\$(docker logs mtproxy 2>&1 | grep -E "tg://|t.me/proxy" | head -1 || echo "")
-        if [ -n "\\\$SECRET_LINE" ]; then
-            echo "\\\$SECRET_LINE"
+        SECRET_LINE=$(docker logs mtproxy 2>&1 | grep -E "tg://|t.me/proxy" | head -1 || echo "")
+        if [ -n "$SECRET_LINE" ]; then
+            echo "$SECRET_LINE"
         else
             echo "X Link not found in logs"
             echo "   MTProxy may not be running yet"
@@ -299,7 +299,7 @@ EOF
         echo "  mtproxy-node setup"
         ;;
     *)
-        echo "X Unknown command: \\\$1"
+        echo "X Unknown command: $1"
         echo "Use 'mtproxy-node' for command list"
         exit 1
         ;;

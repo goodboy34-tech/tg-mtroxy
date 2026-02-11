@@ -369,31 +369,36 @@ bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
   if (secrets.length > 0) {
     text += `🟣 <b>MTProto:</b>\n`;
     for (const secret of secrets) {
-      const type = secret.is_fake_tls ? 'Fake-TLS' : 'Обычный';
-      console.log(`Generating link for secret: ${secret.secret}, domain: ${node.domain}, port: ${node.mtproto_port}, fake_tls: ${secret.is_fake_tls}`);
+      const type = secret.is_fake_tls ? '🔒 Fake-TLS' : '🔓 Обычный';
+      
+      // Извлекаем домен/IP из description
+      let server = node.domain; // По умолчанию используем domain ноды
+      if (secret.description) {
+        // Формат: "Домен: xxx" или "IP: xxx"
+        const match = secret.description.match(/(?:Домен|IP):\s*(.+)/);
+        if (match && match[1]) {
+          server = match[1].trim();
+        }
+      }
       
       const link = ProxyLinkGenerator.generateMtProtoLink(
-        node.domain,
+        server,
         node.mtproto_port,
         secret.secret,
         secret.is_fake_tls
       );
       const webLink = ProxyLinkGenerator.generateMtProtoWebLink(
-        node.domain,
+        server,
         node.mtproto_port,
         secret.secret,
         secret.is_fake_tls
       );
       
-      console.log(`Generated link: ${link}`);
-      console.log(`Generated webLink: ${webLink}`);
-      
       text += `   ${type}:\n`;
-      if (secret.description) text += `   <i>${secret.description}</i>\n`;
+      text += `   ${secret.description || 'Без описания'}\n`;
       text += `   <code>${link}</code>\n`;
-      text += `   <a href="${webLink}">Подключить</a>\n`;
+      text += `   <a href="${webLink}">Подключить</a>\n\n`;
     }
-    text += '\n';
   }
 
   // SOCKS5 аккаунты
@@ -722,14 +727,24 @@ bot.command('links', async (ctx) => {
     text += '*MTProto:*\n\n';
     for (const secret of secrets) {
       const type = secret.is_fake_tls ? '🔒 Fake-TLS (dd)' : '🔓 Обычный';
+      
+      // Извлекаем сервер из description (формат "Домен: xxx" или "IP: xxx")
+      let server = node.domain;
+      if (secret.description) {
+        const match = secret.description.match(/(?:Домен|IP):\s*(.+)/);
+        if (match) {
+          server = match[1].trim();
+        }
+      }
+      
       const link = ProxyLinkGenerator.generateMtProtoLink(
-        node.domain,
+        server,
         node.mtproto_port,
         secret.secret,
         secret.is_fake_tls
       );
       const webLink = ProxyLinkGenerator.generateMtProtoWebLink(
-        node.domain,
+        server,
         node.mtproto_port,
         secret.secret,
         secret.is_fake_tls
@@ -872,8 +887,20 @@ bot.action(/^add_secret_(dd|normal)_(\d+)_([a-f0-9]{32})$/, async (ctx) => {
     return;
   }
 
+  // Извлекаем сервер из description (формат "Домен: xxx" или "IP: xxx")
+  // В этом старом callback description не содержит домен/IP, так что используем node.domain
+  const secrets = queries.getNodeSecrets.all(nodeId) as any[];
+  const addedSecret = secrets.find(s => s.secret === secret);
+  let server = node.domain;
+  if (addedSecret && addedSecret.description) {
+    const match = addedSecret.description.match(/(?:Домен|IP):\s*(.+)/);
+    if (match) {
+      server = match[1].trim();
+    }
+  }
+
   const link = ProxyLinkGenerator.generateMtProtoLink(
-    node.domain,
+    server,
     node.mtproto_port,
     secret,
     isFakeTls
@@ -2150,8 +2177,18 @@ bot.action('manage_links', async (ctx) => {
     text += `🟣 <b>MTProto (${secrets.length}):</b>\n`;
     for (const secret of secrets) {
       const type = secret.is_fake_tls ? '🔒 Fake-TLS' : '🔓 Обычный';
+      
+      // Извлекаем сервер из description (формат "Домен: xxx" или "IP: xxx")
+      let server = node.domain;
+      if (secret.description) {
+        const match = secret.description.match(/(?:Домен|IP):\s*(.+)/);
+        if (match) {
+          server = match[1].trim();
+        }
+      }
+      
       const link = ProxyLinkGenerator.generateMtProtoLink(
-        node.domain,
+        server,
         node.mtproto_port,
         secret.secret,
         secret.is_fake_tls

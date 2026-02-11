@@ -172,21 +172,37 @@ perform_update() {
         echo ""
         echo "* Applying updates..."
 
-        # Backup .env file
-        ENV_BACKUP=""
-        if [ -f "node-agent/.env" ]; then
-            ENV_BACKUP=\$(cat node-agent/.env)
-            echo "* Backing up .env file..."
-        fi
+        # Backup all important configuration files
+        echo "* Backing up configuration files..."
+        BACKUP_DIR="/tmp/mtproxy-backup-\$(date +%s)"
+        mkdir -p "\$BACKUP_DIR"
+        
+        # Backup .env files
+        [ -f "node-agent/.env" ] && cp "node-agent/.env" "\$BACKUP_DIR/node-agent.env"
+        [ -f ".env" ] && cp ".env" "\$BACKUP_DIR/root.env"
+        
+        # Backup MTProxy secrets and SOCKS5 accounts
+        [ -f "node-data/mtproxy-secrets.json" ] && cp "node-data/mtproxy-secrets.json" "\$BACKUP_DIR/"
+        [ -f "node-data/socks5-accounts.json" ] && cp "node-data/socks5-accounts.json" "\$BACKUP_DIR/"
+        [ -f "socks5/sockd.passwd" ] && cp "socks5/sockd.passwd" "\$BACKUP_DIR/"
+        
+        echo "* Backup created in \$BACKUP_DIR"
 
-        # Pull changes
+        # Pull changes (only code files, .env files are in .gitignore)
         git pull origin master
 
-        # Restore .env file
-        if [ -n "\$ENV_BACKUP" ]; then
-            echo "\$ENV_BACKUP" > node-agent/.env
-            echo "* Restored .env file"
-        fi
+        # Restore configuration files
+        echo "* Restoring configuration files..."
+        [ -f "\$BACKUP_DIR/node-agent.env" ] && cp "\$BACKUP_DIR/node-agent.env" "node-agent/.env"
+        [ -f "\$BACKUP_DIR/root.env" ] && cp "\$BACKUP_DIR/root.env" ".env"
+        [ -f "\$BACKUP_DIR/mtproxy-secrets.json" ] && cp "\$BACKUP_DIR/mtproxy-secrets.json" "node-data/"
+        [ -f "\$BACKUP_DIR/socks5-accounts.json" ] && cp "\$BACKUP_DIR/socks5-accounts.json" "node-data/"
+        [ -f "\$BACKUP_DIR/sockd.passwd" ] && cp "\$BACKUP_DIR/sockd.passwd" "socks5/"
+        
+        echo "* Configuration restored"
+        
+        # Clean up old backup (keep only if needed for rollback)
+        # rm -rf "\$BACKUP_DIR"
 
         echo "* Rebuilding containers..."
         docker compose -f \$COMPOSE_FILE build --no-cache
@@ -194,44 +210,54 @@ perform_update() {
 
         echo ""
         echo "✓ Update completed successfully!"
+        echo "  Backup kept in: \$BACKUP_DIR"
         
     else
         # Fallback: download from GitHub directly (old method)
         echo "* Not a git repository. Using direct download method..."
+        echo "! WARNING: This method doesn't show changes. Consider using git clone for updates."
         
-        # Backup existing .env file
-        ENV_BACKUP=""
-        if [ -f "node-agent/.env" ]; then
-            ENV_BACKUP=\$(cat node-agent/.env)
-            echo "* Backing up .env file..."
-        fi
+        # Backup all important files
+        echo "* Backing up configuration and data files..."
+        BACKUP_DIR="/tmp/mtproxy-backup-\$(date +%s)"
+        mkdir -p "\$BACKUP_DIR"
+        
+        # Backup .env files
+        [ -f "node-agent/.env" ] && cp "node-agent/.env" "\$BACKUP_DIR/node-agent.env"
+        [ -f ".env" ] && cp ".env" "\$BACKUP_DIR/root.env"
+        
+        # Backup data files
+        [ -d "node-data" ] && cp -r "node-data" "\$BACKUP_DIR/"
+        [ -f "socks5/sockd.passwd" ] && cp "socks5/sockd.passwd" "\$BACKUP_DIR/"
+        
+        echo "* Backup created in \$BACKUP_DIR"
 
-        # Clean and recreate node-agent directory
-        rm -rf node-agent
-        mkdir -p node-agent/src
-
-        # Restore .env file
-        if [ -n "\$ENV_BACKUP" ]; then
-            echo "\$ENV_BACKUP" > node-agent/.env
-            echo "* Restored .env file"
-        fi
-
-        # Download updated files from GitHub
+        # Download updated files (only code files, not configs)
         REPO_URL="https://raw.githubusercontent.com/goodboy34-tech/eeee/master/node-agent"
         
         echo "* Downloading updates..."
+        mkdir -p node-agent/src
         curl -fsSL "\$REPO_URL/package.json" -o "node-agent/package.json"
         curl -fsSL "\$REPO_URL/package-lock.json" -o "node-agent/package-lock.json"
         curl -fsSL "\$REPO_URL/tsconfig.json" -o "node-agent/tsconfig.json"
         curl -fsSL "\$REPO_URL/Dockerfile" -o "node-agent/Dockerfile"
         curl -fsSL "\$REPO_URL/src/api.ts" -o "node-agent/src/api.ts"
 
+        # Restore configuration files
+        echo "* Restoring configuration files..."
+        [ -f "\$BACKUP_DIR/node-agent.env" ] && cp "\$BACKUP_DIR/node-agent.env" "node-agent/.env"
+        [ -f "\$BACKUP_DIR/root.env" ] && cp "\$BACKUP_DIR/root.env" ".env"
+        [ -d "\$BACKUP_DIR/node-data" ] && cp -r "\$BACKUP_DIR/node-data/"* "node-data/" 2>/dev/null
+        [ -f "\$BACKUP_DIR/sockd.passwd" ] && cp "\$BACKUP_DIR/sockd.passwd" "socks5/"
+        
+        echo "* Configuration restored"
+
         echo "* Rebuilding container..."
-        docker compose -f \$COMPOSE_FILE down
         docker compose -f \$COMPOSE_FILE build --no-cache
         docker compose -f \$COMPOSE_FILE up -d
 
         echo "✓ Update completed!"
+        echo "  Backup kept in: \$BACKUP_DIR"
     fi
 }
 

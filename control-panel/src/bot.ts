@@ -399,7 +399,7 @@ bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
 
   // SOCKS5 аккаунты
   if (socks5Accounts.length > 0) {
-    text += `🔵 <b>SOCKS5:</b>\n`;
+    text += `🔵 <b>SOCKS5:</b>\n\n`;
     for (const account of socks5Accounts) {
       const tgLink = ProxyLinkGenerator.generateSocks5TgLink(
         node.domain,
@@ -414,14 +414,18 @@ bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
         account.password
       );
       
-      text += `   👤 ${account.username}\n`;
+      text += `   👤 <b>${account.username}</b>\n`;
       if (account.description) text += `   <i>${account.description}</i>\n`;
-      text += `   <code>${tgLink}</code>\n`;
-      text += `   <a href="${tmeLink}">Подключить</a>\n`;
+      text += `   \n🔗 Deep Link:\n   <code>${tgLink}</code>\n\n`;
+      text += `   <a href="${tgLink}">🚀 Подключить в 1 клик</a>\n\n`;
+      text += `   ───────────────\n\n`;
     }
   }
 
-  await ctx.reply(text, { parse_mode: 'HTML' });
+  await ctx.reply(text, { 
+    parse_mode: 'HTML',
+    disable_web_page_preview: true
+  });
 });
 
 bot.action(/^restart_node_(\d+)$/, async (ctx: any) => {
@@ -790,14 +794,18 @@ bot.command('links', async (ctx) => {
         account.password
       );
       
-      text += `👤 ${account.username}\n`;
+      text += `👤 *${account.username}*\n`;
       if (account.description) text += `_${account.description}_\n`;
-      text += `\`${tgLink}\`\n`;
-      text += `[Подключить](${tmeLink})\n\n`;
+      text += `\n🔗 Deep Link:\n\`${tgLink}\`\n\n`;
+      text += `[🚀 Подключить в 1 клик](${tgLink})\n\n`;
+      text += `───────────────\n\n`;
     }
   }
 
-  await ctx.reply(text);
+  await ctx.reply(text, {
+    parse_mode: 'Markdown',
+    disable_web_page_preview: true
+  });
 });
 
 bot.command('add_secret', async (ctx) => {
@@ -1059,14 +1067,19 @@ bot.action(/^add_socks5_confirm_(\d+)_([^_]+)_([^_]+)$/, async (ctx) => {
 
     await ctx.answerCbQuery('SOCKS5 аккаунт добавлен!');
     await ctx.editMessageText(
-      `✅ *SOCKS5 аккаунт успешно добавлен!*\n\n` +
-      `Нода: ${node.name}\n` +
-      `Username: \`${username}\`\n` +
-      `Password: \`${password}\`\n\n` +
-      `*Ссылки для импорта:*\n` +
+      `✅ *SOCKS5 прокси успешно создан!*\n\n` +
+      `🌐 *Нода:* ${node.name}\n` +
+      `👤 *Username:* \`${username}\`\n` +
+      `🔑 *Password:* \`${password}\`\n\n` +
+      `───────────────\n\n` +
+      `🔗 *Deep Link для Telegram:*\n` +
       `\`${tgLink}\`\n\n` +
-      `\`${tmeLink}\``,
-     
+      `👇 *Подключить в 1 клик:*\n` +
+      `[🚀 Добавить прокси](${tgLink})`,
+      {
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true
+      }
     );
 
     queries.insertLog.run({

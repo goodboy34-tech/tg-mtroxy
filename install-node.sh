@@ -99,15 +99,18 @@ create_mtproxy_command() {
     cat > /usr/local/bin/mtproxy-node <<NODE_SCRIPT_EOF
 #!/bin/bash
 
-INSTALL_DIR="/opt/mtproxy-node"
+MT_PROXY_DIR="/opt/mtproxy-node"
 
-if [ ! -d "\$INSTALL_DIR" ]; then
-    echo "X Node not installed in \$INSTALL_DIR"
+# Debug output
+echo "DEBUG: MT_PROXY_DIR='\$MT_PROXY_DIR'" >&2
+
+if [ ! -d "\$MT_PROXY_DIR" ]; then
+    echo "X Node not installed in \$MT_PROXY_DIR"
     exit 1
 fi
 
-cd "\$INSTALL_DIR" || {
-    echo "X Cannot change to directory \$INSTALL_DIR"
+cd "\$MT_PROXY_DIR" || {
+    echo "X Cannot change to directory \$MT_PROXY_DIR"
     exit 1
 }
 
@@ -755,15 +758,18 @@ EOF
     create_mtproxy_command
 #!/bin/bash
 
-INSTALL_DIR="/opt/mtproxy-node"
+MT_PROXY_DIR="/opt/mtproxy-node"
 
-if [ \\! -d "\\\$INSTALL_DIR" ]; then
-    echo "X Node not installed in \\\$INSTALL_DIR"
+# Debug output
+echo "DEBUG: MT_PROXY_DIR='\$MT_PROXY_DIR'" >&2
+
+if [ ! -d "\$MT_PROXY_DIR" ]; then
+    echo "X Node not installed in \$MT_PROXY_DIR"
     exit 1
 fi
 
-cd "\\\$INSTALL_DIR" || {
-    echo "X Cannot change to directory \\\$INSTALL_DIR"
+cd "\$MT_PROXY_DIR" || {
+    echo "X Cannot change to directory \$MT_PROXY_DIR"
     exit 1
 }
 

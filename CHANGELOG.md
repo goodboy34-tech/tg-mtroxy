@@ -2,7 +2,7 @@
 
 ## Краткое резюме
 
-✅ **Обновлена конфигурация SOCKS5** - замена Dante на 3proxy для поддержки авторизации  
+✅ **Переход на Dante SOCKS5** - замена 3proxy на Dante для решения проблем с Docker  
 ✅ **Добавлена система подписок** - управление доступом через группы прокси  
 ✅ **Реализован экспорт в Telegram** - JSON формат для массового импорта прокси  
 ✅ **Проверена готовность к 4000 пользователям** - архитектура рассчитана на нагрузку  
@@ -14,15 +14,50 @@
 
 ### 1. `docker-compose.node.yml`
 **Что изменено:**
-- SOCKS5 image: `vimagick/dante` → `tarampampam/3proxy:latest`
-- Volume: `./socks5/sockd.conf` → `./socks5/3proxy.cfg`
+- SOCKS5 image: `tarampampam/3proxy:latest` → `vimagick/dante:latest`
+- Volume: `./socks5/3proxy.cfg` → `./socks5/sockd.conf` + `./socks5/sockd.passwd`
+- Убрана read-only файловая система (Dante не требует специальных настроек)
 
 **Зачем:**
-Dante не поддерживает нормальную аутентификацию username/password. 3proxy поддерживает.
+3proxy имел проблемы с Docker контейнерами из-за read-only файловой системы. Dante более стабилен.
 
 ---
 
 ### 2. `node-agent/src/api.ts`
+**Что изменено:**
+- Функция `updateSocks5Config()` переписана для Dante с поддержкой username/password
+
+**Новый формат (Dante):**
+```conf
+logoutput: /dev/stdout
+internal: 0.0.0.0 port = 1080
+external: 0.0.0.0
+clientmethod: none
+socksmethod: username
+user.privileged: root
+user.unprivileged: nobody
+user.libwrap: nobody
+
+client pass {
+  from: 0.0.0.0/0 to: 0.0.0.0/0
+  log: connect disconnect error
+}
+
+socks pass {
+  from: 0.0.0.0/0 to: 0.0.0.0/0
+  protocol: tcp udp
+  log: connect disconnect error
+}
+```
+
+**Файл паролей (sockd.passwd):**
+```
+username1:password1
+username2:password2
+```
+
+**Зачем:**
+Dante более стабилен в Docker и проще в настройке, чем 3proxy.
 **Что изменено:**
 - Функция `updateSocks5Config()` полностью переписана
 

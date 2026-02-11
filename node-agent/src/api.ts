@@ -390,48 +390,62 @@ async function restartSocks5(): Promise<void> {
 }
 
 async function updateSocks5Config(accounts: Array<{ username: string; password: string }>): Promise<void> {
-  // Генерируем конфигурационный файл для 3proxy
-  let config = `# 3proxy Configuration
+  // Генерируем конфигурационный файл для Dante
+  let config = `# Dante SOCKS5 Server Configuration
 # Generated automatically by Node Agent
 
-# Логирование
-log /dev/stdout
+logoutput: /dev/stdout
 
-# Разрешение DNS
-nscache 65536
-timeouts 1 5 30 60 180 1800 15 60
+# Internal interface
+internal: 0.0.0.0 port = ${SOCKS5_PORT}
 
-# Bind на всех интерфейсах
-internal 0.0.0.0
-external 0.0.0.0
+# External interface
+external: 0.0.0.0
 
-# Пользователи и пароли
+# Authentication methods
+clientmethod: none
+socksmethod: username
+
+# User configuration
+user.privileged: root
+user.unprivileged: nobody
+user.libwrap: nobody
+
+# Password file (Dante will look for sockd.passwd in the same directory as config)
+
 `;
 
-  // Добавляем пользователей
+  // Добавляем пользователей в файл паролей
+  let passwdContent = '';
   for (const account of accounts) {
-    // 3proxy использует формат: users username:CL:password
-    // CL означает cleartext password
-    config += `users ${account.username}:CL:${account.password}\n`;
+    passwdContent += `${account.username}:${account.password}\n`;
   }
 
-  config += `\n# Правила доступа
-# Разрешить подключения только с авторизацией
-auth strong
+  config += `
+# Client rules
+client pass {
+  from: 0.0.0.0/0 to: 0.0.0.0/0
+  log: connect disconnect error
+}
 
-# SOCKS5 прокси на порту ${SOCKS5_PORT}
-socks -p${SOCKS5_PORT}
-
-# Разрешить всем авторизованным пользователям
-flush
+# SOCKS rules
+socks pass {
+  from: 0.0.0.0/0 to: 0.0.0.0/0
+  protocol: tcp udp
+  log: connect disconnect error
+}
 `;
 
-  // Сохраняем конфиг
-  const configPath = path.join(__dirname, '..', '..', 'socks5', '3proxy.cfg');
+  // Сохраняем конфиг Dante
+  const configPath = path.join(__dirname, '..', '..', 'socks5', 'sockd.conf');
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, config);
 
-  console.log(`[SOCKS5] Config updated with ${accounts.length} accounts`);
+  // Сохраняем файл паролей
+  const passwdPath = path.join(__dirname, '..', '..', 'socks5', 'sockd.passwd');
+  fs.writeFileSync(passwdPath, passwdContent);
+
+  console.log(`[SOCKS5] Dante config updated with ${accounts.length} accounts`);
 
   // Перезапускаем контейнер для применения новой конфигурации
   try {

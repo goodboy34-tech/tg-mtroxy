@@ -456,7 +456,7 @@ bot.command('links', async (ctx) => {
 
   await ctx.reply(text, {
     parse_mode: 'Markdown',
-    disable_web_page_preview: true
+    link_preview_options: { is_disabled: true }
   });
 });
 
@@ -628,7 +628,7 @@ bot.action(/^add_socks5_confirm_(\d+)_([^_]+)_([^_]+)$/, async (ctx) => {
       `[🚀 Добавить прокси](${tgLink})`,
       {
         parse_mode: 'Markdown',
-        disable_web_page_preview: true
+        link_preview_options: { is_disabled: true }
       }
     );
 

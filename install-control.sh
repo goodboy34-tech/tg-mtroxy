@@ -309,10 +309,10 @@ case "$1" in
         git fetch origin master
 
         # Get current and remote commits
-        LOCAL=\$(git rev-parse @)
-        REMOTE=\$(git rev-parse @{u})
+        LOCAL=$(git rev-parse @)
+        REMOTE=$(git rev-parse @{u})
 
-        if [ "\$LOCAL" = "\$REMOTE" ]; then
+        if [ "$LOCAL" = "$REMOTE" ]; then
             echo "✓ Already up to date!"
             exit 0
         fi
@@ -341,7 +341,7 @@ case "$1" in
         read -p "Do you want to apply these updates? (y/n): " -n 1 -r
         echo ""
         
-        if [[ ! \$REPLY =~ ^[Yy]$ ]]; then
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             echo "* Update cancelled"
             exit 1
         fi

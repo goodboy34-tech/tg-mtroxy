@@ -301,7 +301,19 @@ case "$1" in
         ;;
     update)
         echo "* Updating from GitHub..."
-        curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-control.sh | bash
+        
+        # Download latest version and recreate management command
+        curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-control.sh -o /tmp/install-control-new.sh
+        chmod +x /tmp/install-control-new.sh
+        
+        # Extract and run just the management command creation
+        sed -n '/^create_management_command() {/,/^}$/p' /tmp/install-control-new.sh > /tmp/create_cmd.sh
+        echo 'create_management_command' >> /tmp/create_cmd.sh
+        bash /tmp/create_cmd.sh
+        
+        rm -f /tmp/install-control-new.sh /tmp/create_cmd.sh
+        echo "-> Update completed!"
+        ;;
         ;;
     rebuild)
         echo "* Rebuilding containers..."

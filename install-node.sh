@@ -452,8 +452,8 @@ logoutput: /dev/stdout
 # Internal interface
 internal: 0.0.0.0 port = 1080
 
-# External interface
-external: 0.0.0.0
+# External interface (use eth0 in Docker)
+external: eth0
 
 # Authentication methods
 clientmethod: none

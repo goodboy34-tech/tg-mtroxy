@@ -17,6 +17,10 @@ const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379');
  */
 export async function initRedis(): Promise<void> {
   try {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'redis-client.ts:18',message:'Creating Redis client',data:{host:REDIS_HOST,port:REDIS_PORT},timestamp:Date.now(),runId:'bot_start',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+    
     redisClient = createClient({
       socket: {
         host: REDIS_HOST,
@@ -51,7 +55,15 @@ export async function initRedis(): Promise<void> {
     });
 
     await redisClient.connect();
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'redis-client.ts:54',message:'Redis connect completed',data:{connected:isConnected},timestamp:Date.now(),runId:'bot_start',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
   } catch (error) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'redis-client.ts:57',message:'Redis init error',data:{error:String(error)},timestamp:Date.now(),runId:'bot_start',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+    
     logger.error('Redis: Ошибка инициализации:', error);
     throw error;
   }

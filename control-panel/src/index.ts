@@ -31,17 +31,40 @@ process.on('SIGINT', shutdown);
 // Инициализация
 async function main() {
   try {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ts:32',message:'Main function started',data:{nodeEnv:process.env.NODE_ENV,botToken:process.env.BOT_TOKEN?('set'):('missing'),adminIds:process.env.ADMIN_IDS?('set'):('missing'),redisHost:process.env.REDIS_HOST||'redis',redisPort:process.env.REDIS_PORT||'6379'},timestamp:Date.now(),runId:'bot_start',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
     logger.info('─────────────────────────────');
     logger.info('  MTProxy Control Panel');
     logger.info('─────────────────────────────');
 
     // Инициализация Redis
     logger.info('Инициализация Redis...');
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ts:42',message:'Starting Redis init',data:{redisHost:process.env.REDIS_HOST||'redis',redisPort:process.env.REDIS_PORT||'6379'},timestamp:Date.now(),runId:'bot_start',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+    
     await initRedis();
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ts:48',message:'Redis init completed',data:{},timestamp:Date.now(),runId:'bot_start',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
 
     // Запуск сервисов
     logger.info('Запуск сервисов...');
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ts:50',message:'Starting services',data:{},timestamp:Date.now(),runId:'bot_start',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
     startBot();
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ts:54',message:'Bot started',data:{},timestamp:Date.now(),runId:'bot_start',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
     startRemnawaveApi();
     startWebApi();
 

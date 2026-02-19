@@ -2533,6 +2533,10 @@ async function handleFreeTrial(ctx: any, product: any) {
 }
 
 export function startBot() {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2535',message:'startBot called',data:{botToken:!!BOT_TOKEN,adminIdsCount:ADMIN_IDS.length},timestamp:Date.now(),runId:'bot_start',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
+  
   // Регистрация команд для удобства (все действия доступны через кнопки)
   bot.telegram.setMyCommands([
     { command: 'start', description: 'Главное меню' },
@@ -2554,8 +2558,20 @@ export function startBot() {
     ], { scope: { type: 'chat', chat_id: ADMIN_IDS[0] } }).catch(() => {});
   }
 
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2557',message:'Calling bot.launch',data:{},timestamp:Date.now(),runId:'bot_start',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
+  
   bot.launch({
     dropPendingUpdates: true,
+  }).then(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2562',message:'bot.launch completed successfully',data:{},timestamp:Date.now(),runId:'bot_start',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+  }).catch((error) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2565',message:'bot.launch failed',data:{error:String(error)},timestamp:Date.now(),runId:'bot_start',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
   });
 
   // Инициализация дефолтных продуктов при первом запуске

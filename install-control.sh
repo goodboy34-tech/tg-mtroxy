@@ -239,12 +239,16 @@ if [ ! -f .env ]; then
     echo ""
     echo "  BOT_TOKEN          — токен бота от @BotFather"
     echo "  ADMIN_IDS          — ваш Telegram ID (через запятую для нескольких)"
-    echo "  REMNAWAVE_API_KEY  — секретный ключ для входящих запросов от Remnawave панели"
     echo "  WEB_API_KEY        — секретный ключ для Web API"
+    echo ""
+    echo "Опционально (для входящих webhook'ов от Remnawave панели):"
+    echo "  REMNAWAVE_API_KEY  — секретный ключ для аутентификации входящих запросов"
+    echo "                       (нужен только если Remnawave панель отправляет webhook'и на ваш сервер)"
     echo ""
     echo "Опционально (для прямого доступа к Remnawave API вместо backend):"
     echo "  REMNAWAVE_BASE_URL — домен панели Remnawave (например: https://panel.example.com)"
     echo "  REMNAWAVE_TOKEN    — токен для исходящих запросов к Remnawave API"
+    echo "                       (система опрашивает панель через cron, этот токен нужен для прямого API)"
     echo ""
     echo "Опционально (для интеграции с веб-приложением):"
     echo "  BACKEND_BASE_URL   — URL вашего backend (api-1.yaml), если используете"
@@ -265,8 +269,10 @@ if [ ! -f .env ]; then
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         read -p "BOT_TOKEN: " BOT_TOKEN
         read -p "ADMIN_IDS (через запятую): " ADMIN_IDS
-        read -p "REMNAWAVE_API_KEY (ключ для входящих запросов от Remnawave панели): " REMNAWAVE_API_KEY
         read -p "WEB_API_KEY: " WEB_API_KEY
+        echo ""
+        echo "Опционально (для входящих webhook'ов от Remnawave панели):"
+        read -p "REMNAWAVE_API_KEY (оставьте пустым если Remnawave не отправляет webhook'и на ваш сервер): " REMNAWAVE_API_KEY
         echo ""
         echo "Опционально (для прямого доступа к Remnawave API вместо backend):"
         read -p "REMNAWAVE_BASE_URL (домен панели, например: https://panel.example.com, оставьте пустым если не используете): " REMNAWAVE_BASE_URL
@@ -279,17 +285,27 @@ if [ ! -f .env ]; then
         # Обновляем .env (экранируем специальные символы для безопасности)
         BOT_TOKEN_ESC=$(escape_sed "$BOT_TOKEN")
         ADMIN_IDS_ESC=$(escape_sed "$ADMIN_IDS")
-        REMNAWAVE_API_KEY_ESC=$(escape_sed "$REMNAWAVE_API_KEY")
-        REMNAWAVE_BASE_URL_ESC=$(escape_sed "$REMNAWAVE_BASE_URL")
-        REMNAWAVE_TOKEN_ESC=$(escape_sed "$REMNAWAVE_TOKEN")
         WEB_API_KEY_ESC=$(escape_sed "$WEB_API_KEY")
         
         sed -i "s|^BOT_TOKEN=.*|BOT_TOKEN=$BOT_TOKEN_ESC|" .env
         sed -i "s|^ADMIN_IDS=.*|ADMIN_IDS=$ADMIN_IDS_ESC|" .env
-        sed -i "s|^REMNAWAVE_API_KEY=.*|REMNAWAVE_API_KEY=$REMNAWAVE_API_KEY_ESC|" .env
-        sed -i "s|^REMNAWAVE_BASE_URL=.*|REMNAWAVE_BASE_URL=$REMNAWAVE_BASE_URL_ESC|" .env
-        sed -i "s|^REMNAWAVE_TOKEN=.*|REMNAWAVE_TOKEN=$REMNAWAVE_TOKEN_ESC|" .env
         sed -i "s|^WEB_API_KEY=.*|WEB_API_KEY=$WEB_API_KEY_ESC|" .env
+        
+        # Обновляем опциональные переменные только если они заполнены
+        if [ -n "$REMNAWAVE_API_KEY" ]; then
+            REMNAWAVE_API_KEY_ESC=$(escape_sed "$REMNAWAVE_API_KEY")
+            sed -i "s|^REMNAWAVE_API_KEY=.*|REMNAWAVE_API_KEY=$REMNAWAVE_API_KEY_ESC|" .env
+        fi
+        
+        if [ -n "$REMNAWAVE_BASE_URL" ]; then
+            REMNAWAVE_BASE_URL_ESC=$(escape_sed "$REMNAWAVE_BASE_URL")
+            sed -i "s|^REMNAWAVE_BASE_URL=.*|REMNAWAVE_BASE_URL=$REMNAWAVE_BASE_URL_ESC|" .env
+        fi
+        
+        if [ -n "$REMNAWAVE_TOKEN" ]; then
+            REMNAWAVE_TOKEN_ESC=$(escape_sed "$REMNAWAVE_TOKEN")
+            sed -i "s|^REMNAWAVE_TOKEN=.*|REMNAWAVE_TOKEN=$REMNAWAVE_TOKEN_ESC|" .env
+        fi
         
         # Обновляем опциональные переменные только если они заполнены
         if [ -n "$BACKEND_BASE_URL" ]; then

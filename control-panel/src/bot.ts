@@ -139,7 +139,7 @@ async function handleUserStart(ctx: any) {
     text += `\n📊 /status — статус подписки\n`;
     text += `💰 /tariffs — продлить подписку`;
     
-    return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+    return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard, link_preview_options: { disable_web_page_preview: true } });
   }
   
   // Нет активной подписки - показываем тарифы
@@ -219,7 +219,7 @@ bot.command('user_mtproxy', async (ctx) => {
     text += `- Node \`${node.id}\`: ${link}\n`;
   }
 
-  return ctx.reply(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
+  return ctx.reply(text, { parse_mode: 'Markdown', link_preview_options: { disable_web_page_preview: true } });
 });
 
 bot.command('disable_mtproxy', async (ctx) => {
@@ -275,7 +275,7 @@ bot.action(/^user_info_(\d+)$/, async (ctx) => {
     [Markup.button.callback('🔙 Главное меню', 'menu_main')],
   ]);
 
-  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard, link_preview_options: { disable_web_page_preview: true } });
   await ctx.answerCbQuery();
 });
 
@@ -1754,9 +1754,9 @@ async function handleLink(ctx: any) {
   text += `⚠️ Ссылки только для вас! Не передавайте их другим.`;
 
   if (ctx.callbackQuery) {
-    return ctx.editMessageText(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
+    return ctx.editMessageText(text, { parse_mode: 'Markdown', link_preview_options: { disable_web_page_preview: true } });
   } else {
-    return ctx.reply(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
+    return ctx.reply(text, { parse_mode: 'Markdown', link_preview_options: { disable_web_page_preview: true } });
   }
 }
 
@@ -1880,7 +1880,7 @@ bot.on(message('text'), async (ctx) => {
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
-      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, link_preview_options: { disable_web_page_preview: true } });
       (ctx as any).session = null;
 
     } else if (session.action === 'create_mtproto_by_tgid') {
@@ -1896,7 +1896,7 @@ bot.on(message('text'), async (ctx) => {
         return ctx.reply('❌ Backend не настроен. Укажите BACKEND_BASE_URL и BACKEND_TOKEN в .env');
       }
       const backendUser = await backend.getUserByTelegramId(telegramId);
-      const userUuid = backendUser.uuid || backendUser.user?.uuid;
+      const userUuid = backendUser.uuid;
       
       if (!userUuid) {
         return ctx.reply('❌ Пользователь не найден в backend.');
@@ -1945,7 +1945,7 @@ bot.on(message('text'), async (ctx) => {
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
-      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, link_preview_options: { disable_web_page_preview: true } });
       (ctx as any).session = null;
 
     } else if (session.action === 'create_mtproto_by_username') {
@@ -2010,7 +2010,7 @@ bot.on(message('text'), async (ctx) => {
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
-      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, link_preview_options: { disable_web_page_preview: true } });
       (ctx as any).session = null;
 
     } else if (session.action === 'create_mtproto_by_uuid') {
@@ -2069,7 +2069,7 @@ bot.on(message('text'), async (ctx) => {
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
-      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, link_preview_options: { disable_web_page_preview: true } });
       (ctx as any).session = null;
     }
   } catch (err: any) {
@@ -2269,6 +2269,41 @@ cron.schedule('*/30 * * * *', async () => {
     return;
   }
 
+  // Функция для обеспечения доступа пользователя к MTProto через Remnawave
+  async function ensureRemnawaveUserAccess(telegramId: number, userUuid: string): Promise<void> {
+    if (!backend) return;
+    try {
+      const acc = await backend.getAccessibleNodes(userUuid);
+      const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+      if (nodes.length === 0) return;
+      
+      // Получаем ID нод из базы данных по их UUID или имени
+      const nodeIds: number[] = [];
+      for (const node of nodes) {
+        const nodeId = node.id || node.nodeId;
+        const nodeName = node.name || node.nodeName;
+        if (nodeId) {
+          // Если есть ID, ищем ноду в базе
+          const dbNode = queries.getNodeById.get(nodeId) as any;
+          if (dbNode) nodeIds.push(dbNode.id);
+        } else if (nodeName) {
+          // Если есть имя, ищем по домену или имени
+          const dbNode = queries.getNodeByDomain.get(nodeName) as any;
+          if (dbNode) nodeIds.push(dbNode.id);
+        }
+      }
+      
+      if (nodeIds.length > 0) {
+        await MtprotoUserManager.ensureUserSecretsOnNodes({
+          telegramId,
+          nodeIds,
+        });
+      }
+    } catch (e: any) {
+      logger.error(`[ensureRemnawaveUserAccess] Ошибка для пользователя ${telegramId}:`, e);
+    }
+  }
+
   for (const binding of activeBindings) {
     try {
       const userUuid = binding.remnawave_user_id;
@@ -2407,7 +2442,7 @@ bot.action(/^check_(.+)$/, async (ctx: any) => {
         `🔗 *Ваши ссылки:*\n${result.links.map(l => `\`${l}\``).join('\n')}\n\n` +
         `⚠️ Ссылки только для вас!\n` +
         `/link — ссылки, /status — статус`,
-        { parse_mode: 'Markdown', disable_web_page_preview: true }
+        { parse_mode: 'Markdown', link_preview_options: { disable_web_page_preview: true } }
       );
     } else {
       await ctx.reply(`❌ Ошибка: ${result.error || 'Неизвестная ошибка'}`);
@@ -2467,7 +2502,7 @@ async function handleFreeTrial(ctx: any, product: any) {
         `🔗 *Ваши ссылки:*\n${result.links.map(l => `\`${l}\``).join('\n')}\n\n` +
         `⏰ До: ${expiresAt.toLocaleString('ru-RU')}\n\n` +
         `Понравилось? Продлите через /tariffs`,
-        { parse_mode: 'Markdown', disable_web_page_preview: true }
+        { parse_mode: 'Markdown', link_preview_options: { disable_web_page_preview: true } }
       );
     } else {
       await ctx.reply(`❌ Ошибка: ${result.error || 'Неизвестная ошибка'}`);
@@ -2571,6 +2606,42 @@ export function startBot() {
         logger.warn('[Cron] Backend не настроен, пропускаем проверку активных MTProto-доступов');
         return;
       }
+      
+      // Функция для обеспечения доступа пользователя к MTProto через Remnawave
+      async function ensureRemnawaveUserAccess(telegramId: number, userUuid: string): Promise<void> {
+        if (!backend) return;
+        try {
+          const acc = await backend.getAccessibleNodes(userUuid);
+          const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+          if (nodes.length === 0) return;
+          
+          // Получаем ID нод из базы данных по их UUID или имени
+          const nodeIds: number[] = [];
+          for (const node of nodes) {
+            const nodeId = node.id || node.nodeId;
+            const nodeName = node.name || node.nodeName;
+            if (nodeId) {
+              // Если есть ID, ищем ноду в базе
+              const dbNode = queries.getNodeById.get(nodeId) as any;
+              if (dbNode) nodeIds.push(dbNode.id);
+            } else if (nodeName) {
+              // Если есть имя, ищем по домену или имени
+              const dbNode = queries.getNodeByDomain.get(nodeName) as any;
+              if (dbNode) nodeIds.push(dbNode.id);
+            }
+          }
+          
+          if (nodeIds.length > 0) {
+            await MtprotoUserManager.ensureUserSecretsOnNodes({
+              telegramId,
+              nodeIds,
+            });
+          }
+        } catch (e: any) {
+          logger.error(`[ensureRemnawaveUserAccess] Ошибка для пользователя ${telegramId}:`, e);
+        }
+      }
+      
       const bindings = (queries.getActiveRemnawaveBindings?.all?.() || []) as any[];
       for (const b of bindings) {
         const telegramId = b.telegram_id as number | null;

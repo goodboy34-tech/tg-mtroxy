@@ -271,6 +271,9 @@ if [ ! -f .env ]; then
         read -p "ADMIN_IDS (через запятую): " ADMIN_IDS
         read -p "WEB_API_KEY: " WEB_API_KEY
         echo ""
+        echo "Домен для автоматического HTTPS (Caddy):"
+        read -p "DOMAIN (ваш домен, например: example.com, оставьте пустым если не используете HTTPS): " DOMAIN
+        echo ""
         echo "Опционально (для входящих webhook'ов от Remnawave панели):"
         read -p "REMNAWAVE_API_KEY (оставьте пустым если Remnawave не отправляет webhook'и на ваш сервер): " REMNAWAVE_API_KEY
         echo ""
@@ -286,10 +289,22 @@ if [ ! -f .env ]; then
         BOT_TOKEN_ESC=$(escape_sed "$BOT_TOKEN")
         ADMIN_IDS_ESC=$(escape_sed "$ADMIN_IDS")
         WEB_API_KEY_ESC=$(escape_sed "$WEB_API_KEY")
+        DOMAIN_ESC=$(escape_sed "$DOMAIN")
         
         sed -i "s|^BOT_TOKEN=.*|BOT_TOKEN=$BOT_TOKEN_ESC|" .env
         sed -i "s|^ADMIN_IDS=.*|ADMIN_IDS=$ADMIN_IDS_ESC|" .env
         sed -i "s|^WEB_API_KEY=.*|WEB_API_KEY=$WEB_API_KEY_ESC|" .env
+        
+        # Обновляем домен для Caddy
+        if [ -n "$DOMAIN" ]; then
+            sed -i "s|^DOMAIN=.*|DOMAIN=$DOMAIN_ESC|" .env
+            # Обновляем Caddyfile с доменом
+            if [ -f Caddyfile ]; then
+                # Заменяем домен в Caddyfile (первая строка с доменом)
+                sed -i "1,10s|^[^#]*$|$DOMAIN_ESC {|" Caddyfile
+                sed -i "s|^example.com|$DOMAIN_ESC|" Caddyfile
+            fi
+        fi
         
         # Обновляем опциональные переменные только если они заполнены
         if [ -n "$REMNAWAVE_API_KEY" ]; then
@@ -396,11 +411,31 @@ info "Redis будет запущен автоматически через dock
 info "Redis обязателен для продакшена с тысячами пользователей"
 
 # ═══════════════════════════════════════════════════════════════
+# Информация о Caddy (HTTPS)
+# ═══════════════════════════════════════════════════════════════
+
+if [ -n "${DOMAIN:-}" ] && [ "$DOMAIN" != "" ]; then
+    info "Caddy будет запущен автоматически для HTTPS"
+    info "Домен: $DOMAIN"
+    info "Caddy автоматически получит SSL сертификат от Let's Encrypt"
+    
+    # Проверяем наличие Caddyfile
+    if [ ! -f Caddyfile ]; then
+        warning "Caddyfile не найден, создаем из шаблона..."
+        # Caddyfile уже должен быть создан, но на всякий случай проверяем
+    fi
+else
+    info "Домен не указан - HTTPS через Caddy не будет использоваться"
+    info "Вы можете указать домен позже и запустить: ./scripts/manage-control.sh caddy-domain <домен>"
+fi
+
+# ═══════════════════════════════════════════════════════════════
 # Запуск Control Panel
 # ═══════════════════════════════════════════════════════════════
 
 echo ""
 info "Запуск Control Panel..."
+info "Сборка может занять несколько минут..."
 ./scripts/manage-control.sh start
 
 echo ""
@@ -423,7 +458,17 @@ echo ""
 echo "Проверка:"
 echo "  docker logs mtproxy-control         — логи контейнера"
 echo "  docker logs mtproxy-redis           — логи Redis"
+if [ -n "${DOMAIN:-}" ] && [ "$DOMAIN" != "" ]; then
+    echo "  docker logs mtproxy-caddy           — логи Caddy (HTTPS)"
+fi
 echo "  tail -f data/logs/app-*.log         — файловые логи"
+if [ -n "${DOMAIN:-}" ] && [ "$DOMAIN" != "" ]; then
+    echo ""
+    echo "Управление Caddy (HTTPS):"
+    echo "  ./scripts/manage-control.sh caddy-domain <домен>  — изменить домен"
+    echo "  ./scripts/manage-control.sh caddy-reload          — перезагрузить конфигурацию"
+    echo "  ./scripts/manage-control.sh caddy-cert            — обновить SSL сертификат"
+fi
 echo ""
 echo "Следующие шаги:"
 echo "  1. Проверьте статус: ./scripts/manage-control.sh status"

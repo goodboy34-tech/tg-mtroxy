@@ -6,10 +6,13 @@ import { MtprotoUserManager } from './mtproto-user-manager';
 import { logger } from './logger';
 
 const REMNAWAVE_API_PORT = parseInt(process.env.REMNAWAVE_API_PORT || '8081', 10);
+// REMNAWAVE_API_KEY используется для проверки заголовка x-api-key
+// WEBHOOK_SECRET_HEADER используется для проверки кастомного заголовка от Remnawave
 const REMNAWAVE_API_KEY = process.env.REMNAWAVE_API_KEY || '';
+const WEBHOOK_SECRET_HEADER = process.env.WEBHOOK_SECRET_HEADER || '';
 
-if (!REMNAWAVE_API_KEY) {
-  logger.warn('⚠️ REMNAWAVE_API_KEY не задан – Remnawave API будет недоступен до установки ключа.');
+if (!REMNAWAVE_API_KEY && !WEBHOOK_SECRET_HEADER) {
+  logger.warn('⚠️ REMNAWAVE_API_KEY или WEBHOOK_SECRET_HEADER не заданы – Remnawave API будет недоступен до установки ключа.');
 }
 
 interface RemnawaveSyncBody {
@@ -44,16 +47,32 @@ async function readJsonBody(req: IncomingMessage): Promise<any> {
 }
 
 function assertAuth(req: IncomingMessage, res: ServerResponse): boolean {
-  if (!REMNAWAVE_API_KEY) {
+  // Проверяем либо x-api-key (REMNAWAVE_API_KEY), либо кастомный заголовок (WEBHOOK_SECRET_HEADER)
+  if (REMNAWAVE_API_KEY && REMNAWAVE_API_KEY !== 'change-me') {
+    const headerKey = getHeader(req, 'x-api-key');
+    if (headerKey && headerKey === REMNAWAVE_API_KEY) {
+      return true;
+    }
+  }
+  
+  if (WEBHOOK_SECRET_HEADER) {
+    // Remnawave может отправлять секрет в кастомном заголовке
+    // Проверяем все возможные заголовки
+    const secretHeader = getHeader(req, 'x-webhook-secret') || 
+                         getHeader(req, 'webhook-secret') ||
+                         getHeader(req, 'x-remnawave-secret');
+    if (secretHeader && secretHeader === WEBHOOK_SECRET_HEADER) {
+      return true;
+    }
+  }
+  
+  if (!REMNAWAVE_API_KEY && !WEBHOOK_SECRET_HEADER) {
     json(res, 503, { error: 'Remnawave API key is not configured' });
     return false;
   }
-  const headerKey = getHeader(req, 'x-api-key');
-  if (!headerKey || headerKey !== REMNAWAVE_API_KEY) {
-    json(res, 401, { error: 'Unauthorized' });
-    return false;
-  }
-  return true;
+  
+  json(res, 401, { error: 'Unauthorized' });
+  return false;
 }
 
 export function startRemnawaveApi() {

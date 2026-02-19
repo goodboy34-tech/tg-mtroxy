@@ -1,4 +1,27 @@
 ﻿services:
+  # Caddy для автоматического HTTPS
+  caddy:
+    image: caddy:2-alpine
+    container_name: mtproxy-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - mtproxy-network
+    environment:
+      - ACME_AGREE=${ACME_AGREE:-true}
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
   control-panel:
     build:
       context: ./control-panel
@@ -28,9 +51,10 @@
     volumes:
       - ./data:/app/data
       - ./certs:/app/certs:ro
-    ports:
-      - "${REMNAWAVE_API_PORT:-8081}:${REMNAWAVE_API_PORT:-8081}"
-      - "${WEB_API_PORT:-8082}:${WEB_API_PORT:-8082}"
+    # Порты не публикуем наружу - только через Caddy
+    expose:
+      - "${REMNAWAVE_API_PORT:-8081}"
+      - "${WEB_API_PORT:-8082}"
     networks:
       - mtproxy-network
     depends_on:
@@ -77,3 +101,5 @@ networks:
 
 volumes:
   redis-data:
+  caddy-data:
+  caddy-config:

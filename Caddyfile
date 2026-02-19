@@ -1,0 +1,61 @@
+# Caddyfile для автоматического HTTPS
+# 
+# ИНСТРУКЦИЯ:
+# 1. Замените example.com на ваш домен в строке ниже
+# 2. Если домен указан - Caddy автоматически получит SSL сертификат от Let's Encrypt
+# 3. Если используете localhost - закомментируйте строку с доменом и раскомментируйте блок localhost
+
+# Для продакшена - укажите ваш домен:
+example.com {
+    # Логирование
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    # Remnawave API webhook'и
+    handle /api/remnawave/* {
+        reverse_proxy mtproxy-control:8081 {
+            # Передаем заголовки для аутентификации
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Web API
+    handle /api/web/* {
+        reverse_proxy mtproxy-control:8082 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Все остальные запросы проксируем на Remnawave API
+    handle {
+        reverse_proxy mtproxy-control:8081 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}
+
+# Для разработки (localhost) - раскомментируйте блок ниже и закомментируйте блок выше:
+# localhost {
+#     # Remnawave API webhook'и
+#     handle /api/remnawave/* {
+#         reverse_proxy mtproxy-control:8081
+#     }
+# 
+#     # Web API
+#     handle /api/web/* {
+#         reverse_proxy mtproxy-control:8082
+#     }
+# 
+#     # Все остальные запросы
+#     handle {
+#         reverse_proxy mtproxy-control:8081
+#     }
+# }

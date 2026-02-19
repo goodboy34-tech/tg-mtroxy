@@ -139,7 +139,7 @@ async function handleUserStart(ctx: any) {
     text += `\n📊 /status — статус подписки\n`;
     text += `💰 /tariffs — продлить подписку`;
     
-    return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard, link_preview_options: { disable_web_page_preview: true } });
+    return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
   }
   
   // Нет активной подписки - показываем тарифы
@@ -219,7 +219,7 @@ bot.command('user_mtproxy', async (ctx) => {
     text += `- Node \`${node.id}\`: ${link}\n`;
   }
 
-  return ctx.reply(text, { parse_mode: 'Markdown', link_preview_options: { disable_web_page_preview: true } });
+  return ctx.reply(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
 });
 
 bot.command('disable_mtproxy', async (ctx) => {
@@ -275,7 +275,7 @@ bot.action(/^user_info_(\d+)$/, async (ctx) => {
     [Markup.button.callback('🔙 Главное меню', 'menu_main')],
   ]);
 
-  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard, link_preview_options: { disable_web_page_preview: true } });
+  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
   await ctx.answerCbQuery();
 });
 
@@ -1754,9 +1754,9 @@ async function handleLink(ctx: any) {
   text += `⚠️ Ссылки только для вас! Не передавайте их другим.`;
 
   if (ctx.callbackQuery) {
-    return ctx.editMessageText(text, { parse_mode: 'Markdown', link_preview_options: { disable_web_page_preview: true } });
+    return ctx.editMessageText(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
   } else {
-    return ctx.reply(text, { parse_mode: 'Markdown', link_preview_options: { disable_web_page_preview: true } });
+    return ctx.reply(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
   }
 }
 
@@ -1880,7 +1880,7 @@ bot.on(message('text'), async (ctx) => {
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
-      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, link_preview_options: { disable_web_page_preview: true } });
+      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
       (ctx as any).session = null;
 
     } else if (session.action === 'create_mtproto_by_tgid') {
@@ -1945,7 +1945,7 @@ bot.on(message('text'), async (ctx) => {
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
-      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, link_preview_options: { disable_web_page_preview: true } });
+      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
       (ctx as any).session = null;
 
     } else if (session.action === 'create_mtproto_by_username') {
@@ -1957,13 +1957,13 @@ bot.on(message('text'), async (ctx) => {
         return ctx.reply('❌ Backend не настроен. Укажите BACKEND_BASE_URL и BACKEND_TOKEN в .env');
       }
       const backendUser = await backend.getUserByUsername(username);
-      const userUuid = backendUser.uuid || backendUser.user?.uuid;
+      const userUuid = backendUser.uuid;
       
       if (!userUuid) {
         return ctx.reply('❌ Пользователь не найден в backend.');
       }
 
-      const telegramId = backendUser.telegramId || backendUser.user?.telegramId;
+      const telegramId = backendUser.telegramId;
       if (!telegramId) {
         return ctx.reply('❌ У пользователя нет привязанного Telegram ID.');
       }
@@ -2010,7 +2010,7 @@ bot.on(message('text'), async (ctx) => {
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
-      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, link_preview_options: { disable_web_page_preview: true } });
+      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
       (ctx as any).session = null;
 
     } else if (session.action === 'create_mtproto_by_uuid') {
@@ -2021,7 +2021,7 @@ bot.on(message('text'), async (ctx) => {
         return ctx.reply('❌ Backend не настроен. Укажите BACKEND_BASE_URL и BACKEND_TOKEN в .env');
       }
       const backendUser = await backend.getUserByShortUuid(text);
-      const userUuid = backendUser.uuid || backendUser.user?.uuid || text;
+      const userUuid = backendUser.uuid || text;
       
       const acc = await backend.getAccessibleNodes(userUuid);
       const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
@@ -2031,7 +2031,7 @@ bot.on(message('text'), async (ctx) => {
         return ctx.reply('❌ У пользователя нет активных подписок в Remnawave.');
       }
 
-      const telegramId = backendUser.telegramId || backendUser.user?.telegramId;
+      const telegramId = backendUser.telegramId;
       if (!telegramId) {
         return ctx.reply('❌ У пользователя нет привязанного Telegram ID. Используйте создание по Telegram ID.');
       }
@@ -2069,7 +2069,7 @@ bot.on(message('text'), async (ctx) => {
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
-      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, link_preview_options: { disable_web_page_preview: true } });
+      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
       (ctx as any).session = null;
     }
   } catch (err: any) {
@@ -2442,7 +2442,7 @@ bot.action(/^check_(.+)$/, async (ctx: any) => {
         `🔗 *Ваши ссылки:*\n${result.links.map(l => `\`${l}\``).join('\n')}\n\n` +
         `⚠️ Ссылки только для вас!\n` +
         `/link — ссылки, /status — статус`,
-        { parse_mode: 'Markdown', link_preview_options: { disable_web_page_preview: true } }
+        { parse_mode: 'Markdown', disable_web_page_preview: true }
       );
     } else {
       await ctx.reply(`❌ Ошибка: ${result.error || 'Неизвестная ошибка'}`);
@@ -2502,7 +2502,7 @@ async function handleFreeTrial(ctx: any, product: any) {
         `🔗 *Ваши ссылки:*\n${result.links.map(l => `\`${l}\``).join('\n')}\n\n` +
         `⏰ До: ${expiresAt.toLocaleString('ru-RU')}\n\n` +
         `Понравилось? Продлите через /tariffs`,
-        { parse_mode: 'Markdown', link_preview_options: { disable_web_page_preview: true } }
+        { parse_mode: 'Markdown', disable_web_page_preview: true }
       );
     } else {
       await ctx.reply(`❌ Ошибка: ${result.error || 'Неизвестная ошибка'}`);

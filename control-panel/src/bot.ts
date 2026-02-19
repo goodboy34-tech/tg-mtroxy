@@ -5,10 +5,9 @@ import { NodeApiClient, ProxyLinkGenerator, SecretGenerator } from './node-clien
 import { SubscriptionManager, SubscriptionFormatter } from './subscription-manager';
 import cron from 'node-cron';
 import crypto from 'crypto';
-import dotenv from 'dotenv';
-
-// Загрузка переменных окружения из .env файла
-dotenv.config();
+import { startRemnawaveApi } from './remnawave-api';
+import { getBackendClientFromEnv } from './backend-client';
+import { MtprotoUserManager } from './mtproto-user-manager';
 
 // ─── Конфиг ───
 const BOT_TOKEN = process.env.BOT_TOKEN!;
@@ -23,16 +22,6 @@ const bot = new Telegraf(BOT_TOKEN);
 
 // Хранилище клиентов для нод (кэш)
 const nodeClients = new Map<number, NodeApiClient>();
-
-// Хранилище состояний пользователей (для диалогов)
-interface UserState {
-  action: 'add_node' | 'add_secret' | 'add_socks5' | 'add_secret_domain' | 'add_secret_ip' | 'set_ad_tag' | null;
-  nodeId?: number;
-  secret?: string;
-  isFakeTls?: boolean;
-  data?: any;
-}
-const userStates = new Map<number, UserState>();
 
 /**
  * Получить клиент для ноды
@@ -57,12 +46,281 @@ function getNodeClient(nodeId: number): NodeApiClient | null {
 }
 
 /**
- * Получить полную информацию о ноде с кнопками
+ * Проверка прав админа
  */
-async function getNodeInfoMessage(nodeId: number): Promise<{ text: string; buttons: any[][] } | null> {
+function isAdmin(userId: number): boolean {
+  return ADMIN_IDS.includes(userId);
+}
+
+/**
+ * Middleware для проверки админа
+ */
+bot.use(async (ctx, next) => {
+  if (!ctx.from) return;
+  
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.reply('⛔ У вас нет доступа к этому боту.');
+    return;
+  }
+
+  return next();
+});
+
+// ═══════════════════════════════════════════════
+// ОСНОВНЫЕ КОМАНДЫ
+// ═══════════════════════════════════════════════
+
+bot.start(async (ctx) => {
+  await ctx.reply(
+    '👋 *MTProxy Management Bot*\n\n' +
+    'Управление прокси-серверами через Telegram.\n\n' +
+    'Основные команды:\n' +
+    '/nodes - список нод\n' +
+    '/add\\_node - добавить ноду\n' +
+    '/stats - общая статистика\n' +
+    '/help - справка',
+    { parse_mode: 'Markdown' }
+  );
+});
+
+bot.help(async (ctx) => {
+  await ctx.reply(
+    '📖 *Справка по командам*\n\n' +
+    '*Управление нодами:*\n' +
+    '/nodes - список всех нод\n' +
+    '/add\\_node - добавить новую ноду\n' +
+    '/node <id> - информация о ноде\n' +
+    '/remove\\_node <id> - удалить ноду\n' +
+    '/restart\\_node <id> - перезапустить прокси\n\n' +
+    '*Получение доступов:*\n' +
+    '/links <node\\_id> - получить все ссылки\n' +
+    '/add\\_secret <node\\_id> - добавить секрет\n' +
+    '/add\\_socks5 <node\\_id> - добавить SOCKS5 аккаунт\n\n' +
+    '*Подписки:*\n' +
+    '/create\\_subscription <название> - создать подписку\n' +
+    '/subscriptions - список всех подписок\n' +
+    '/subscription <id> - детали подписки\n\n' +
+    '*Мониторинг:*\n' +
+    '/stats - общая статистика\n' +
+    '/health - здоровье всех нод\n' +
+    '/logs <node\\_id> - логи ноды\n\n' +
+    '*Настройки:*\n' +
+    '/set\\_workers <node\\_id> <count> - воркеры\n' +
+    '/update\\_node <id> - обновить конфиг',
+    { parse_mode: 'Markdown' }
+  );
+});
+
+// ═══════════════════════════════════════════════
+// MTProto Users (персональные доступы)
+// ═══════════════════════════════════════════════
+
+bot.command('user_mtproxy', async (ctx) => {
+  const arg = ctx.message.text.split(' ')[1];
+  const telegramId = parseInt(arg || '', 10);
+  if (!telegramId) {
+    return ctx.reply('Использование: /user_mtproxy <telegram_id>');
+  }
+
+  const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+  const secrets = queries.getUserMtprotoSecretsByTelegramId.all(telegramId) as any[];
+
+  let text = `👤 *MTProto user*\n\n` +
+    `*TG ID:* \`${telegramId}\`\n` +
+    `*Bindings:* ${bindings.length}\n` +
+    `*Secrets:* ${secrets.length}\n\n`;
+
+  if (bindings.length > 0) {
+    const b = bindings[0];
+    text += `*Status:* ${b.status}\n`;
+    text += `*RemnaSubId:* \`${b.remnawave_subscription_id}\`\n`;
+    text += `*BackendUser:* \`${b.remnawave_user_id}\`\n`;
+    text += `*LocalSub:* \`${b.local_subscription_id}\`\n\n`;
+  }
+
+  if (secrets.length === 0) {
+    text += '📭 Нет активных персональных секретов.\n';
+    return ctx.reply(text, { parse_mode: 'Markdown' });
+  }
+
+  text += '*Links:*\n';
+  for (const s of secrets) {
+    const node = queries.getNodeById.get(s.node_id) as any;
+    if (!node) continue;
+    const link = ProxyLinkGenerator.generateMtProtoLink(
+      node.domain,
+      node.mtproto_port,
+      s.secret,
+      s.is_fake_tls === 1
+    );
+    text += `- Node \`${node.id}\`: ${link}\n`;
+  }
+
+  return ctx.reply(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
+});
+
+bot.command('disable_mtproxy', async (ctx) => {
+  const arg = ctx.message.text.split(' ')[1];
+  const telegramId = parseInt(arg || '', 10);
+  if (!telegramId) {
+    return ctx.reply('Использование: /disable_mtproxy <telegram_id>');
+  }
+
+  await MtprotoUserManager.disableUser(telegramId);
+  return ctx.reply(`✅ Доступ MTProto для TG ID ${telegramId} отключён (секреты удалены с нод).`);
+});
+
+// Обработчик кнопки отключения MTProto
+bot.action(/^mtproto_disable_(\d+)$/, async (ctx) => {
+  const telegramId = parseInt(ctx.match[1], 10);
+  try {
+    await MtprotoUserManager.disableUser(telegramId);
+    await ctx.editMessageText(
+      `✅ Доступ MTProto для TG ID ${telegramId} отключён.\n\nСекреты удалены со всех нод.`,
+      { parse_mode: 'Markdown' }
+    );
+    await ctx.answerCbQuery('Отключено');
+  } catch (err: any) {
+    await ctx.answerCbQuery(`Ошибка: ${err.message}`);
+  }
+});
+
+bot.command('search_mtproxy', async (ctx) => {
+  const arg = ctx.message.text.split(' ').slice(1).join(' ');
+  if (!arg) {
+    return ctx.reply('Использование: /search_mtproxy <секрет|telegram_id|uuid>\nПримеры:\n/search_mtproxy dd1234567890abcdef\n/search_mtproxy 123456789\n/search_mtproxy abc-def-ghi');
+  }
+
+  // Поиск по секрету
+  const bySecret = queries.getUserMtprotoSecretBySecret.get(arg) as any;
+  if (bySecret) {
+    const node = queries.getNodeById.get(bySecret.node_id) as any;
+    const bindings = queries.getRemnawaveBindingsByTelegramId.all(bySecret.telegram_id) as any[];
+    let text = `🔍 *Найден MTProto секрет*\n\n`;
+    text += `*Секрет:* \`${bySecret.secret}\`\n`;
+    text += `*Telegram ID:* ${bySecret.telegram_id}\n`;
+    text += `*Нода:* ${node?.name || 'N/A'} (ID: ${bySecret.node_id})\n`;
+    text += `*Статус:* ${bySecret.is_active ? '✅ Активен' : '❌ Неактивен'}\n`;
+    text += `*Fake TLS:* ${bySecret.is_fake_tls ? 'Да' : 'Нет'}\n`;
+    text += `*Создан:* ${bySecret.created_at}\n\n`;
+    
+    if (bindings.length > 0) {
+      text += `*Привязки Remnawave:*\n`;
+      for (const b of bindings) {
+        text += `- Подписка: ${b.remnawave_subscription_id}\n`;
+        text += `  Статус: ${b.status}\n`;
+      }
+    }
+    
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('❌ Отключить доступ', `mtproto_disable_${bySecret.telegram_id}`)]
+    ]);
+    
+    return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+  }
+
+  // Поиск по Telegram ID
+  const tgId = parseInt(arg, 10);
+  if (!isNaN(tgId)) {
+    const secrets = queries.getUserMtprotoSecretsByTelegramId.all(tgId) as any[];
+    if (secrets.length > 0) {
+      let text = `🔍 *Найдено секретов для TG ID ${tgId}:* ${secrets.length}\n\n`;
+      for (const s of secrets) {
+        const node = queries.getNodeById.get(s.node_id) as any;
+        text += `*Нода:* ${node?.name || 'N/A'}\n`;
+        text += `*Секрет:* \`${s.secret}\`\n`;
+        text += `*Статус:* ${s.is_active ? '✅' : '❌'}\n\n`;
+      }
+      const keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback('❌ Отключить все', `mtproto_disable_${tgId}`)]
+      ]);
+      return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+    }
+  }
+
+  // Поиск по UUID (через remnawave_bindings)
+  const byUuid = queries.getRemnawaveBindingsByUserId.all(arg) as any[];
+  if (byUuid.length > 0) {
+    let text = `🔍 *Найдено привязок для UUID:* ${arg}\n\n`;
+    for (const b of byUuid) {
+      const sub = queries.getSubscriptionById.get(b.local_subscription_id) as any;
+      const secrets = b.telegram_id ? queries.getUserMtprotoSecretsByTelegramId.all(b.telegram_id) as any[] : [];
+      text += `*Подписка Remnawave:* ${b.remnawave_subscription_id}\n`;
+      text += `*Локальная подписка:* ${sub?.name || 'N/A'} (ID: ${b.local_subscription_id})\n`;
+      text += `*Telegram ID:* ${b.telegram_id || 'N/A'}\n`;
+      text += `*Статус:* ${b.status}\n`;
+      text += `*Секретов MTProto:* ${secrets.length}\n\n`;
+    }
+    return ctx.reply(text, { parse_mode: 'Markdown' });
+  }
+
+  return ctx.reply('❌ Ничего не найдено. Проверьте правильность ввода.');
+});
+
+bot.command('subscription_mtproxy', async (ctx) => {
+  const arg = ctx.message.text.split(' ')[1];
+  const localSubId = parseInt(arg || '', 10);
+  if (!localSubId) {
+    return ctx.reply('Использование: /subscription_mtproxy <local_subscription_id>');
+  }
+
+  const sub = queries.getSubscriptionById.get(localSubId) as any;
+  if (!sub) return ctx.reply('❌ Подписка не найдена');
+
+  const bindings = queries.getRemnawaveBindingsByLocalSubscriptionId.all(localSubId) as any[];
+  const active = bindings.filter(b => b.status === 'active');
+  const expired = bindings.filter(b => b.status !== 'active');
+
+  let text = `📦 *Local subscription*\n\n` +
+    `*ID:* \`${localSubId}\`\n` +
+    `*Name:* ${sub.name}\n` +
+    `*Bindings:* ${bindings.length} (active: ${active.length}, inactive: ${expired.length})\n\n`;
+
+  text += '*Последние 10:*\n';
+  for (const b of bindings.slice(0, 10)) {
+    text += `- tg:\`${b.telegram_id ?? 'n/a'}\` status:${b.status} remna:\`${b.remnawave_subscription_id}\`\n`;
+  }
+
+  return ctx.reply(text, { parse_mode: 'Markdown' });
+});
+
+// ═══════════════════════════════════════════════
+// УПРАВЛЕНИЕ НОДАМИ
+// ═══════════════════════════════════════════════
+
+bot.command('nodes', async (ctx) => {
+  const nodes = queries.getAllNodes.all() as any[];
+  
+  if (nodes.length === 0) {
+    return ctx.reply('📭 Нет добавленных нод.\n\nИспользуйте /add_node для добавления.');
+  }
+
+  let text = '📡 *Список нод:*\n\n';
+  
+  for (const node of nodes) {
+    const statusEmoji = node.status === 'online' ? '🟢' : 
+                       node.status === 'offline' ? '🔴' : '🟡';
+    
+    text += `${statusEmoji} *${node.name}*\n`;
+    text += `   ID: \`${node.id}\`\n`;
+    text += `   Домен: \`${node.domain}\`\n`;
+    text += `   Статус: ${node.status}\n`;
+    text += `   Воркеры: ${node.workers}\n`;
+    text += `   /node ${node.id}\n\n`;
+  }
+
+  await ctx.reply(text, { parse_mode: 'Markdown' });
+});
+
+bot.command('node', async (ctx) => {
+  const nodeId = parseInt(ctx.message.text.split(' ')[1]);
+  if (!nodeId) {
+    return ctx.reply('Использование: /node <id>');
+  }
+
   const node = queries.getNodeById.get(nodeId) as any;
   if (!node) {
-    return null;
+    return ctx.reply('❌ Нода не найдена');
   }
 
   const client = getNodeClient(nodeId);
@@ -74,263 +332,64 @@ async function getNodeInfoMessage(nodeId: number): Promise<{ text: string; butto
       const health = await client.getHealth();
       const stats = await client.getStats();
       
-      const cpuUsage = health.system.cpuUsage.toFixed(1);
-      const ramUsage = health.system.ramUsage.toFixed(1);
-      const uptimeHours = Math.floor(health.uptime / 3600);
-      const uptimeMinutes = Math.floor((health.uptime % 3600) / 60);
+      healthInfo = `\n*Статус:* ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
+                   `*Uptime:* ${Math.floor(health.uptime / 3600)}ч ${Math.floor((health.uptime % 3600) / 60)}м\n` +
+                   `*CPU:* ${health.system.cpuUsage.toFixed(1)}%\n` +
+                   `*RAM:* ${health.system.ramUsage.toFixed(1)}%\n`;
       
-      healthInfo = `\n<b>Состояние:</b>\n` +
-                   `Статус: ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
-                   `Uptime: ${uptimeHours}ч ${uptimeMinutes}м\n` +
-                   `CPU: ${cpuUsage}%\n` +
-                   `RAM: ${ramUsage}%\n`;
-      
-      const inMb = stats.network.inMb.toFixed(2);
-      const outMb = stats.network.outMb.toFixed(2);
-      const inGb = (stats.network.inMb / 1024).toFixed(2);
-      const outGb = (stats.network.outMb / 1024).toFixed(2);
-      
-      statsInfo = `\n<b>Статистика:</b>\n` +
-                  `MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
+      statsInfo = `\n*MTProto:*\n` +
+                  `  Подключений: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
                   `  Telegram серверов: ${stats.mtproto.activeTargets}/${stats.mtproto.readyTargets}\n` +
-                  `SOCKS5: ${stats.socks5.connections}\n` +
-                  `Трафик: ⬇️ ${inGb} GB | ⬆️ ${outGb} GB\n`;
+                  `*SOCKS5:*\n` +
+                  `  Подключений: ${stats.socks5.connections}\n` +
+                  `*Трафик:*\n` +
+                  `  ⬇️ ${stats.network.inMb.toFixed(2)} MB\n` +
+                  `  ⬆️ ${stats.network.outMb.toFixed(2)} MB\n`;
     }
   } catch (err: any) {
     healthInfo = `\n⚠️ Не удалось получить статус: ${err.message}\n`;
   }
 
-  const text = 
-    `📡 <b>${node.name}</b>\n\n` +
-    `ID: <code>${node.id}</code>\n` +
-    `Домен: <code>${node.domain}</code>\n` +
-    `IP: <code>${node.ip}</code>\n` +
-    `MTProto порт: ${node.mtproto_port}\n` +
-    `SOCKS5 порт: ${node.socks5_port}\n` +
-    `Воркеры: ${node.workers}\n` +
-    `CPU ядер: ${node.cpu_cores}\n` +
-    `RAM: ${node.ram_mb} MB\n` +
-    (node.ad_tag ? `AD_TAG: <code>${node.ad_tag}</code>\n` : '') +
+  await ctx.reply(
+    `📡 *Нода: ${node.name}*\n\n` +
+    `*ID:* \`${node.id}\`\n` +
+    `*Домен:* \`${node.domain}\`\n` +
+    `*IP:* \`${node.ip}\`\n` +
+    `*MTProto порт:* ${node.mtproto_port}\n` +
+    `*SOCKS5 порт:* ${node.socks5_port}\n` +
+    `*Воркеры:* ${node.workers}\n` +
+    `*CPU ядер:* ${node.cpu_cores}\n` +
+    `*RAM:* ${node.ram_mb} MB\n` +
     healthInfo +
-    statsInfo;
-
-  const buttons = [
-    [
-      { text: '🔗 Ссылки', callback_data: `get_links_${nodeId}` },
-      { text: '🔄 Рестарт', callback_data: `restart_node_${nodeId}` }
-    ],
-    [
-      { text: '🏷️ AD_TAG', callback_data: `manage_ad_tag_${nodeId}` },
-      { text: '📋 Логи', callback_data: `get_logs_${nodeId}` }
-    ],
-    [
-      { text: '🗑️ Удалить', callback_data: `delete_node_${nodeId}` },
-      { text: '⬅️ Назад к списку', callback_data: 'back_to_nodes_list' }
-    ]
-  ];
-
-  return { text, buttons };
-}
-
-/**
- * Проверка прав админа
- */
-function isAdmin(userId: number): boolean {
-  return ADMIN_IDS.includes(userId);
-}
-
-/**
- * Экранирование специальных символов для HTML
- */
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (match) => {
-    const escapeMap: { [key: string]: string } = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;'
-    };
-    return escapeMap[match];
-  });
-}
-
-/**
- * Middleware для проверки админа
- */
-bot.use(async (ctx, next) => {
-  // Для callback query пользователь находится в ctx.callbackQuery.from
-  const userId = ctx.from?.id || ctx.callbackQuery?.from?.id;
-
-  if (!userId) {
-    console.log('No user found in ctx');
-    return;
-  }
-
-  if (!isAdmin(userId)) {
-    console.log('User not admin:', userId);
-    // Для callback query отвечаем через answerCbQuery
-    if (ctx.callbackQuery) {
-      await ctx.answerCbQuery('⛔ У вас нет доступа к этому боту.');
-    } else {
-      await ctx.reply('⛔ У вас нет доступа к этому боту.');
-    }
-    return;
-  }
-
-  console.log('User is admin, proceeding with update type:', ctx.updateType);
-  if (ctx.callbackQuery && 'data' in ctx.callbackQuery) {
-    console.log('Callback query data:', ctx.callbackQuery.data);
-  }
-  return next();
-});
-
-// ═══════════════════════════════════════════════
-// ОСНОВНЫЕ КОМАНДЫ
-// ═══════════════════════════════════════════════
-
-bot.start(async (ctx) => {
-  await ctx.reply(
-    '👋 <b>MTProxy Management Bot</b>\n\n' +
-    'Управление прокси-серверами через Telegram.',
-    {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '📋 Ноды', callback_data: 'show_nodes' }],
-          [{ text: '➕ Добавить ноду', callback_data: 'add_node' }],
-          [{ text: '🔗 Управление ссылками', callback_data: 'manage_links' }],
-          [{ text: '📊 Статистика', callback_data: 'show_stats' }],
-          [{ text: '📖 Справка', callback_data: 'show_help' }]
-        ]
-      }
-    }
+    statsInfo +
+    `\n*Команды:*\n` +
+    `/links ${node.id} - получить ссылки\n` +
+    `/restart_node ${node.id} - перезапустить\n` +
+    `/logs ${node.id} - показать логи`,
+    { parse_mode: 'Markdown' }
   );
-});
-
-bot.help(async (ctx) => {
-  await ctx.reply(
-    '📖 <b>Справка по командам</b>\n\n' +
-    '<b>Управление нодами:</b>\n' +
-    '/nodes - список всех нод\n' +
-    '/add_node - добавить новую ноду\n' +
-    '/node &lt;id&gt; - информация о ноде\n' +
-    '/remove_node &lt;id&gt; - удалить ноду\n' +
-    '/restart_node &lt;id&gt; - перезапустить прокси\n\n' +
-    '<b>Получение доступов:</b>\n' +
-    '/links &lt;node_id&gt; - получить все ссылки\n' +
-    'Используйте кнопки для добавления MTProto и SOCKS5\n\n' +
-    '<b>Подписки:</b>\n' +
-    '/create_subscription &lt;название&gt; - создать подписку\n' +
-    '/subscriptions - список всех подписок\n' +
-    '/subscription &lt;id&gt; - детали подписки\n\n' +
-    '<b>Мониторинг:</b>\n' +
-    '/stats - общая статистика\n' +
-    '/health - здоровье всех нод\n' +
-    '/logs &lt;node_id&gt; - логи ноды\n\n' +
-    '<b>Настройки:</b>\n' +
-    '/set_workers &lt;node_id&gt; &lt;count&gt; - воркеры\n' +
-    '/update_node &lt;id&gt; - обновить конфиг',
-    { parse_mode: 'HTML' }
-  );
-});
-
-// ═══════════════════════════════════════════════
-// ЛОКАЛЬНЫЙ ПРОКСИ
-// ═══════════════════════════════════════════════
-// УПРАВЛЕНИЕ НОДАМИ
-// ═══════════════════════════════════════════════
-
-bot.command('nodes', async (ctx) => {
-  const nodes = queries.getAllNodes.all([]) as any[];
-  
-  if (nodes.length === 0) {
-    return ctx.reply('📭 Нет добавленных нод.\n\nИспользуйте /add_node для добавления.');
-  }
-
-  let text = '📡 <b>Список нод:</b>\n\n';
-  const buttons: any[][] = [];
-  
-  for (const node of nodes) {
-    const statusEmoji = node.status === 'online' ? '🟢' : 
-                       node.status === 'offline' ? '🔴' : '🟡';
-    
-    const client = getNodeClient(node.id);
-    let statsLine = '';
-    
-    // Получаем статистику для каждой ноды
-    try {
-      if (client) {
-        const stats = await client.getStats();
-        statsLine = `   📊 MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections} | SOCKS5: ${stats.socks5.connections}\n` +
-                   `   🌐 Трафик: ↓${(stats.network.inMb / 1024).toFixed(2)} GB ↑${(stats.network.outMb / 1024).toFixed(2)} GB\n`;
-      }
-    } catch (err) {
-      statsLine = `   ⚠️ Статистика недоступна\n`;
-    }
-    
-    text += `${statusEmoji} <b>${node.name}</b>\n`;
-    text += `   ID: ${node.id}\n`;
-    text += `   Домен: <code>${node.domain}</code>\n`;
-    text += `   Статус: ${node.status} | Воркеры: ${node.workers}\n`;
-    text += statsLine;
-    text += '\n';
-    
-    // Добавляем кнопки для каждой ноды (несколько в ряд)
-    buttons.push([
-      { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` },
-      { text: '🔗', callback_data: `get_links_${node.id}` },
-      { text: '🔄', callback_data: `restart_node_${node.id}` }
-    ]);
-  }
-  
-  // Кнопка обновления списка
-  buttons.push([{ text: '🔄 Обновить список', callback_data: 'refresh_nodes_list' }]);
-
-  await ctx.reply(text, { 
-    parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: buttons }
-  });
-});
-
-bot.command('node', async (ctx) => {
-  try {
-    const args = ctx.message.text.split(' ');
-    const nodeId = parseInt(args[1]);
-    
-    if (!nodeId || isNaN(nodeId)) {
-      await ctx.reply('Использование: /node <id>');
-      return;
-    }
-
-    const info = await getNodeInfoMessage(nodeId);
-    if (!info) {
-      await ctx.reply('❌ Нода не найдена');
-      return;
-    }
-
-    await ctx.reply(info.text, {
-      parse_mode: 'HTML',
-      reply_markup: { inline_keyboard: info.buttons }
-    });
-  } catch (err: any) {
-    await ctx.reply(`❌ Ошибка при получении информации о ноде: ${err.message}`);
-  }
 });
 
 bot.command('add_node', async (ctx) => {
-  // Устанавливаем состояние ожидания данных ноды
-  userStates.set(ctx.from.id, { action: 'add_node' });
-  
   await ctx.reply(
-    '➕ Добавление новой ноды\n\n' +
+    '➕ *Добавление новой ноды*\n\n' +
     'Отправьте данные ноды в формате:\n\n' +
-    'name: Node-Moscow\n' +
+    '```\n' +
+    'name: My Node 1\n' +
+    'domain: proxy1.example.com\n' +
     'ip: 1.2.3.4\n' +
-    'api_key: ваш_api_key_с_сервера\n\n' +
-    'Бот настроит прокси автоматически через API!\n\n' +
-    'Отправьте /cancel для отмены.'
+    'api_url: https://proxy1.example.com:8080\n' +
+    'mtproto_port: 443\n' +
+    'socks5_port: 1080\n' +
+    'workers: 4\n' +
+    'cpu_cores: 4\n' +
+    'ram_mb: 2048\n' +
+    '```\n\n' +
+    'API токен будет сгенерирован автоматически.',
+    { parse_mode: 'Markdown' }
   );
+  
+  // TODO: Реализовать conversation handler для добавления ноды
 });
 
 bot.command('remove_node', async (ctx) => {
@@ -377,637 +436,6 @@ bot.action('cancel', async (ctx) => {
   await ctx.editMessageText('❌ Операция отменена');
 });
 
-// ─── ОБРАБОТЧИКИ КНОПОК СПИСКА НОД ───
-
-bot.action(/^node_info_(\d+)$/, async (ctx: any) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-  
-  const info = await getNodeInfoMessage(nodeId);
-  if (!info) {
-    await ctx.editMessageText('❌ Нода не найдена');
-    return;
-  }
-
-  await ctx.editMessageText(info.text, {
-    parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: info.buttons }
-  });
-});
-
-bot.action('refresh_nodes_list', async (ctx: any) => {
-  await ctx.answerCbQuery('Обновление...');
-  
-  const nodes = queries.getAllNodes.all([]) as any[];
-  
-  if (nodes.length === 0) {
-    await ctx.editMessageText('📭 Нет добавленных нод.\n\nИспользуйте /add_node для добавления.');
-    return;
-  }
-
-  let text = '📡 <b>Список нод:</b>\n\n';
-  const buttons: any[][] = [];
-  
-  for (const node of nodes) {
-    const statusEmoji = node.status === 'online' ? '🟢' : 
-                       node.status === 'offline' ? '🔴' : '🟡';
-    
-    const client = getNodeClient(node.id);
-    let statsLine = '';
-    
-    // Получаем статистику для каждой ноды
-    try {
-      if (client) {
-        const stats = await client.getStats();
-        statsLine = `   📊 MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections} | SOCKS5: ${stats.socks5.connections}\n` +
-                   `   🌐 Трафик: ↓${(stats.network.inMb / 1024).toFixed(2)} GB ↑${(stats.network.outMb / 1024).toFixed(2)} GB\n`;
-      }
-    } catch (err) {
-      statsLine = `   ⚠️ Статистика недоступна\n`;
-    }
-    
-    text += `${statusEmoji} <b>${node.name}</b>\n`;
-    text += `   ID: ${node.id}\n`;
-    text += `   Домен: <code>${node.domain}</code>\n`;
-    text += `   Статус: ${node.status} | Воркеры: ${node.workers}\n`;
-    text += statsLine;
-    text += '\n';
-    
-    buttons.push([
-      { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` },
-      { text: '🔗', callback_data: `get_links_${node.id}` },
-      { text: '🔄', callback_data: `restart_node_${node.id}` }
-    ]);
-  }
-  
-  buttons.push([{ text: '🔄 Обновить список', callback_data: 'refresh_nodes_list' }]);
-
-  await ctx.editMessageText(text, { 
-    parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: buttons }
-  });
-});
-
-bot.action('back_to_nodes_list', async (ctx: any) => {
-  await ctx.answerCbQuery();
-  
-  const nodes = queries.getAllNodes.all([]) as any[];
-  
-  if (nodes.length === 0) {
-    await ctx.editMessageText('📭 Нет добавленных нод.\n\nИспользуйте /add_node для добавления.');
-    return;
-  }
-
-  let text = '📡 <b>Список нод:</b>\n\n';
-  const buttons: any[][] = [];
-  
-  for (const node of nodes) {
-    const statusEmoji = node.status === 'online' ? '🟢' : 
-                       node.status === 'offline' ? '🔴' : '🟡';
-    
-    text += `${statusEmoji} <b>${node.name}</b> (ID: ${node.id})\n`;
-    text += `   Домен: <code>${node.domain}</code>\n`;
-    text += `   Статус: ${node.status} | Воркеры: ${node.workers}\n\n`;
-    
-    buttons.push([
-      { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` }
-    ]);
-  }
-  
-  buttons.push([{ text: '🔄 Обновить', callback_data: 'refresh_nodes_list' }]);
-
-  await ctx.editMessageText(text, { 
-    parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: buttons }
-  });
-});
-
-// ─── НОВЫЕ ОБРАБОТЧИКИ КНОПОК ───
-
-bot.action(/^get_links_(\d+)$/, async (ctx: any) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-
-  console.log(`get_links action triggered for node ${nodeId}`);
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    console.log(`Node ${nodeId} not found`);
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  console.log(`Node found: ${node.name}, domain: ${node.domain}, port: ${node.mtproto_port}`);
-
-  const secrets = queries.getNodeSecrets.all(nodeId) as any[];
-  const socks5Accounts = queries.getNodeSocks5Accounts.all(nodeId) as any[];
-
-  console.log(`Secrets count: ${secrets.length}, SOCKS5 accounts: ${socks5Accounts.length}`);
-
-  if (secrets.length === 0 && socks5Accounts.length === 0) {
-    await ctx.answerCbQuery('Ссылок нет');
-    return;
-  }
-
-  let text = `🔗 <b>Ссылки для ${node.name}</b>\n\n`;
-
-  // MTProto ссылки
-  if (secrets.length > 0) {
-    text += `🟣 <b>MTProto:</b>\n`;
-    for (const secret of secrets) {
-      const type = secret.is_fake_tls ? '🔒 Fake-TLS' : '🔓 Обычный';
-      
-      // Извлекаем домен/IP из description
-      let server = node.domain; // По умолчанию используем domain ноды
-      if (secret.description) {
-        // Формат: "Домен: xxx" или "IP: xxx"
-        const match = secret.description.match(/(?:Домен|IP):\s*(.+)/);
-        if (match && match[1]) {
-          server = match[1].trim();
-        }
-      }
-      
-      const link = ProxyLinkGenerator.generateMtProtoLink(
-        server,
-        node.mtproto_port,
-        secret.secret,
-        secret.is_fake_tls
-      );
-      const webLink = ProxyLinkGenerator.generateMtProtoWebLink(
-        server,
-        node.mtproto_port,
-        secret.secret,
-        secret.is_fake_tls
-      );
-      
-      text += `   ${type}:\n`;
-      text += `   ${secret.description || 'Без описания'}\n`;
-      text += `   <code>${link}</code>\n`;
-      text += `   <a href="${webLink}">Подключить</a>\n\n`;
-    }
-  }
-
-  // SOCKS5 аккаунты
-  if (socks5Accounts.length > 0) {
-    text += `🔵 <b>SOCKS5:</b>\n\n`;
-    for (const account of socks5Accounts) {
-      const tgLink = ProxyLinkGenerator.generateSocks5TgLink(
-        node.domain,
-        node.socks5_port,
-        account.username,
-        account.password
-      );
-      const tmeLink = ProxyLinkGenerator.generateSocks5TmeLink(
-        node.domain,
-        node.socks5_port,
-        account.username,
-        account.password
-      );
-      
-      text += `   👤 <b>${account.username}</b>\n`;
-      if (account.description) text += `   <i>${account.description}</i>\n`;
-      text += `   \n🔗 Deep Link:\n   <code>${tgLink}</code>\n\n`;
-      text += `   <a href="${tgLink}">🚀 Подключить в 1 клик</a>\n\n`;
-      text += `   ───────────────\n\n`;
-    }
-  }
-
-  await ctx.reply(text, { 
-    parse_mode: 'HTML',
-    link_preview_options: { is_disabled: true }
-  });
-});
-
-bot.action(/^restart_node_(\d+)$/, async (ctx: any) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery('Перезапускаю...');
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  const client = getNodeClient(nodeId);
-  if (!client) {
-    await ctx.answerCbQuery('Не удалось подключиться к ноде');
-    return;
-  }
-
-  try {
-    // Отправляем команду перезапуска
-    await client.rebootNode();
-    
-    // Отправляем подтверждение в чат
-    await ctx.reply(
-      `✅ <b>Нода "${node.name}" перезапускается</b>\n\n` +
-      `Это займёт около 10-30 секунд.\n` +
-      `Используйте /node ${nodeId} для проверки статуса.`,
-      { parse_mode: 'HTML' }
-    );
-    
-    queries.insertLog.run({
-      node_id: nodeId,
-      level: 'info',
-      message: 'Node restart requested',
-      details: `Admin: ${ctx.from.id}`,
-    });
-    
-  } catch (error: any) {
-    await ctx.reply(
-      `❌ <b>Ошибка перезапуска ноды "${node.name}"</b>\n\n` +
-      `${error.message}`,
-      { parse_mode: 'HTML' }
-    );
-  }
-});
-
-bot.action(/^logs_node_(\d+)$/, async (ctx: any) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  const client = getNodeClient(nodeId);
-  if (!client) {
-    await ctx.answerCbQuery('Не удалось подключиться к ноде');
-    return;
-  }
-
-  try {
-    const logs = await client.getLogs(50);
-    let text = `📋 <b>Логи для ${node.name}</b>\n\n`;
-    text += '<b>MTProto:</b>\n<pre>\n' + logs.mtproto + '\n</pre>\n\n';
-    text += '<b>SOCKS5:</b>\n<pre>\n' + logs.socks5 + '\n</pre>\n\n';
-    text += '<b>Agent:</b>\n<pre>\n' + logs.agent + '\n</pre>';
-    await ctx.reply(text, { parse_mode: 'HTML' });
-  } catch (error) {
-    console.error('Failed to get logs:', error);
-    await ctx.answerCbQuery('Ошибка получения логов');
-  }
-});
-
-// ─── УПРАВЛЕНИЕ AD_TAG ───
-
-bot.action(/^manage_ad_tag_(\d+)$/, async (ctx: any) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-  
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.editMessageText('❌ Нода не найдена');
-    return;
-  }
-
-  const text = 
-    `🏷️ <b>Управление AD_TAG</b>\n\n` +
-    `Нода: <b>${node.name}</b>\n` +
-    `Текущий AD_TAG: ${node.ad_tag ? `<code>${node.ad_tag}</code>` : '<i>не установлен</i>'}\n\n` +
-    `<b>Что такое AD_TAG?</b>\n` +
-    `Это 16-значный hex тег для монетизации трафика MTProxy.\n` +
-    `Получить можно у @MTProxybot после регистрации канала.\n\n` +
-    `<b>Формат:</b> 16 hex символов (a-f, 0-9)\n` +
-    `<b>Пример:</b> <code>a1b2c3d4e5f67890</code>`;
-
-  const buttons = [
-    [{ text: '✏️ Установить новый тег', callback_data: `set_ad_tag_prompt_${nodeId}` }],
-  ];
-
-  if (node.ad_tag) {
-    buttons.push([{ text: '🗑️ Удалить тег', callback_data: `remove_ad_tag_${nodeId}` }]);
-  }
-
-  buttons.push([{ text: '⬅️ Назад', callback_data: `node_info_${nodeId}` }]);
-
-  await ctx.editMessageText(text, {
-    parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: buttons }
-  });
-});
-
-bot.action(/^set_ad_tag_prompt_(\d+)$/, async (ctx: any) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-  
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.editMessageText('❌ Нода не найдена');
-    return;
-  }
-
-  userStates.set(ctx.from.id, { action: 'set_ad_tag', nodeId });
-
-  await ctx.editMessageText(
-    `✏️ <b>Установка AD_TAG</b>\n\n` +
-    `Нода: <b>${node.name}</b>\n\n` +
-    `Отправьте 16-значный hex тег (a-f, 0-9)\n` +
-    `Пример: <code>a1b2c3d4e5f67890</code>\n\n` +
-    `Или /cancel для отмены`,
-    { 
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '❌ Отмена', callback_data: `manage_ad_tag_${nodeId}` }]
-        ]
-      }
-    }
-  );
-});
-
-bot.action(/^remove_ad_tag_(\d+)$/, async (ctx: any) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-  
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.editMessageText('❌ Нода не найдена');
-    return;
-  }
-
-  const client = getNodeClient(nodeId);
-  if (!client) {
-    await ctx.answerCbQuery('❌ Не удалось подключиться к ноде');
-    return;
-  }
-
-  try {
-    await ctx.editMessageText('⏳ Удаление AD_TAG...');
-    
-    await client.updateAdTag(null);
-    
-    queries.updateNodeAdTag.run({
-      id: nodeId,
-      ad_tag: null,
-    });
-
-    await ctx.editMessageText(
-      `✅ <b>AD_TAG удалён!</b>\n\n` +
-      `Нода: ${node.name}\n` +
-      `MTProxy перезапущен без рекламного тега.`,
-      { 
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '⬅️ Назад к ноде', callback_data: `node_info_${nodeId}` }]
-          ]
-        }
-      }
-    );
-
-    queries.insertLog.run({
-      node_id: nodeId,
-      level: 'info',
-      message: 'AD_TAG removed',
-      details: `Admin: ${ctx.from.id}`,
-    });
-
-  } catch (err: any) {
-    await ctx.editMessageText(`❌ Ошибка: ${err.message}`);
-  }
-});
-
-// ─── УДАЛЕНИЕ НОДЫ ───
-
-bot.action(/^confirm_delete_node_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  const node = queries.getNodeById.get(nodeId) as any;
-  
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  await ctx.editMessageText(
-    `⚠️ <b>Удаление ноды</b>\n\n` +
-    `Вы уверены, что хотите удалить ноду "${node.name}"?\n\n` +
-    `Это действие нельзя отменить!`,
-    {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '❌ Да, удалить', callback_data: `delete_node_${nodeId}` }],
-          [{ text: '✅ Отмена', callback_data: 'show_nodes' }]
-        ]
-      }
-    }
-  );
-});
-
-bot.action(/^delete_node_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  const node = queries.getNodeById.get(nodeId) as any;
-  
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  // Удаляем все связанные данные
-  queries.deleteNode.run(nodeId);
-  
-  await ctx.answerCbQuery('Нода удалена');
-  await ctx.editMessageText(
-    `✅ <b>Нода "${node.name}" успешно удалена!</b>`,
-    {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [[{ text: '⬅️ К списку нод', callback_data: 'show_nodes' }]]
-      }
-    }
-  );
-});
-
-bot.action(/^add_secret_(\d+)$/, async (ctx) => {
-  console.log(`add_secret action triggered with callback: ${(ctx.callbackQuery as any)?.data}`);
-  const nodeId = parseInt(ctx.match[1]);
-  console.log(`Parsed nodeId: ${nodeId}`);
-  await ctx.answerCbQuery();
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  // Показываем выбор типа секрета
-  await ctx.editMessageText(
-    `🔐 <b>Добавление MTProto секрета</b>\n\n` +
-    `Нода: ${node.name}\n\n` +
-    `Выберите тип секрета:`,
-    {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔓 Обычный', `add_secret_type_normal_${nodeId}`)],
-        [Markup.button.callback('� Fake-TLS (DD)', `add_secret_type_dd_${nodeId}`)],
-        [Markup.button.callback('❌ Отмена', 'cancel')],
-      ])
-    }
-  );
-});
-
-bot.action(/^add_socks5_(\d+)$/, async (ctx: any) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  // Устанавливаем состояние ожидания SOCKS5 аккаунта
-  userStates.set(ctx.from!.id, { action: 'add_socks5', nodeId });
-
-  await ctx.editMessageText(
-    `➕ *Добавление SOCKS5 аккаунта для ${node.name}*\n\n` +
-    'Отправьте данные аккаунта в формате:\n' +
-    '```\n' +
-    'username: myuser\n' +
-    'password: mypass\n' +
-    '```\n\n' +
-    'Отправьте /cancel для отмены.',
-    {
-      
-      reply_markup: {
-        inline_keyboard: [[{ text: '⬅️ Назад', callback_data: `manage_node_links_${nodeId}` }]]
-      }
-    }
-  );
-});
-
-// ─── ОБРАБОТЧИКИ ГЛАВНОГО МЕНЮ ───
-
-bot.action('show_nodes', async (ctx: any) => {
-  console.log('show_nodes action triggered');
-  await ctx.answerCbQuery();
-
-  const nodes = queries.getAllNodes.all([]) as any[];
-
-  if (nodes.length === 0) {
-    await ctx.editMessageText('📭 Нет добавленных нод.\n\nИспользуйте /add_node для добавления.');
-    return;
-  }
-
-  let text = '📡 <b>Список нод:</b>\n\n';
-  const buttons: any[][] = [];
-
-  for (const node of nodes) {
-    const statusEmoji = node.status === 'online' ? '🟢' : 
-                       node.status === 'offline' ? '🔴' : '🟡';
-    
-    const client = getNodeClient(node.id);
-    let statsLine = '';
-    
-    // Получаем статистику для каждой ноды
-    try {
-      if (client) {
-        const stats = await client.getStats();
-        statsLine = `   📊 MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections} | SOCKS5: ${stats.socks5.connections}\n` +
-                   `   🌐 Трафик: ↓${(stats.network.inMb / 1024).toFixed(2)} GB ↑${(stats.network.outMb / 1024).toFixed(2)} GB\n`;
-      }
-    } catch (err) {
-      statsLine = `   ⚠️ Статистика недоступна\n`;
-    }
-    
-    text += `${statusEmoji} <b>${node.name}</b>\n`;
-    text += `   ID: ${node.id}\n`;
-    text += `   Домен: <code>${node.domain}</code>\n`;
-    text += `   Статус: ${node.status} | Воркеры: ${node.workers}\n`;
-    text += statsLine;
-    text += '\n';
-    
-    // Добавляем кнопки для каждой ноды
-    buttons.push([
-      { text: `📊 ${node.name}`, callback_data: `node_info_${node.id}` },
-      { text: '🔗', callback_data: `get_links_${node.id}` },
-      { text: '🔄', callback_data: `restart_node_${node.id}` }
-    ]);
-  }
-  
-  // Кнопка обновления списка
-  buttons.push([{ text: '🔄 Обновить список', callback_data: 'refresh_nodes_list' }]);
-
-  await ctx.editMessageText(text, { 
-    parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: buttons }
-  });
-});
-
-bot.action('add_node', async (ctx: any) => {
-  console.log('add_node action triggered');
-  await ctx.answerCbQuery();
-
-  // Устанавливаем состояние ожидания данных ноды
-  userStates.set(ctx.from!.id, { action: 'add_node' });
-
-  await ctx.reply(
-    '➕ Добавление новой ноды\n\n' +
-    'Отправьте данные ноды в формате:\n\n' +
-    'name: Node-Moscow\n' +
-    'ip: 1.2.3.4\n' +
-    'api_key: ваш_api_key_с_сервера\n\n' +
-    'Бот настроит прокси автоматически через API!\n\n' +
-    'Отправьте /cancel для отмены.'
-  );
-});
-
-bot.action('show_help', async (ctx: any) => {
-  console.log('show_help action triggered');
-  await ctx.answerCbQuery();
-
-  await ctx.reply(
-    '📖 <b>Справка по командам</b>\n\n' +
-    '<b>Управление нодами:</b>\n' +
-    '/nodes - список всех нод\n' +
-    '/add_node - добавить новую ноду\n' +
-    '/node &lt;id&gt; - информация о ноде\n' +
-    '/remove_node &lt;id&gt; - удалить ноду\n' +
-    '/restart_node &lt;id&gt; - перезапустить прокси\n\n' +
-    '<b>Получение доступов:</b>\n' +
-    '/links &lt;node_id&gt; - получить все ссылки\n' +
-    '/add_secret &lt;node_id&gt; - добавить секрет\n' +
-    '/add_socks5 &lt;node_id&gt; - добавить SOCKS5 аккаунт\n\n' +
-    '<b>Подписки:</b>\n' +
-    '/create_subscription &lt;название&gt; - создать подписку\n' +
-    '/subscriptions - список всех подписок\n' +
-    '/subscription &lt;id&gt; - детали подписки\n\n' +
-    '<b>Мониторинг:</b>\n' +
-    '/stats - общая статистика\n' +
-    '/health - здоровье всех нод\n' +
-    '/logs &lt;node_id&gt; - логи ноды\n\n' +
-    '<b>Настройки:</b>\n' +
-    '/set_workers &lt;node_id&gt; &lt;count&gt; - воркеры\n' +
-    '/update_node &lt;id&gt; - обновить конфиг',
-    { parse_mode: 'HTML' }
-  );
-});
-
-bot.action('back_to_main', async (ctx: any) => {
-  console.log('back_to_main action triggered');
-  await ctx.answerCbQuery();
-
-  await ctx.reply(
-    '👋 *MTProxy Management Bot*\n\n' +
-    'Управление прокси-серверами через Telegram.',
-    {
-      
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '📋 Ноды', callback_data: 'show_nodes' }],
-          [{ text: '➕ Добавить ноду', callback_data: 'add_node' }],
-          [{ text: '🔗 Управление ссылками', callback_data: 'manage_links' }],
-          [{ text: '📊 Статистика', callback_data: 'show_stats' }],
-          [{ text: '📖 Справка', callback_data: 'show_help' }]
-        ]
-      }
-    }
-  );
-});
-
 // ═══════════════════════════════════════════════
 // ПОЛУЧЕНИЕ ДОСТУПОВ
 // ═══════════════════════════════════════════════
@@ -1042,24 +470,14 @@ bot.command('links', async (ctx) => {
     text += '*MTProto:*\n\n';
     for (const secret of secrets) {
       const type = secret.is_fake_tls ? '🔒 Fake-TLS (dd)' : '🔓 Обычный';
-      
-      // Извлекаем сервер из description (формат "Домен: xxx" или "IP: xxx")
-      let server = node.domain;
-      if (secret.description) {
-        const match = secret.description.match(/(?:Домен|IP):\s*(.+)/);
-        if (match) {
-          server = match[1].trim();
-        }
-      }
-      
       const link = ProxyLinkGenerator.generateMtProtoLink(
-        server,
+        node.domain,
         node.mtproto_port,
         secret.secret,
         secret.is_fake_tls
       );
       const webLink = ProxyLinkGenerator.generateMtProtoWebLink(
-        server,
+        node.domain,
         node.mtproto_port,
         secret.secret,
         secret.is_fake_tls
@@ -1089,18 +507,14 @@ bot.command('links', async (ctx) => {
         account.password
       );
       
-      text += `👤 *${account.username}*\n`;
+      text += `👤 ${account.username}\n`;
       if (account.description) text += `_${account.description}_\n`;
-      text += `\n🔗 Deep Link:\n\`${tgLink}\`\n\n`;
-      text += `[🚀 Подключить в 1 клик](${tgLink})\n\n`;
-      text += `───────────────\n\n`;
+      text += `\`${tgLink}\`\n`;
+      text += `[Подключить](${tmeLink})\n\n`;
     }
   }
 
-  await ctx.reply(text, {
-    parse_mode: 'Markdown',
-    link_preview_options: { is_disabled: true }
-  });
+  await ctx.reply(text, { parse_mode: 'Markdown' });
 });
 
 bot.command('add_secret', async (ctx) => {
@@ -1114,55 +528,21 @@ bot.command('add_secret', async (ctx) => {
     return ctx.reply('❌ Нода не найдена');
   }
 
-  await ctx.reply(
-    `🔐 <b>Добавление MTProto секрета</b>\n\n` +
-    `Нода: ${node.name}\n\n` +
-    `Выберите тип MTProto:`,
-    {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '🔓 Обычный', callback_data: `add_secret_type_normal_${nodeId}` }],
-          [{ text: '🔒 Fake-TLS (DD)', callback_data: `add_secret_type_dd_${nodeId}` }],
-          [{ text: '❌ Отмена', callback_data: 'cancel' }]
-        ]
-      }
-    }
-  );
-});
-
-// ─── ВЫБОР ТИПА MTPROTO ───
-
-bot.action(/^add_secret_type_(normal|dd)_(\d+)$/, async (ctx: any) => {
-  const isFakeTls = ctx.match[1] === 'dd';
-  const nodeId = parseInt(ctx.match[2]);
-  await ctx.answerCbQuery();
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
   // Генерируем секрет
   const secret = SecretGenerator.generateMtProtoSecret();
-  const typeText = isFakeTls ? 'Fake-TLS (DD)' : 'Обычный';
-
-  await ctx.editMessageText(
-    `🔐 <b>Добавление MTProto секрета</b>\n\n` +
+  
+  await ctx.reply(
+    `🔐 *Добавление MTProto секрета*\n\n` +
     `Нода: ${node.name}\n` +
-    `Тип: ${typeText}\n` +
-    `Секрет: <code>${secret}</code>\n\n` +
-    `Выберите тип подключения:`,
+    `Секрет: \`${secret}\`\n\n` +
+    `Выберите тип:`,
     {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '🌐 Домен', callback_data: `add_secret_domain_${isFakeTls ? 'dd' : 'normal'}_${nodeId}_${secret}` }],
-          [{ text: '🖥️ IP адрес', callback_data: `add_secret_ip_${isFakeTls ? 'dd' : 'normal'}_${nodeId}_${secret}` }],
-          [{ text: '⬅️ Назад', callback_data: `add_secret_${nodeId}` }]
-        ]
-      }
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🔒 Fake-TLS (dd) - рекомендуется', `add_secret_dd_${nodeId}_${secret}`)],
+        [Markup.button.callback('🔓 Обычный', `add_secret_normal_${nodeId}_${secret}`)],
+        [Markup.button.callback('❌ Отмена', 'cancel')],
+      ])
     }
   );
 });
@@ -1202,20 +582,8 @@ bot.action(/^add_secret_(dd|normal)_(\d+)_([a-f0-9]{32})$/, async (ctx) => {
     return;
   }
 
-  // Извлекаем сервер из description (формат "Домен: xxx" или "IP: xxx")
-  // В этом старом callback description не содержит домен/IP, так что используем node.domain
-  const secrets = queries.getNodeSecrets.all(nodeId) as any[];
-  const addedSecret = secrets.find(s => s.secret === secret);
-  let server = node.domain;
-  if (addedSecret && addedSecret.description) {
-    const match = addedSecret.description.match(/(?:Домен|IP):\s*(.+)/);
-    if (match) {
-      server = match[1].trim();
-    }
-  }
-
   const link = ProxyLinkGenerator.generateMtProtoLink(
-    server,
+    node.domain,
     node.mtproto_port,
     secret,
     isFakeTls
@@ -1227,7 +595,7 @@ bot.action(/^add_secret_(dd|normal)_(\d+)_([a-f0-9]{32})$/, async (ctx) => {
     `Нода: ${node.name}\n` +
     `Тип: ${isFakeTls ? 'Fake-TLS (dd)' : 'Обычный'}\n\n` +
     `Ссылка:\n\`${link}\``,
-   
+    { parse_mode: 'Markdown' }
   );
 
   queries.insertLog.run({
@@ -1238,246 +606,146 @@ bot.action(/^add_secret_(dd|normal)_(\d+)_([a-f0-9]{32})$/, async (ctx) => {
   });
 });
 
-// ─── ВЫБОР ДОМЕНА/IP ДЛЯ MTPROTO ───
-
-bot.action(/^add_secret_domain_(dd|normal)_(\d+)_([a-f0-9]{32})$/, async (ctx: any) => {
-  const isFakeTls = ctx.match[1] === 'dd';
-  const nodeId = parseInt(ctx.match[2]);
-  const secret = ctx.match[3];
-  await ctx.answerCbQuery();
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  // Устанавливаем состояние ожидания домена
-  userStates.set(ctx.from!.id, { action: 'add_secret_domain', nodeId, secret, isFakeTls });
-
-  const typeText = isFakeTls ? 'Fake-TLS (DD)' : 'Обычный';
-
-  await ctx.editMessageText(
-    `🌐 <b>Выбор домена для MTProto секрета</b>\n\n` +
-    `Нода: ${node.name}\n` +
-    `Тип: ${typeText}\n` +
-    `Секрет: <code>${secret}</code>\n\n` +
-    `Отправьте домен (например: example.com):\n\n` +
-    `Отправьте /cancel для отмены.`,
-    {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [[{ text: '⬅️ Назад', callback_data: `add_secret_type_${isFakeTls ? 'dd' : 'normal'}_${nodeId}` }]]
-      }
-    }
-  );
-});
-
-bot.action(/^add_secret_ip_(dd|normal)_(\d+)_([a-f0-9]{32})$/, async (ctx: any) => {
-  const isFakeTls = ctx.match[1] === 'dd';
-  const nodeId = parseInt(ctx.match[2]);
-  const secret = ctx.match[3];
-  await ctx.answerCbQuery();
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  // Устанавливаем состояние ожидания IP
-  userStates.set(ctx.from!.id, { action: 'add_secret_ip', nodeId, secret, isFakeTls });
-
-  const typeText = isFakeTls ? 'Fake-TLS (DD)' : 'Обычный';
-
-  await ctx.editMessageText(
-    `🖥️ <b>Выбор IP адреса для MTProto секрета</b>\n\n` +
-    `Нода: ${node.name}\n` +
-    `Тип: ${typeText}\n` +
-    `Секрет: <code>${secret}</code>\n\n` +
-    `Отправьте IP адрес (например: 1.2.3.4):\n\n` +
-    `Отправьте /cancel для отмены.`,
-    {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [[{ text: '⬅️ Назад', callback_data: `add_secret_type_${isFakeTls ? 'dd' : 'normal'}_${nodeId}` }]]
-      }
-    }
-  );
-});
-
 // ─── SOCKS5 ───
-// SOCKS5 аккаунты добавляются через кнопку "➕ SOCKS5" в интерфейсе управления ссылками
-// (см. bot.action(/^add_socks5_(\d+)$/) и обработчик текста в bot.on(message('text')))
+
+bot.command('add_socks5', async (ctx) => {
+  const nodeId = parseInt(ctx.message.text.split(' ')[1]);
+  if (!nodeId) {
+    return ctx.reply('Использование: /add_socks5 <node_id>');
+  }
+
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    return ctx.reply('❌ Нода не найдена');
+  }
+
+  // Генерируем username и password
+  const username = `user_${crypto.randomBytes(4).toString('hex')}`;
+  const password = SecretGenerator.generatePassword();
+  
+  await ctx.reply(
+    `🔐 *Добавление SOCKS5 аккаунта*\n\n` +
+    `Нода: ${node.name}\n` +
+    `Username: \`${username}\`\n` +
+    `Password: \`${password}\`\n\n` +
+    `Подтвердите добавление:`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('✅ Добавить', `add_socks5_confirm_${nodeId}_${username}_${password}`)],
+        [Markup.button.callback('❌ Отмена', 'cancel')],
+      ])
+    }
+  );
+});
+
+bot.action(/^add_socks5_confirm_(\d+)_([^_]+)_([^_]+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1]);
+  const username = ctx.match[2];
+  const password = ctx.match[3];
+
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  const client = getNodeClient(nodeId);
+  if (!client) {
+    await ctx.answerCbQuery('Не удалось подключиться к ноде');
+    return;
+  }
+
+  try {
+    // Добавляем в БД
+    queries.insertSocks5Account.run({
+      node_id: nodeId,
+      username,
+      password,
+      description: `Added by admin ${ctx.from!.id}`,
+    });
+
+    // Отправляем на Node Agent для обновления конфига
+    await client.addSocks5Account({ username, password });
+
+    // Генерируем ссылки
+    const tgLink = `tg://socks?server=${node.domain}&port=${node.socks5_port}&user=${username}&pass=${password}`;
+    const tmeLink = `https://t.me/socks?server=${node.domain}&port=${node.socks5_port}&user=${username}&pass=${password}`;
+
+    await ctx.answerCbQuery('SOCKS5 аккаунт добавлен!');
+    await ctx.editMessageText(
+      `✅ *SOCKS5 аккаунт успешно добавлен!*\n\n` +
+      `Нода: ${node.name}\n` +
+      `Username: \`${username}\`\n` +
+      `Password: \`${password}\`\n\n` +
+      `*Ссылки для импорта:*\n` +
+      `\`${tgLink}\`\n\n` +
+      `\`${tmeLink}\``,
+      { parse_mode: 'Markdown' }
+    );
+
+    queries.insertLog.run({
+      node_id: nodeId,
+      level: 'info',
+      message: 'SOCKS5 account added',
+      details: `Username: ${username}, Admin: ${ctx.from!.id}`,
+    });
+  } catch (err: any) {
+    await ctx.answerCbQuery('Ошибка при добавлении');
+    await ctx.reply(`❌ Ошибка: ${err.message}`);
+  }
+});
 
 // ═══════════════════════════════════════════════
 // МОНИТОРИНГ
 // ═══════════════════════════════════════════════
 
 bot.command('stats', async (ctx) => {
-  await showStats(ctx);
-});
-
-bot.action('show_stats', async (ctx: any) => {
-  await ctx.answerCbQuery();
-  await showStats(ctx, true);
-});
-
-bot.action('refresh_stats', async (ctx: any) => {
-  await ctx.answerCbQuery('🔄 Обновление...');
-  await showStats(ctx, true);
-});
-
-async function showStats(ctx: any, isEdit: boolean = false) {
-  const nodes = queries.getActiveNodes.all([]) as any[];
+  const nodes = queries.getActiveNodes.all() as any[];
+  const allStats = queries.getAllNodesLatestStats.all() as any[];
   
-  if (nodes.length === 0) {
-    const text = '📭 Нет активных нод. Добавьте ноду через /add_node';
-    return isEdit ? ctx.editMessageText(text) : ctx.reply(text);
-  }
-
-  let text = '📊 <b>Статистика прокси</b>\n';
-  text += `⏰ ${new Date().toLocaleString('ru-RU')}\n\n`;
+  let text = '📊 *Общая статистика*\n\n';
+  text += `Нод активно: ${nodes.length}\n\n`;
 
   let totalMtprotoConnections = 0;
-  let totalMtprotoMax = 0;
   let totalSocks5Connections = 0;
-  let avgCpu = 0;
-  let avgRam = 0;
   let totalNetworkIn = 0;
   let totalNetworkOut = 0;
-  let onlineNodes = 0;
-  let offlineNodes = 0;
 
-  // Собираем статистику по каждой ноде
-  for (const node of nodes) {
-    const client = getNodeClient(node.id);
-    if (!client) continue;
-
-    try {
-      const health = await client.getHealth();
-      const stats = await client.getStats();
-
-      if (health.status === 'healthy') {
-        onlineNodes++;
-      } else {
-        offlineNodes++;
-      }
-
-      totalMtprotoConnections += stats.mtproto.connections || 0;
-      totalMtprotoMax += stats.mtproto.maxConnections || 0;
-      totalSocks5Connections += stats.socks5.connections || 0;
-      avgCpu += health.system.cpuUsage || 0;
-      avgRam += health.system.ramUsage || 0;
-      totalNetworkIn += stats.network.inMb || 0;
-      totalNetworkOut += stats.network.outMb || 0;
-
-      // Статус ноды
-      const statusEmoji = health.status === 'healthy' ? '🟢' : '🔴';
-      const uptimeHours = Math.floor(health.uptime / 3600);
-      const uptimeDays = Math.floor(uptimeHours / 24);
-      const uptimeStr = uptimeDays > 0 ? `${uptimeDays}д` : `${uptimeHours}ч`;
-
-      text += `${statusEmoji} <b>${node.name}</b> <code>${uptimeStr}</code>\n`;
-      
-      // MTProto
-      if (health.mtproto.running) {
-        const mtprotoPercent = stats.mtproto.maxConnections > 0 
-          ? Math.round((stats.mtproto.connections / stats.mtproto.maxConnections) * 100)
-          : 0;
-        const mtprotoBar = generateProgressBar(mtprotoPercent);
-        text += `   🔷 MTProto: ${stats.mtproto.connections}/${stats.mtproto.maxConnections} ${mtprotoBar}\n`;
-      } else {
-        text += `   🔷 MTProto: <i>не настроен</i>\n`;
-      }
-      
-      // SOCKS5
-      if (health.socks5.running) {
-        if (stats.socks5.connections > 0) {
-          text += `   🔵 SOCKS5: ${stats.socks5.connections} активных\n`;
-        } else {
-          text += `   🔵 SOCKS5: настроен, нет подключений\n`;
-        }
-      }
-      
-      // Система
-      const cpuBar = generateProgressBar(Math.round(health.system.cpuUsage));
-      const ramBar = generateProgressBar(Math.round(health.system.ramUsage));
-      text += `   💻 CPU: ${health.system.cpuUsage.toFixed(1)}% ${cpuBar}\n`;
-      text += `   🧠 RAM: ${health.system.ramUsage.toFixed(1)}% ${ramBar}\n`;
-      text += `   💾 Disk: ${health.system.diskUsage}%\n`;
-      
-      // Сеть
-      text += `   🌐 ↓${stats.network.inMb.toFixed(1)}MB ↑${stats.network.outMb.toFixed(1)}MB\n\n`;
-
-    } catch (err: any) {
-      offlineNodes++;
-      text += `🔴 <b>${node.name}</b> - <i>недоступна</i>\n`;
-      text += `   ⚠️ ${err.message}\n\n`;
-    }
+  for (const stat of allStats) {
+    totalMtprotoConnections += stat.mtproto_connections || 0;
+    totalSocks5Connections += stat.socks5_connections || 0;
+    totalNetworkIn += stat.network_in_mb || 0;
+    totalNetworkOut += stat.network_out_mb || 0;
+    
+    text += `*${stat.node_name}*\n`;
+    text += `  MTProto: ${stat.mtproto_connections}/${stat.mtproto_max}\n`;
+    text += `  SOCKS5: ${stat.socks5_connections}\n`;
+    text += `  CPU: ${stat.cpu_usage?.toFixed(1)}% | RAM: ${stat.ram_usage?.toFixed(1)}%\n`;
+    text += `  Трафик: ↓${(stat.network_in_mb || 0).toFixed(2)}MB ↑${(stat.network_out_mb || 0).toFixed(2)}MB\n\n`;
   }
 
-  // Средние значения
-  const totalNodes = onlineNodes + offlineNodes;
-  if (onlineNodes > 0) {
-    avgCpu = avgCpu / onlineNodes;
-    avgRam = avgRam / onlineNodes;
-  }
+  text += `*Итого:*\n`;
+  text += `MTProto подключений: ${totalMtprotoConnections}\n`;
+  text += `SOCKS5 подключений: ${totalSocks5Connections}\n`;
+  text += `Трафик: ↓${totalNetworkIn.toFixed(2)}MB ↑${totalNetworkOut.toFixed(2)}MB\n`;
 
-  // Итоговая статистика
-  text += `━━━━━━━━━━━━━━━\n`;
-  text += `📈 <b>Общая статистика:</b>\n\n`;
-  text += `🖥 Нод: ${onlineNodes} online / ${offlineNodes} offline из ${totalNodes}\n`;
-  text += `👥 Всего подключений:\n`;
-  text += `   • MTProto: <b>${totalMtprotoConnections}</b>/${totalMtprotoMax}\n`;
-  text += `   • SOCKS5: <b>${totalSocks5Connections}</b>\n`;
-  text += `📊 Средняя нагрузка:\n`;
-  text += `   • CPU: ${avgCpu.toFixed(1)}%\n`;
-  text += `   • RAM: ${avgRam.toFixed(1)}%\n`;
-  text += `🌐 Суммарный трафик:\n`;
-  text += `   • ↓ ${(totalNetworkIn / 1024).toFixed(2)} GB\n`;
-  text += `   • ↑ ${(totalNetworkOut / 1024).toFixed(2)} GB\n`;
+  // Статистика по пользователям
+  const activeUsers = queries.getActiveRemnawaveBindings.all() as any[];
+  const totalSecrets = queries.getAllUserMtprotoSecrets.all() as any[];
+  const activeSecrets = totalSecrets.filter(s => s.is_active === 1);
 
-  const keyboard = {
-    inline_keyboard: [
-      [{ text: '🔄 Обновить', callback_data: 'refresh_stats' }],
-      [{ text: '⬅️ Назад', callback_data: 'back_to_main' }]
-    ]
-  };
+  text += `\n*Пользователи:*\n`;
+  text += `Активных привязок: ${activeUsers.length}\n`;
+  text += `Активных секретов: ${activeSecrets.length}\n`;
 
-  try {
-    if (isEdit) {
-      await ctx.editMessageText(text, {
-        parse_mode: 'HTML',
-        reply_markup: keyboard
-      });
-    } else {
-      await ctx.reply(text, {
-        parse_mode: 'HTML',
-        reply_markup: keyboard
-      });
-    }
-  } catch (err) {
-    console.error('Error showing stats:', err);
-  }
-}
-
-// Функция для генерации прогресс-бара
-function generateProgressBar(percent: number, length: number = 10): string {
-  const filled = Math.round((percent / 100) * length);
-  const empty = length - filled;
-  
-  let bar = '';
-  for (let i = 0; i < filled; i++) bar += '█';
-  for (let i = 0; i < empty; i++) bar += '░';
-  
-  return bar;
-}
+  await ctx.reply(text, { parse_mode: 'Markdown' });
+});
 
 bot.command('health', async (ctx) => {
-  const nodes = queries.getActiveNodes.all([]) as any[];
+  const nodes = queries.getActiveNodes.all() as any[];
   
-  let text = '🏥 <b>Здоровье нод</b>\n\n';
+  let text = '🏥 *Здоровье нод*\n\n';
 
   for (const node of nodes) {
     const client = getNodeClient(node.id);
@@ -1495,67 +763,13 @@ bot.command('health', async (ctx) => {
       details = err.message;
     }
 
-    text += `<b>${node.name}</b>\n`;
+    text += `*${node.name}*\n`;
     text += `Status: ${status}\n`;
     if (details) text += `${details}\n`;
     text += `\n`;
   }
 
-  await ctx.reply(text, { parse_mode: 'HTML' });
-});
-
-bot.command('refresh_nodes', async (ctx) => {
-  await ctx.reply('🔄 Обновляю статус всех нод...');
-  
-  const nodes = queries.getActiveNodes.all([]) as any[];
-  let updated = 0;
-  let errors = 0;
-
-  for (const node of nodes) {
-    const client = getNodeClient(node.id);
-    if (!client) {
-      errors++;
-      continue;
-    }
-
-    try {
-      const health = await client.getHealth();
-      const stats = await client.getStats();
-
-      // Обновляем статус ноды
-      queries.updateNodeStatus.run({
-        id: node.id,
-        status: health.status === 'healthy' ? 'online' : 'offline',
-      });
-
-      // Сохраняем статистику
-      queries.insertStats.run({
-        node_id: node.id,
-        mtproto_connections: stats.mtproto.connections,
-        mtproto_max: stats.mtproto.maxConnections,
-        socks5_connections: stats.socks5.connections,
-        cpu_usage: health.system.cpuUsage,
-        ram_usage: health.system.ramUsage,
-        network_in_mb: stats.network.inMb,
-        network_out_mb: stats.network.outMb,
-      });
-
-      updated++;
-    } catch (err: any) {
-      queries.updateNodeStatus.run({
-        id: node.id,
-        status: 'error',
-      });
-      errors++;
-    }
-  }
-
-  await ctx.reply(
-    `✅ Обновление завершено!\n\n` +
-    `Обновлено: ${updated}\n` +
-    `Ошибок: ${errors}\n\n` +
-    `Проверьте: /nodes`
-  );
+  await ctx.reply(text, { parse_mode: 'Markdown' });
 });
 
 bot.command('logs', async (ctx) => {
@@ -1596,50 +810,10 @@ bot.command('logs', async (ctx) => {
     text += logs.socks5.substring(Math.max(0, logs.socks5.length - 1500));
     text += '\n```';
 
-    await ctx.reply(text);
+    await ctx.reply(text, { parse_mode: 'Markdown' });
 
   } catch (err: any) {
     await ctx.reply(`❌ Ошибка: ${err.message}`);
-  }
-});
-
-bot.command('restart_node', async (ctx) => {
-  const nodeId = parseInt(ctx.message.text.split(' ')[1]);
-  
-  if (!nodeId) {
-    return ctx.reply('Использование: /restart_node <node_id>');
-  }
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    return ctx.reply('❌ Нода не найдена');
-  }
-
-  const client = getNodeClient(nodeId);
-  if (!client) {
-    return ctx.reply('❌ Не удалось подключиться к ноде');
-  }
-
-  try {
-    await ctx.reply('⏳ Перезапуск прокси-сервисов...');
-    
-    // Перезапускаем MTProxy
-    await client.restartMtProto();
-    
-    // Перезапускаем SOCKS5
-    await client.restartSocks5();
-    
-    await ctx.reply(`✅ Прокси на ноде "${node.name}" успешно перезапущены`);
-    
-    queries.insertLog.run({
-      node_id: nodeId,
-      level: 'info',
-      message: 'Proxies restarted',
-      details: `Admin ID: ${ctx.from.id}`,
-    });
-
-  } catch (err: any) {
-    await ctx.reply(`❌ Ошибка при перезапуске: ${err.message}`);
   }
 });
 
@@ -1694,7 +868,7 @@ bot.command('set_workers', async (ctx) => {
       `Воркеров: ${workers}\n` +
       `Max соединений: ${workers * 60000}\n\n` +
       `MTProxy перезапущен с новыми настройками.`,
-     
+      { parse_mode: 'Markdown' }
     );
 
     queries.insertLog.run({
@@ -1702,74 +876,6 @@ bot.command('set_workers', async (ctx) => {
       level: 'info',
       message: 'Workers updated',
       details: `Workers: ${workers}, Admin: ${ctx.from!.id}`,
-    });
-
-  } catch (err: any) {
-    await ctx.reply(`❌ Ошибка: ${err.message}`);
-  }
-});
-
-// ─── SET AD_TAG ───
-
-bot.command('set_ad_tag', async (ctx) => {
-  const args = ctx.message.text.split(' ').slice(1);
-  const nodeId = parseInt(args[0]);
-  const adTag = args[1];
-
-  if (!nodeId || !adTag) {
-    return ctx.reply(
-      '🏷️ *Установка рекламного тега*\n\n' +
-      'Использование: `/set_ad_tag <node_id> <ad_tag>`\n\n' +
-      'AD\\_TAG - это 16-значный hex тег для монетизации трафика MTProxy.\n' +
-      'Получить можно у @MTProxybot после регистрации канала.\n\n' +
-      'Примеры:\n' +
-      '`/set_ad_tag 1 a1b2c3d4e5f67890`\n' +
-      '`/set_ad_tag 2 none` - удалить тег',
-      { parse_mode: 'Markdown' }
-    );
-  }
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    return ctx.reply('❌ Нода не найдена');
-  }
-
-  // Валидация AD_TAG (должен быть 16 hex символов или 'none')
-  const finalAdTag = adTag.toLowerCase() === 'none' ? null : adTag;
-  if (finalAdTag && !/^[a-f0-9]{16}$/i.test(finalAdTag)) {
-    return ctx.reply('❌ Неверный формат AD_TAG. Должно быть 16 hex символов (a-f, 0-9)');
-  }
-
-  const client = getNodeClient(nodeId);
-  if (!client) {
-    return ctx.reply('❌ Не удалось подключиться к ноде');
-  }
-
-  try {
-    await ctx.reply(`⏳ ${finalAdTag ? 'Установка' : 'Удаление'} AD_TAG...`);
-    
-    // Отправляем запрос на Node Agent для обновления MTProxy конфига
-    await client.updateAdTag(finalAdTag);
-    
-    // Обновляем в БД
-    queries.updateNodeAdTag.run({
-      id: nodeId,
-      ad_tag: finalAdTag,
-    });
-
-    await ctx.reply(
-      `✅ *AD\\_TAG ${finalAdTag ? 'установлен' : 'удалён'}!*\n\n` +
-      `Нода: ${node.name}\n` +
-      (finalAdTag ? `Тег: \`${finalAdTag}\`` : 'Тег удалён') + '\n\n' +
-      `MTProxy перезапущен с новыми настройками.`,
-      { parse_mode: 'Markdown' }
-    );
-
-    queries.insertLog.run({
-      node_id: nodeId,
-      level: 'info',
-      message: finalAdTag ? 'AD_TAG set' : 'AD_TAG removed',
-      details: `AD_TAG: ${finalAdTag || 'none'}, Admin: ${ctx.from!.id}`,
     });
 
   } catch (err: any) {
@@ -1790,7 +896,7 @@ bot.command('create_subscription', async (ctx) => {
   const name = args.join(' ') || 'Новая подписка';
 
   // Получаем список активных нод для выбора
-  const nodes = queries.getActiveNodes.all([]) as any[];
+  const nodes = queries.getActiveNodes.all() as any[];
   
   if (nodes.length === 0) {
     await ctx.reply('⚠️ Нет активных нод. Сначала добавьте хотя бы одну ноду.');
@@ -1814,7 +920,7 @@ bot.command('create_subscription', async (ctx) => {
     `📝 *Создание подписки*\n\n` +
     `Название: ${name}\n\n` +
     `Выберите ноды, которые будут включены в подписку:`,
-    {  ...keyboard }
+    { parse_mode: 'Markdown', ...keyboard }
   );
 });
 
@@ -1822,30 +928,30 @@ bot.command('create_subscription', async (ctx) => {
  * Список всех подписок
  */
 bot.command('subscriptions', async (ctx) => {
-  const subscriptions = queries.getAllSubscriptions.all([]) as any[];
+  const subscriptions = queries.getAllSubscriptions.all() as any[];
 
   if (subscriptions.length === 0) {
     await ctx.reply('📭 Нет созданных подписок.\n\nИспользуйте /create_subscription для создания.');
     return;
   }
 
-  let text = '📋 <b>Список подписок</b>\n\n';
+  let text = '📋 *Список подписок*\n\n';
 
   for (const sub of subscriptions) {
     const status = sub.is_active ? '🟢' : '🔴';
     const nodeIds = JSON.parse(sub.node_ids || '[]');
     
-    text += `${status} <b>${sub.name}</b>\n`;
-    text += `ID: <code>${sub.id}</code>\n`;
+    text += `${status} *${sub.name}*\n`;
+    text += `ID: \`${sub.id}\`\n`;
     text += `Нод: ${nodeIds.length}\n`;
     text += `MTProto: ${sub.include_mtproto ? '✅' : '❌'} | SOCKS5: ${sub.include_socks5 ? '✅' : '❌'}\n`;
     text += `Обращений: ${sub.access_count}\n`;
     text += `\n`;
   }
 
-  text += `\nИспользуйте /subscription &lt;id&gt; для подробностей`;
+  text += `\nИспользуйте /subscription <id> для подробностей`;
 
-  await ctx.reply(text, { parse_mode: 'HTML' });
+  await ctx.reply(text, { parse_mode: 'Markdown' });
 });
 
 /**
@@ -1902,7 +1008,7 @@ bot.command('subscription', async (ctx) => {
       ]
     ]);
 
-    await ctx.reply(text, {  ...keyboard });
+    await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
 
   } catch (err: any) {
     await ctx.reply(`❌ Ошибка: ${err.message}`);
@@ -1977,7 +1083,7 @@ bot.action(/^sub_refresh_(\d+)$/, async (ctx) => {
       ]
     ]);
 
-    await ctx.editMessageText(text, {  ...keyboard });
+    await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
     await ctx.answerCbQuery('Обновлено!');
 
   } catch (err: any) {
@@ -2024,7 +1130,7 @@ bot.action(/^sub_toggle_(\d+)$/, async (ctx) => {
         ]
       ]);
 
-      await ctx.editMessageText(text, {  ...keyboard });
+      await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
     }
 
   } catch (err: any) {
@@ -2053,7 +1159,7 @@ bot.action(/^sub_delete_(\d+)$/, async (ctx) => {
     `⚠️ *Удаление подписки*\n\n` +
     `Название: ${sub.name}\n\n` +
     `Вы уверены? Это действие нельзя отменить.`,
-    {  ...keyboard }
+    { parse_mode: 'Markdown', ...keyboard }
   );
 
   await ctx.answerCbQuery();
@@ -2068,7 +1174,7 @@ bot.action(/^sub_delete_confirm_(\d+)$/, async (ctx) => {
     
     await ctx.editMessageText(
       '✅ Подписка успешно удалена',
-     
+      { parse_mode: 'Markdown' }
     );
     
     await ctx.answerCbQuery('Удалено!');
@@ -2079,699 +1185,14 @@ bot.action(/^sub_delete_confirm_(\d+)$/, async (ctx) => {
 });
 
 // ═══════════════════════════════════════════════
-// ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ (для диалогов)
-// ═══════════════════════════════════════════════
-
-bot.command('cancel', async (ctx) => {
-  const userId = ctx.from.id;
-  const state = userStates.get(userId);
-  
-  if (state && state.action) {
-    userStates.delete(userId);
-    await ctx.reply('❌ Действие отменено.');
-  } else {
-    await ctx.reply('Нет активных действий для отмены.');
-  }
-});
-
-bot.on(message('text'), async (ctx) => {
-  const userId = ctx.from.id;
-  const state = userStates.get(userId);
-  const text = ctx.message.text;
-  
-  console.log(`[TextHandler] User ${userId} sent text:`, text);
-  console.log(`[TextHandler] Current state:`, state);
-  
-  if (!state || !state.action) {
-    console.log('[TextHandler] No active state, ignoring message');
-    return; // Игнорируем обычные сообщения
-  }
-
-  console.log(`[TextHandler] Processing action: ${state.action}`);
-
-  // ─── Добавление ноды ───
-  if (state.action === 'add_node') {
-    try {
-      // Парсим данные из сообщения
-      const data: any = {};
-      const lines = text.split('\n');
-      
-      for (const line of lines) {
-        const [key, ...valueParts] = line.split(':');
-        if (!key || valueParts.length === 0) continue;
-        
-        const value = valueParts.join(':').trim();
-        const cleanKey = key.trim().toLowerCase().replace(/\s+/g, '_');
-        data[cleanKey] = value;
-      }
-
-      // Валидация обязательных полей (только 3 поля!)
-      const required = ['name', 'ip', 'api_key'];
-      const missing = required.filter(field => !data[field]);
-      
-      if (missing.length > 0) {
-        await ctx.reply(
-          `❌ Не хватает полей: ${missing.join(', ')}\n\n` +
-          'Отправьте данные снова или /cancel для отмены.'
-        );
-        return;
-      }
-
-      // Проверяем доступность API ноды
-      await ctx.reply('⏳ Подключаюсь к ноде...');
-      
-      const apiUrl = `http://${data.ip}:3000`;
-      
-      // Добавляем ноду в БД сразу
-      const result = queries.insertNode.run({
-        name: data.name,
-        domain: data.ip,
-        ip: data.ip,
-        api_url: apiUrl,
-        api_token: data.api_key,
-        mtproto_port: 443,
-        socks5_port: 1080,
-        workers: 2,
-        cpu_cores: 2,
-        ram_mb: 2048,
-        status: 'pending',
-        ad_tag: null, // По умолчанию не установлен
-      });
-
-        const nodeId = (result as any).lastInsertRowid;
-      
-      try {
-        // Получаем клиента через getNodeClient
-        const testClient = getNodeClient(nodeId);
-        if (!testClient) {
-          throw new Error('Не удалось создать API клиента');
-        }
-        
-        // Проверяем подключение
-        await testClient.getHealth();
-        
-        // Обновляем статус на online
-        queries.updateNodeStatus.run({ status: 'online', id: nodeId });
-
-        // Очищаем состояние
-        userStates.delete(userId);
-
-        await ctx.reply(
-          `✅ Нода успешно добавлена!\n\n` +
-          `🆔 ID: ${nodeId}\n` +
-          `📛 Имя: ${data.name}\n` +
-          `📡 IP: ${data.ip}\n` +
-          `� API URL: ${apiUrl}\n` +
-          `✅ Статус: Онлайн\n\n` +
-          `Теперь настройте прокси через:\n` +
-          `/add_secret ${nodeId} - добавить MTProxy\n` +
-          `/add_socks5 ${nodeId} - добавить SOCKS5\n\n` +
-          `Просмотр: /node ${nodeId}`
-        );
-
-      } catch (apiErr: any) {
-        // Удаляем ноду если не удалось подключиться
-        queries.deleteNode.run(nodeId);
-        
-        await ctx.reply(
-          `❌ Не удалось подключиться к ноде:\n${apiErr.message}\n\n` +
-          `Проверьте:\n` +
-          `- Нода запущена (mtproxy-node status)\n` +
-          `- Порт 3000 открыт\n` +
-          `- API KEY правильный\n\n` +
-          `Попробуйте снова или /cancel`
-        );
-        return;
-      }
-
-    } catch (err: any) {
-      await ctx.reply(`❌ Ошибка при добавлении ноды: ${err.message}`);
-      userStates.delete(userId);
-    }
-  }
-
-  // ─── Выбор домена для MTProto ───
-  if (state.action === 'add_secret_domain') {
-    console.log('[MTProto] Processing domain input:', text);
-    const domain = text.trim();
-    
-    if (!domain) {
-      await ctx.reply('❌ Домен не может быть пустым. Отправьте домен или /cancel для отмены.');
-      return;
-    }
-
-    // Валидация домена
-    const domainRegex = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    if (!domainRegex.test(domain)) {
-      await ctx.reply('❌ Неверный формат домена. Отправьте корректный домен или /cancel для отмены.');
-      return;
-    }
-
-    const node = queries.getNodeById.get(state.nodeId) as any;
-    if (!node) {
-      await ctx.reply('❌ Нода не найдена');
-      userStates.delete(userId);
-      return;
-    }
-
-    const isFakeTls = state.isFakeTls || false;
-    const typeText = isFakeTls ? 'Fake-TLS (DD)' : 'Обычный';
-
-    console.log(`[MTProto] Adding secret to node ${node.id} (${node.name})`);
-    console.log(`[MTProto] Secret: ${state.secret}, Domain: ${domain}, FakeTLS: ${isFakeTls}`);
-
-    try {
-      // Показываем прогресс
-      await ctx.reply('⏳ Добавляю секрет на ноду...');
-
-      // Добавляем секрет в БД
-      console.log('[MTProto] Inserting secret to database...');
-      queries.insertSecret.run({
-        node_id: state.nodeId,
-        secret: state.secret,
-        is_fake_tls: isFakeTls ? 1 : 0,
-        description: `Домен: ${domain}`,
-      });
-      console.log('[MTProto] Secret added to database');
-
-      // Отправляем на ноду
-      const client = getNodeClient(state.nodeId!);
-      if (!client) {
-        throw new Error('Не удалось подключиться к ноде');
-      }
-
-      console.log('[MTProto] Calling node API to add secret...');
-      await client.addMtProtoSecret({
-        secret: state.secret!,
-        isFakeTls: isFakeTls,
-        description: `Домен: ${domain}`
-      });
-      console.log('[MTProto] Secret added to node successfully');
-
-      // Генерируем ссылку
-      const link = ProxyLinkGenerator.generateMtProtoLink(domain, 443, state.secret!, isFakeTls);
-      console.log('[MTProto] Generated link:', link);
-
-      userStates.delete(userId);
-
-      await ctx.reply(
-        `✅ <b>MTProto секрет добавлен!</b>\n\n` +
-        `Нода: ${node.name}\n` +
-        `Тип: ${typeText}\n` +
-        `Домен: ${domain}\n\n` +
-        `Ссылка:\n<code>${link}</code>`,
-        { parse_mode: 'HTML' }
-      );
-
-      console.log('[MTProto] Process completed successfully');
-
-    } catch (err: any) {
-      console.error('[MTProto] Error adding secret:', err);
-      userStates.delete(userId);
-      await ctx.reply(
-        `❌ <b>Ошибка при добавлении секрета:</b>\n\n` +
-        `${err.message}\n\n` +
-        `Попробуйте:\n` +
-        `• Проверить что нода доступна: /health\n` +
-        `• Перезапустить ноду: /restart_node ${state.nodeId}`,
-        { parse_mode: 'HTML' }
-      );
-    }
-  }
-
-  // ─── Выбор IP для MTProto ───
-  if (state.action === 'add_secret_ip') {
-    console.log('[MTProto] Processing IP input:', text);
-    const ip = text.trim();
-    
-    if (!ip) {
-      await ctx.reply('❌ IP адрес не может быть пустым. Отправьте IP или /cancel для отмены.');
-      return;
-    }
-
-    // Валидация IP
-    const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-    if (!ipRegex.test(ip)) {
-      await ctx.reply('❌ Неверный формат IP адреса. Отправьте корректный IP или /cancel для отмены.');
-      return;
-    }
-
-    const node = queries.getNodeById.get(state.nodeId) as any;
-    if (!node) {
-      await ctx.reply('❌ Нода не найдена');
-      userStates.delete(userId);
-      return;
-    }
-
-    const isFakeTls = state.isFakeTls || false;
-    const typeText = isFakeTls ? 'Fake-TLS (DD)' : 'Обычный';
-
-    console.log(`[MTProto] Adding secret to node ${node.id} (${node.name})`);
-    console.log(`[MTProto] Secret: ${state.secret}, IP: ${ip}, FakeTLS: ${isFakeTls}`);
-
-    try {
-      // Показываем прогресс
-      await ctx.reply('⏳ Добавляю секрет на ноду...');
-
-      // Добавляем секрет в БД
-      console.log('[MTProto] Inserting secret to database...');
-      queries.insertSecret.run({
-        node_id: state.nodeId,
-        secret: state.secret,
-        is_fake_tls: isFakeTls ? 1 : 0,
-        description: `IP: ${ip}`,
-      });
-      console.log('[MTProto] Secret added to database');
-
-      // Отправляем на ноду
-      const client = getNodeClient(state.nodeId!);
-      if (!client) {
-        throw new Error('Не удалось подключиться к ноде');
-      }
-
-      console.log('[MTProto] Calling node API to add secret...');
-      await client.addMtProtoSecret({
-        secret: state.secret!,
-        isFakeTls: isFakeTls,
-        description: `IP: ${ip}`
-      });
-      console.log('[MTProto] Secret added to node successfully');
-
-      // Генерируем ссылку
-      const link = ProxyLinkGenerator.generateMtProtoLink(ip, 443, state.secret!, isFakeTls);
-      console.log('[MTProto] Generated link:', link);
-
-      userStates.delete(userId);
-
-      await ctx.reply(
-        `✅ <b>MTProto секрет добавлен!</b>\n\n` +
-        `Нода: ${node.name}\n` +
-        `Тип: ${typeText}\n` +
-        `IP: ${ip}\n\n` +
-        `Ссылка:\n<code>${link}</code>`,
-        { parse_mode: 'HTML' }
-      );
-
-      console.log('[MTProto] Process completed successfully');
-
-    } catch (err: any) {
-      console.error('[MTProto] Error adding secret:', err);
-      userStates.delete(userId);
-      await ctx.reply(
-        `❌ <b>Ошибка при добавлении секрета:</b>\n\n` +
-        `${err.message}\n\n` +
-        `Попробуйте:\n` +
-        `• Проверить что нода доступна: /health\n` +
-        `• Перезапустить ноду: /restart_node ${state.nodeId}`,
-        { parse_mode: 'HTML' }
-      );
-    }
-  }
-
-  // ─── Добавление SOCKS5 аккаунта ───
-  if (state.action === 'add_socks5') {
-    const lines = text.trim().split('\n');
-    let username = '';
-    let password = '';
-
-    // Парсим данные
-    for (const line of lines) {
-      const [key, ...valueParts] = line.split(':');
-      if (!key || valueParts.length === 0) continue;
-      
-      const value = valueParts.join(':').trim();
-      const cleanKey = key.trim().toLowerCase();
-      
-      if (cleanKey === 'username') username = value;
-      if (cleanKey === 'password') password = value;
-    }
-
-    // Валидация
-    if (!username || !password) {
-      await ctx.reply(
-        '❌ Некорректный формат. Отправьте данные в формате:\n\n' +
-        'username: myuser\n' +
-        'password: mypass\n\n' +
-        'Или /cancel для отмены.'
-      );
-      return;
-    }
-
-    const node = queries.getNodeById.get(state.nodeId) as any;
-    if (!node) {
-      await ctx.reply('❌ Нода не найдена');
-      userStates.delete(userId);
-      return;
-    }
-
-    const client = getNodeClient(state.nodeId!);
-    if (!client) {
-      await ctx.reply('❌ Не удалось подключиться к ноде');
-      userStates.delete(userId);
-      return;
-    }
-
-    try {
-      // Добавляем в БД
-      queries.insertSocks5Account.run({
-        node_id: state.nodeId,
-        username,
-        password,
-        description: `Added by admin ${userId}`,
-      });
-
-      // Отправляем на Node Agent
-      await client.addSocks5Account({ username, password });
-
-      // Генерируем ссылки
-      const tgLink = ProxyLinkGenerator.generateSocks5TgLink(
-        node.domain,
-        node.socks5_port,
-        username,
-        password
-      );
-
-      userStates.delete(userId);
-
-      await ctx.reply(
-        `✅ *SOCKS5 прокси успешно создан!*\n\n` +
-        `🌐 *Нода:* ${node.name}\n` +
-        `👤 *Username:* \`${username}\`\n` +
-        `🔑 *Password:* \`${password}\`\n\n` +
-        `───────────────\n\n` +
-        `🔗 *Deep Link:*\n` +
-        `\`${tgLink}\`\n\n` +
-        `👇 *Подключить в 1 клик:*`,
-        {
-          parse_mode: 'Markdown',
-          link_preview_options: { is_disabled: true },
-          ...Markup.inlineKeyboard([
-            [Markup.button.url('🚀 Подключить прокси', tgLink)]
-          ])
-        }
-      );
-
-      queries.insertLog.run({
-        node_id: state.nodeId,
-        level: 'info',
-        message: 'SOCKS5 account added',
-        details: `Username: ${username}, Admin: ${userId}`,
-      });
-
-    } catch (err: any) {
-      await ctx.reply(`❌ Ошибка при добавлении: ${err.message}`);
-      userStates.delete(userId);
-    }
-  }
-
-  // ─── Установка AD_TAG ───
-  if (state.action === 'set_ad_tag') {
-    const adTag = text.trim();
-    
-    // Валидация формата (16 hex символов)
-    if (!/^[a-f0-9]{16}$/i.test(adTag)) {
-      await ctx.reply(
-        '❌ Неверный формат AD_TAG!\n\n' +
-        'Должно быть 16 hex символов (a-f, 0-9)\n' +
-        'Пример: <code>a1b2c3d4e5f67890</code>\n\n' +
-        'Отправьте правильный тег или /cancel для отмены.',
-        { parse_mode: 'HTML' }
-      );
-      return;
-    }
-
-    const node = queries.getNodeById.get(state.nodeId) as any;
-    if (!node) {
-      await ctx.reply('❌ Нода не найдена');
-      userStates.delete(userId);
-      return;
-    }
-
-    const client = getNodeClient(state.nodeId!);
-    if (!client) {
-      await ctx.reply('❌ Не удалось подключиться к ноде');
-      userStates.delete(userId);
-      return;
-    }
-
-    try {
-      await ctx.reply('⏳ Устанавливаю AD_TAG...');
-      
-      await client.updateAdTag(adTag);
-      
-      queries.updateNodeAdTag.run({
-        id: state.nodeId,
-        ad_tag: adTag,
-      });
-
-      userStates.delete(userId);
-
-      await ctx.reply(
-        `✅ <b>AD_TAG установлен!</b>\n\n` +
-        `Нода: ${node.name}\n` +
-        `Тег: <code>${adTag}</code>\n\n` +
-        `MTProxy перезапущен с новыми настройками.`,
-        { parse_mode: 'HTML' }
-      );
-
-      queries.insertLog.run({
-        node_id: state.nodeId,
-        level: 'info',
-        message: 'AD_TAG set',
-        details: `AD_TAG: ${adTag}, Admin: ${userId}`,
-      });
-
-    } catch (err: any) {
-      await ctx.reply(`❌ Ошибка: ${err.message}`);
-      userStates.delete(userId);
-    }
-  }
-});
-
-// ═══════════════════════════════════════════════
-// УПРАВЛЕНИЕ ССЫЛКАМИ
-// ═══════════════════════════════════════════════
-
-bot.action('manage_links', async (ctx) => {
-  try {
-    await ctx.answerCbQuery();
-    console.log('manage_links action triggered by user:', ctx.from?.id);
-
-    const nodes = queries.getAllNodes.all([]) as any[];
-    console.log('Found nodes:', nodes.length, 'nodes data:', nodes);
-
-    if (nodes.length === 0) {
-      console.log('No nodes found, showing message');
-      return await ctx.editMessageText('📭 Нет добавленных нод.\n\nСначала добавьте ноду через /add_node', {
-        reply_markup: {
-          inline_keyboard: [[{ text: '⬅️ Назад', callback_data: 'back_to_main' }]]
-        }
-      });
-    }
-
-    let text = '🔗 <b>Управление ссылками</b>\n\nВыберите ноду для управления ссылками:\n\n';
-
-    const buttons = [];
-    for (const node of nodes) {
-      const statusEmoji = node.status === 'online' ? '🟢' : 
-                         node.status === 'offline' ? '🔴' : '🟡';
-      
-      text += `${statusEmoji} <b>${node.name}</b>\n`;
-      
-      // Получаем количество ссылок
-      const secrets = queries.getNodeSecrets.all(node.id) as any[];
-      const socks5Accounts = queries.getNodeSocks5Accounts.all(node.id) as any[];
-      const totalLinks = secrets.length + socks5Accounts.length;
-      
-      text += `   Ссылок: ${totalLinks}\n\n`;
-      
-      buttons.push([{ text: `${node.name} (${totalLinks})`, callback_data: `manage_node_links_${node.id}` }]);
-    }
-    
-    buttons.push([{ text: '⬅️ Назад', callback_data: 'back_to_main' }]);
-    
-    console.log('Editing message with buttons, text length:', text.length);
-    const result = await ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: buttons
-      }
-    });
-    console.log('Edit result:', result);
-  } catch (error) {
-    console.error('Error in manage_links action:', error);
-    try {
-      await ctx.answerCbQuery('Произошла ошибка');
-    } catch (e) {
-      console.error('Error answering callback query:', e);
-    }
-  }
-});async function showManageNodeLinks(ctx: any, nodeId: number) {
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  const secrets = queries.getNodeSecrets.all(nodeId) as any[];
-  const socks5Accounts = queries.getNodeSocks5Accounts.all(nodeId) as any[];
-
-  let text = `🔗 <b>Управление ссылками - ${node.name}</b>\n\n`;
-  const buttons: any[][] = [];
-
-  // MTProto ссылки
-  if (secrets.length > 0) {
-    text += `🟣 <b>MTProto (${secrets.length}):</b>\n`;
-    for (const secret of secrets) {
-      const type = secret.is_fake_tls ? '🔒 Fake-TLS' : '🔓 Обычный';
-      
-      // Извлекаем сервер из description (формат "Домен: xxx" или "IP: xxx")
-      let server = node.domain;
-      if (secret.description) {
-        const match = secret.description.match(/(?:Домен|IP):\s*(.+)/);
-        if (match) {
-          server = match[1].trim();
-        }
-      }
-      
-      const link = ProxyLinkGenerator.generateMtProtoLink(
-        server,
-        node.mtproto_port,
-        secret.secret,
-        secret.is_fake_tls
-      );
-      text += `   ${type}:\n`;
-      if (secret.description) text += `   <i>${secret.description}</i>\n`;
-      text += `   <code>${link}</code>\n`;
-      buttons.push([{ text: `🗑️ Удалить MTProto ${secret.secret.slice(-8)}`, callback_data: `delete_mtproto_${secret.id}` }]);
-    }
-    text += '\n';
-  }
-
-  // SOCKS5 аккаунты
-  if (socks5Accounts.length > 0) {
-    text += `🔵 <b>SOCKS5 (${socks5Accounts.length}):</b>\n`;
-    for (const account of socks5Accounts) {
-      const tgLink = ProxyLinkGenerator.generateSocks5TgLink(
-        node.domain,
-        node.socks5_port,
-        account.username,
-        account.password
-      );
-      text += `   👤 ${account.username}:\n`;
-      if (account.description) text += `   <i>${account.description}</i>\n`;
-      text += `   <code>${tgLink}</code>\n`;
-      buttons.push([{ text: `🗑️ Удалить SOCKS5 ${account.username}`, callback_data: `delete_socks5_${account.id}` }]);
-    }
-    text += '\n';
-  }
-
-  if (secrets.length === 0 && socks5Accounts.length === 0) {
-    text += '📭 Ссылок пока нет.\n\n';
-  }
-
-  // Кнопки добавления
-  buttons.push([
-    { text: '➕ MTProto', callback_data: `add_secret_${nodeId}` },
-    { text: '➕ SOCKS5', callback_data: `add_socks5_${nodeId}` }
-  ]);
-  buttons.push([{ text: '⬅️ Назад', callback_data: 'manage_links' }]);
-
-  await ctx.editMessageText(text, {
-    parse_mode: 'HTML',
-    reply_markup: {
-      inline_keyboard: buttons
-    }
-  });
-}
-
-bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery();
-  const nodeId = parseInt(ctx.match[1]);
-  await showManageNodeLinks(ctx, nodeId);
-});
-
-// ─── УДАЛЕНИЕ ССЫЛОК ───
-
-bot.action(/^delete_mtproto_(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery();
-  const secretId = parseInt(ctx.match[1]);
-  const secret = queries.getSecretById.get(secretId) as any;
-  
-  if (!secret) {
-    await ctx.answerCbQuery('Секрет не найден');
-    return;
-  }
-
-  const node = queries.getNodeById.get(secret.node_id) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  // Удаляем из БД
-  queries.deactivateSecret.run(secretId);
-
-  // Отправляем на Node Agent для обновления конфига
-  const client = getNodeClient(secret.node_id);
-  if (client) {
-    try {
-      await client.removeMtProtoSecret(secret.secret);
-    } catch (err) {
-      console.error('Failed to remove secret from node:', err);
-    }
-  }
-
-  await ctx.answerCbQuery('MTProto секрет удален');
-  
-  // Обновляем сообщение
-  await showManageNodeLinks(ctx, secret.node_id);
-});
-
-bot.action(/^delete_socks5_(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery();
-  const accountId = parseInt(ctx.match[1]);
-  const account = queries.getSocks5AccountById.get(accountId) as any;
-  
-  if (!account) {
-    await ctx.answerCbQuery('Аккаунт не найден');
-    return;
-  }
-
-  const node = queries.getNodeById.get(account.node_id) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  // Удаляем из БД
-  queries.deactivateSocks5Account.run(accountId);
-
-  // Отправляем на Node Agent для обновления конфига
-  const client = getNodeClient(account.node_id);
-  if (client) {
-    try {
-      await client.removeSocks5Account(account.username);
-    } catch (err) {
-      console.error('Failed to remove SOCKS5 account from node:', err);
-    }
-  }
-
-  await ctx.answerCbQuery('SOCKS5 аккаунт удален');
-  
-  // Обновляем сообщение
-  await showManageNodeLinks(ctx, account.node_id);
-});
-
-// ═══════════════════════════════════════════════
-// ЗАПУСК
+// CRON: МОНИТОРИНГ
 // ═══════════════════════════════════════════════
 
 // Каждые 5 минут — проверка здоровья нод и сбор статистики
 cron.schedule('*/5 * * * *', async () => {
   console.log('[Cron] Проверка здоровья нод...');
   
-  const nodes = queries.getActiveNodes.all([]) as any[];
+  const nodes = queries.getActiveNodes.all() as any[];
 
   for (const node of nodes) {
     const client = getNodeClient(node.id);
@@ -2818,11 +1239,46 @@ cron.schedule('*/5 * * * *', async () => {
   }
 });
 
+// Каждые 30 минут — проверка статусов Remnawave подписок
+cron.schedule('*/30 * * * *', async () => {
+  console.log('[Cron] Проверка статусов Remnawave подписок...');
+  const activeBindings = queries.getActiveRemnawaveBindings.all() as any[];
+  const backend = getBackendClientFromEnv();
+
+  for (const binding of activeBindings) {
+    try {
+      const userUuid = binding.remnawave_user_id;
+      if (!userUuid) {
+        console.warn(`[Cron] Binding ${binding.id} не имеет remnawave_user_id, пропускаем.`);
+        continue;
+      }
+
+      const acc = await backend.getAccessibleNodes(userUuid);
+      const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+      const hasAccess = Array.isArray(nodes) && nodes.length > 0;
+
+      if (!hasAccess) {
+        console.log(`[Cron] Пользователь ${binding.telegram_id} (${userUuid}) потерял доступ. Отключаем MTProto.`);
+        if (binding.telegram_id) {
+          await MtprotoUserManager.disableUser(binding.telegram_id);
+        }
+        queries.updateRemnawaveStatus.run({
+          status: 'expired',
+          remnawave_subscription_id: binding.remnawave_subscription_id,
+        });
+      }
+    } catch (err: any) {
+      console.error(`[Cron] Ошибка при проверке подписки ${binding.id}:`, err.message);
+    }
+  }
+  console.log('[Cron] Проверка статусов Remnawave подписок завершена.');
+});
+
 // Раз в день — очистка старых данных
 cron.schedule('0 3 * * *', async () => {
   console.log('[Cron] Очистка старых данных...');
-  queries.cleanOldStats.run([]);
-  queries.cleanOldLogs.run([]);
+  queries.cleanOldStats.run();
+  queries.cleanOldLogs.run();
   console.log('[Cron] Очистка завершена');
 });
 
@@ -2835,15 +1291,44 @@ export function startBot() {
     dropPendingUpdates: true,
   });
 
+  // Поднимаем HTTP API для интеграции с Remnawave
+  startRemnawaveApi();
+
+  // Каждые 30 минут проверяем активные MTProto-доступы и снимаем их при отсутствии подписок
+  cron.schedule('*/30 * * * *', async () => {
+    try {
+      const backend = getBackendClientFromEnv();
+      const bindings = (queries.getActiveRemnawaveBindings?.all?.() || []) as any[];
+      for (const b of bindings) {
+        const telegramId = b.telegram_id as number | null;
+        const userUuid = b.remnawave_user_id as string | null;
+        if (!telegramId || !userUuid) continue;
+        const acc = await backend.getAccessibleNodes(userUuid);
+        const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+        const hasAccess = Array.isArray(nodes) && nodes.length > 0;
+        if (!hasAccess && b.status === 'active') {
+          await MtprotoUserManager.disableUser(telegramId);
+          queries.updateRemnawaveStatus.run({
+            status: 'expired',
+            remnawave_subscription_id: b.remnawave_subscription_id,
+          });
+          queries.insertLog.run({
+            node_id: null,
+            level: 'info',
+            message: 'MTProto access revoked (no accessible nodes)',
+            details: `tg:${telegramId} backendUser:${userUuid}`,
+          });
+        }
+      }
+    } catch (e: any) {
+      console.error('[Cron] 30m access check failed:', e?.message || e);
+    }
+  });
+
   console.log('🤖 MTProxy Management Bot запущен!');
   console.log(`👑 Админы: ${ADMIN_IDS.join(', ')}`);
 
   // Graceful stop
   process.once('SIGINT', () => bot.stop('SIGINT'));
   process.once('SIGTERM', () => bot.stop('SIGTERM'));
-}
-
-// Автозапуск при прямом вызове
-if (require.main === module) {
-  startBot();
 }

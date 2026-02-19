@@ -1,10 +1,8 @@
 import { Telegraf, Markup, Context } from 'telegraf';
 import { message } from 'telegraf/filters';
-import { queries } from './database';
+import { queries } from './database-new';
 import { NodeApiClient, ProxyLinkGenerator, SecretGenerator } from './node-client';
-import { SubscriptionManager, SubscriptionFormatter } from './subscription-manager';
 import cron from 'node-cron';
-import crypto from 'crypto';
 
 // ─── Конфиг ───
 const BOT_TOKEN = process.env.BOT_TOKEN!;
@@ -67,155 +65,40 @@ bot.use(async (ctx, next) => {
 // ОСНОВНЫЕ КОМАНДЫ
 // ═══════════════════════════════════════════════
 
-bot.start(async (ctx: Context) => {
+bot.start(async (ctx) => {
   await ctx.reply(
     '👋 *MTProxy Management Bot*\n\n' +
-    'Управление прокси-серверами через Telegram.',
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('📋 Ноды', 'show_nodes')],
-        [Markup.button.callback('➕ Добавить ноду', 'add_node')],
-        [Markup.button.callback('📊 Статистика', 'show_stats')],
-        [Markup.button.callback('📖 Справка', 'show_help')]
-      ])
-    }
+    'Управление прокси-серверами через Telegram.\n\n' +
+    'Основные команды:\n' +
+    '/nodes - список нод\n' +
+    '/add\\_node - добавить ноду\n' +
+    '/stats - общая статистика\n' +
+    '/help - справка',
+    { parse_mode: 'Markdown' }
   );
 });
 
-bot.help(async (ctx: Context) => {
+bot.help(async (ctx) => {
   await ctx.reply(
     '📖 *Справка по командам*\n\n' +
-    'Используйте кнопки для навигации.',
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('📋 Ноды', 'show_nodes')],
-        [Markup.button.callback('➕ Добавить ноду', 'add_node')],
-        [Markup.button.callback('📊 Статистика', 'show_stats')],
-        [Markup.button.callback('🔙 Назад', 'back_to_main')]
-      ])
-    }
-  );
-});
-
-// Callback query handlers for buttons
-bot.action('show_nodes', async (ctx: Context) => {
-  const nodes = queries.getAllNodes.all() as any[];
-  
-  if (nodes.length === 0) {
-    return ctx.editMessageText('📭 Нет добавленных нод.\n\nИспользуйте кнопку "➕ Добавить ноду" для добавления.', {
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('➕ Добавить ноду', 'add_node')],
-        [Markup.button.callback('🔙 Назад', 'back_to_main')]
-      ])
-    });
-  }
-
-  let message = '📋 *Список нод:*\n\n';
-  for (const node of nodes) {
-    const status = node.is_active ? '🟢' : '🔴';
-    message += `${status} *${node.name}* (ID: ${node.id})\n`;
-    message += `🌐 ${node.ip}\n`;
-    message += `📊 ${node.total_users || 0} пользователей\n\n`;
-  }
-
-  await ctx.editMessageText(message, {
-    parse_mode: 'Markdown',
-    ...Markup.inlineKeyboard([
-      [Markup.button.callback('➕ Добавить ноду', 'add_node')],
-      [Markup.button.callback('🔙 Назад', 'back_to_main')]
-    ])
-  });
-});
-
-bot.action('add_node', async (ctx: Context) => {
-  await ctx.editMessageText(
-    '➕ *Добавление новой ноды*\n\n' +
-    'Для добавления ноды:\n\n' +
-    '1. Установите node-agent на сервере:\n' +
-    '`curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node.sh | sudo bash`\n\n' +
-    '2. Получите API токен от бота\n\n' +
-    '3. Введите данные ноды в формате:\n' +
-    '`name: Node-1\nip: 1.2.3.4\napi_key: abc123...`',
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔑 Получить API токен', 'generate_api_token')],
-        [Markup.button.callback('🔙 Назад', 'back_to_main')]
-      ])
-    }
-  );
-});
-
-bot.action('generate_api_token', async (ctx: Context) => {
-  const apiToken = crypto.randomBytes(32).toString('hex');
-  
-  await ctx.editMessageText(
-    `🔑 *Ваш API токен:*\n\n` +
-    `\`${apiToken}\`\n\n` +
-    `Скопируйте этот токен и используйте его при установке node-agent.\n\n` +
-    `После установки ноды, пришлите данные в формате:\n` +
-    `\`name: Node-1\nip: SERVER_IP\napi_key: ${apiToken}\``,
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('✅ Готово', 'back_to_main')]
-      ])
-    }
-  );
-});
-
-bot.action('show_stats', async (ctx: Context) => {
-  const nodes = queries.getAllNodes.all() as any[];
-  const totalNodes = nodes.length;
-  const activeNodes = nodes.filter(n => n.is_active).length;
-  const totalUsers = nodes.reduce((sum, n) => sum + (n.total_users || 0), 0);
-
-  await ctx.editMessageText(
-    '📊 *Общая статистика*\n\n' +
-    `🏠 Нод: ${totalNodes}\n` +
-    `🟢 Активных: ${activeNodes}\n` +
-    `👥 Пользователей: ${totalUsers}`,
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔙 Назад', 'back_to_main')]
-      ])
-    }
-  );
-});
-
-bot.action('show_help', async (ctx: Context) => {
-  await ctx.editMessageText(
-    '📖 *Справка*\n\n' +
-    'Используйте кнопки для управления нодами и подписками.',
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('📋 Ноды', 'show_nodes')],
-        [Markup.button.callback('➕ Добавить ноду', 'add_node')],
-        [Markup.button.callback('📊 Статистика', 'show_stats')],
-        [Markup.button.callback('🔙 Назад', 'back_to_main')]
-      ])
-    }
-  );
-});
-
-bot.action('back_to_main', async (ctx: Context) => {
-  await ctx.editMessageText(
-    '👋 *MTProxy Management Bot*\n\n' +
-    'Управление прокси-серверами через Telegram.',
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('📋 Ноды', 'show_nodes')],
-        [Markup.button.callback('🔗 Управление ссылками', 'manage_links')],
-        [Markup.button.callback('➕ Добавить ноду', 'add_node')],
-        [Markup.button.callback('📊 Статистика', 'show_stats')],
-        [Markup.button.callback('📖 Справка', 'show_help')]
-      ])
-    }
+    '*Управление нодами:*\n' +
+    '/nodes - список всех нод\n' +
+    '/add\\_node - добавить новую ноду\n' +
+    '/node <id> - информация о ноде\n' +
+    '/remove\\_node <id> - удалить ноду\n' +
+    '/restart\\_node <id> - перезапустить прокси\n\n' +
+    '*Получение доступов:*\n' +
+    '/links <node\\_id> - получить все ссылки\n' +
+    '/add\\_secret <node\\_id> - добавить секрет\n' +
+    '/add\\_socks5 <node\\_id> - добавить SOCKS5 аккаунт\n\n' +
+    '*Мониторинг:*\n' +
+    '/stats - общая статистика\n' +
+    '/health - здоровье всех нод\n' +
+    '/logs <node\\_id> - логи ноды\n\n' +
+    '*Настройки:*\n' +
+    '/set\\_workers <node\\_id> <count> - воркеры\n' +
+    '/update\\_node <id> - обновить конфиг',
+    { parse_mode: 'Markdown' }
   );
 });
 
@@ -296,16 +179,12 @@ bot.command('node', async (ctx) => {
     `*CPU ядер:* ${node.cpu_cores}\n` +
     `*RAM:* ${node.ram_mb} MB\n` +
     healthInfo +
-    statsInfo,
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔗 Получить ссылки', `get_links_${node.id}`)],
-        [Markup.button.callback('➕ MTProto', `add_secret_${node.id}`), Markup.button.callback('➕ SOCKS5', `add_socks5_${node.id}`)],
-        [Markup.button.callback('🔄 Перезапустить', `restart_node_${node.id}`), Markup.button.callback('📋 Логи', `logs_node_${node.id}`)],
-        [Markup.button.callback('🗑️ Удалить ноду', `confirm_delete_node_${node.id}`), Markup.button.callback('⬅️ Назад', 'show_nodes')]
-      ])
-    }
+    statsInfo +
+    `\n*Команды:*\n` +
+    `/links ${node.id} - получить ссылки\n` +
+    `/restart_node ${node.id} - перезапустить\n` +
+    `/logs ${node.id} - показать логи`,
+    { parse_mode: 'Markdown' }
   );
 });
 
@@ -433,31 +312,20 @@ bot.command('links', async (ctx) => {
   if (socks5Accounts.length > 0) {
     text += '*SOCKS5:*\n\n';
     for (const account of socks5Accounts) {
-      const tgLink = ProxyLinkGenerator.generateSocks5TgLink(
-        node.domain,
-        node.socks5_port,
-        account.username,
-        account.password
-      );
-      const tmeLink = ProxyLinkGenerator.generateSocks5TmeLink(
+      const link = ProxyLinkGenerator.generateSocks5Link(
         node.domain,
         node.socks5_port,
         account.username,
         account.password
       );
       
-      text += `👤 *${account.username}*\n`;
+      text += `👤 ${account.username}\n`;
       if (account.description) text += `_${account.description}_\n`;
-      text += `\n🔗 Deep Link:\n\`${tgLink}\`\n\n`;
-      text += `[🚀 Подключить в 1 клик](${tgLink})\n\n`;
-      text += `───────────────\n\n`;
+      text += `\`${link}\`\n\n`;
     }
   }
 
-  await ctx.reply(text, {
-    parse_mode: 'Markdown',
-    link_preview_options: { is_disabled: true }
-  });
+  await ctx.reply(text, { parse_mode: 'Markdown' });
 });
 
 bot.command('add_secret', async (ctx) => {
@@ -549,101 +417,6 @@ bot.action(/^add_secret_(dd|normal)_(\d+)_([a-f0-9]{32})$/, async (ctx) => {
   });
 });
 
-// ─── SOCKS5 ───
-
-bot.command('add_socks5', async (ctx) => {
-  const nodeId = parseInt(ctx.message.text.split(' ')[1]);
-  if (!nodeId) {
-    return ctx.reply('Использование: /add_socks5 <node_id>');
-  }
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    return ctx.reply('❌ Нода не найдена');
-  }
-
-  // Генерируем username и password
-  const username = `user_${crypto.randomBytes(4).toString('hex')}`;
-  const password = SecretGenerator.generatePassword();
-  
-  await ctx.reply(
-    `🔐 *Добавление SOCKS5 аккаунта*\n\n` +
-    `Нода: ${node.name}\n` +
-    `Username: \`${username}\`\n` +
-    `Password: \`${password}\`\n\n` +
-    `Подтвердите добавление:`,
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('✅ Добавить', `add_socks5_confirm_${nodeId}_${username}_${password}`)],
-        [Markup.button.callback('❌ Отмена', 'cancel')],
-      ])
-    }
-  );
-});
-
-bot.action(/^add_socks5_confirm_(\d+)_([^_]+)_([^_]+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  const username = ctx.match[2];
-  const password = ctx.match[3];
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  const client = getNodeClient(nodeId);
-  if (!client) {
-    await ctx.answerCbQuery('Не удалось подключиться к ноде');
-    return;
-  }
-
-  try {
-    // Добавляем в БД
-    queries.insertSocks5Account.run({
-      node_id: nodeId,
-      username,
-      password,
-      description: `Added by admin ${ctx.from!.id}`,
-    });
-
-    // Отправляем на Node Agent для обновления конфига
-    await client.addSocks5Account({ username, password });
-
-    // Генерируем ссылки
-    const tgLink = `tg://socks?server=${node.domain}&port=${node.socks5_port}&user=${username}&pass=${password}`;
-    const tmeLink = `https://t.me/socks?server=${node.domain}&port=${node.socks5_port}&user=${username}&pass=${password}`;
-
-    await ctx.answerCbQuery('SOCKS5 аккаунт добавлен!');
-    await ctx.editMessageText(
-      `✅ *SOCKS5 прокси успешно создан!*\n\n` +
-      `🌐 *Нода:* ${node.name}\n` +
-      `👤 *Username:* \`${username}\`\n` +
-      `🔑 *Password:* \`${password}\`\n\n` +
-      `───────────────\n\n` +
-      `🔗 *Deep Link для Telegram:*\n` +
-      `\`${tgLink}\`\n\n` +
-      `👇 *Подключить в 1 клик:*\n` +
-      `[🚀 Добавить прокси](${tgLink})`,
-      {
-        parse_mode: 'Markdown',
-        link_preview_options: { is_disabled: true }
-      }
-    );
-
-    queries.insertLog.run({
-      node_id: nodeId,
-      level: 'info',
-      message: 'SOCKS5 account added',
-      details: `Username: ${username}, Admin: ${ctx.from!.id}`,
-    });
-  } catch (err: any) {
-    await ctx.answerCbQuery('Ошибка при добавлении');
-    await ctx.reply(`❌ Ошибка: ${err.message}`);
-  }
-});
-
 // ═══════════════════════════════════════════════
 // МОНИТОРИНГ
 // ═══════════════════════════════════════════════
@@ -703,418 +476,6 @@ bot.command('health', async (ctx) => {
   }
 
   await ctx.reply(text, { parse_mode: 'Markdown' });
-});
-
-bot.command('logs', async (ctx) => {
-  const args = ctx.message.text.split(' ').slice(1);
-  const nodeId = parseInt(args[0]);
-  const lines = parseInt(args[1]) || 50;
-
-  if (!nodeId) {
-    return ctx.reply('Использование: /logs <node_id> [количество_строк]\nПример: /logs 1 100');
-  }
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    return ctx.reply('❌ Нода не найдена');
-  }
-
-  const client = getNodeClient(nodeId);
-  if (!client) {
-    return ctx.reply('❌ Не удалось подключиться к ноде');
-  }
-
-  try {
-    await ctx.reply('⏳ Получение логов...');
-    
-    // Получаем логи
-    const logs = await client.getLogs(lines);
-
-    // Форматируем для Telegram (лимит 4096 символов)
-    let text = `📋 *Логи ноды: ${node.name}*\n\n`;
-    
-    text += `*MTProxy (последние ${lines} строк):*\n`;
-    text += '```\n';
-    text += logs.mtproto.substring(Math.max(0, logs.mtproto.length - 1500)); // Последние 1500 символов
-    text += '\n```\n\n';
-    
-    text += `*SOCKS5 (последние ${lines} строк):*\n`;
-    text += '```\n';
-    text += logs.socks5.substring(Math.max(0, logs.socks5.length - 1500));
-    text += '\n```';
-
-    await ctx.reply(text, { parse_mode: 'Markdown' });
-
-  } catch (err: any) {
-    await ctx.reply(`❌ Ошибка: ${err.message}`);
-  }
-});
-
-bot.command('set_workers', async (ctx) => {
-  const args = ctx.message.text.split(' ').slice(1);
-  const nodeId = parseInt(args[0]);
-  const workers = parseInt(args[1]);
-
-  if (!nodeId || !workers || workers < 1 || workers > 16) {
-    return ctx.reply(
-      'Использование: /set_workers <node_id> <количество>\n' +
-      'Количество воркеров: от 1 до 16\n' +
-      'Рекомендуется: 1 воркер на 1 CPU ядро\n\n' +
-      'Пример: /set_workers 1 4'
-    );
-  }
-
-  const node = queries.getNodeById.get(nodeId) as any;
-  if (!node) {
-    return ctx.reply('❌ Нода не найдена');
-  }
-
-  const client = getNodeClient(nodeId);
-  if (!client) {
-    return ctx.reply('❌ Не удалось подключиться к ноде');
-  }
-
-  try {
-    await ctx.reply(`⏳ Изменение количества воркеров на ${workers}...`);
-    
-    // Отправляем запрос на Node Agent
-    await client.updateWorkers(workers);
-    
-    // Обновляем в БД
-    queries.updateNode.run({
-      id: nodeId,
-      name: node.name,
-      domain: node.domain,
-      ip: node.ip,
-      api_url: node.api_url,
-      api_token: node.api_token,
-      mtproto_port: node.mtproto_port,
-      socks5_port: node.socks5_port,
-      workers: workers,
-      cpu_cores: node.cpu_cores,
-      ram_mb: node.ram_mb
-    });
-
-    await ctx.reply(
-      `✅ *Воркеры обновлены!*\n\n` +
-      `Нода: ${node.name}\n` +
-      `Воркеров: ${workers}\n` +
-      `Max соединений: ${workers * 60000}\n\n` +
-      `MTProxy перезапущен с новыми настройками.`,
-      { parse_mode: 'Markdown' }
-    );
-
-    queries.insertLog.run({
-      node_id: nodeId,
-      level: 'info',
-      message: 'Workers updated',
-      details: `Workers: ${workers}, Admin: ${ctx.from!.id}`,
-    });
-
-  } catch (err: any) {
-    await ctx.reply(`❌ Ошибка: ${err.message}`);
-  }
-});
-
-// ═══════════════════════════════════════════════
-// УПРАВЛЕНИЕ ПОДПИСКАМИ
-// ═══════════════════════════════════════════════
-
-/**
- * Создать новую подписку
- * Использование: /create_subscription [название]
- */
-bot.command('create_subscription', async (ctx) => {
-  const args = ctx.message.text.split(' ').slice(1);
-  const name = args.join(' ') || 'Новая подписка';
-
-  // Получаем список активных нод для выбора
-  const nodes = queries.getActiveNodes.all() as any[];
-  
-  if (nodes.length === 0) {
-    await ctx.reply('⚠️ Нет активных нод. Сначала добавьте хотя бы одну ноду.');
-    return;
-  }
-
-  // Кнопки для выбора нод (можно выбрать несколько)
-  const buttons = nodes.map(node => 
-    Markup.button.callback(`${node.name} (${node.domain})`, `sub_toggle_node_${node.id}`)
-  );
-
-  // Разбиваем на строки по 1 кнопке
-  const keyboard = Markup.inlineKeyboard([
-    ...buttons.map(btn => [btn]),
-    [Markup.button.callback('✅ Создать подписку', 'sub_create_confirm')],
-    [Markup.button.callback('❌ Отмена', 'cancel')]
-  ]);
-
-  // Сохраняем временное состояние в контексте (в реальном проекте лучше использовать сессии)
-  await ctx.reply(
-    `📝 *Создание подписки*\n\n` +
-    `Название: ${name}\n\n` +
-    `Выберите ноды, которые будут включены в подписку:`,
-    { parse_mode: 'Markdown', ...keyboard }
-  );
-});
-
-/**
- * Список всех подписок
- */
-bot.command('subscriptions', async (ctx) => {
-  const subscriptions = queries.getAllSubscriptions.all() as any[];
-
-  if (subscriptions.length === 0) {
-    await ctx.reply('📭 Нет созданных подписок.\n\nИспользуйте /create_subscription для создания.');
-    return;
-  }
-
-  let text = '📋 *Список подписок*\n\n';
-
-  for (const sub of subscriptions) {
-    const status = sub.is_active ? '🟢' : '🔴';
-    const nodeIds = JSON.parse(sub.node_ids || '[]');
-    
-    text += `${status} *${sub.name}*\n`;
-    text += `ID: \`${sub.id}\`\n`;
-    text += `Нод: ${nodeIds.length}\n`;
-    text += `MTProto: ${sub.include_mtproto ? '✅' : '❌'} | SOCKS5: ${sub.include_socks5 ? '✅' : '❌'}\n`;
-    text += `Обращений: ${sub.access_count}\n`;
-    text += `\n`;
-  }
-
-  text += `\nИспользуйте /subscription <id> для подробностей`;
-
-  await ctx.reply(text, { parse_mode: 'Markdown' });
-});
-
-/**
- * Детали подписки
- * Использование: /subscription <id>
- */
-bot.command('subscription', async (ctx) => {
-  const args = ctx.message.text.split(' ').slice(1);
-  const subId = parseInt(args[0]);
-
-  if (!subId) {
-    await ctx.reply('❌ Укажите ID подписки: /subscription <id>');
-    return;
-  }
-
-  const sub = queries.getSubscriptionById.get(subId) as any;
-  
-  if (!sub) {
-    await ctx.reply('❌ Подписка не найдена');
-    return;
-  }
-
-  try {
-    // Получаем все прокси для подписки
-    const proxies = await SubscriptionManager.getSubscriptionProxies(subId);
-    
-    // Форматируем для отображения
-    const info = SubscriptionFormatter.formatSubscriptionInfo(sub, proxies.length);
-    const proxyList = SubscriptionFormatter.formatProxiesForTelegram(proxies);
-
-    // Генерируем ссылки
-    const links = SubscriptionManager.generateSubscriptionLinks(proxies);
-
-    let text = `${info}\n\n`;
-    text += `*Прокси:*\n${proxyList}\n\n`;
-    text += `*Готовые ссылки:*\n`;
-    
-    for (const link of links) {
-      text += `\`${link}\`\n`;
-    }
-
-    // Кнопки управления
-    const keyboard = Markup.inlineKeyboard([
-      [
-        Markup.button.callback('📥 JSON для импорта', `sub_export_${subId}`),
-        Markup.button.callback('🔄 Обновить', `sub_refresh_${subId}`)
-      ],
-      [
-        Markup.button.callback(
-          sub.is_active ? '⏸ Деактивировать' : '▶️ Активировать',
-          `sub_toggle_${subId}`
-        ),
-        Markup.button.callback('🗑 Удалить', `sub_delete_${subId}`)
-      ]
-    ]);
-
-    await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
-
-  } catch (err: any) {
-    await ctx.reply(`❌ Ошибка: ${err.message}`);
-  }
-});
-
-/**
- * Действия с подписками (callback query)
- */
-
-// Экспорт JSON для импорта в Telegram
-bot.action(/^sub_export_(\d+)$/, async (ctx) => {
-  const subId = parseInt(ctx.match[1]);
-
-  try {
-    const json = await SubscriptionManager.generateTelegramImportJson(subId);
-    
-    // Отправляем как файл
-    await ctx.replyWithDocument(
-      {
-        source: Buffer.from(JSON.stringify(json, null, 2)),
-        filename: `subscription_${subId}.json`
-      },
-      {
-        caption: '📥 Импортируйте этот файл в Telegram:\n\n' +
-                 'Settings → Advanced → Network and proxy → Import from file'
-      }
-    );
-
-    await ctx.answerCbQuery('JSON сгенерирован!');
-
-  } catch (err: any) {
-    await ctx.answerCbQuery(`Ошибка: ${err.message}`);
-  }
-});
-
-// Обновить подписку (повторно показать информацию)
-bot.action(/^sub_refresh_(\d+)$/, async (ctx) => {
-  const subId = parseInt(ctx.match[1]);
-  const sub = queries.getSubscriptionById.get(subId) as any;
-  
-  if (!sub) {
-    await ctx.answerCbQuery('Подписка не найдена');
-    return;
-  }
-
-  try {
-    const proxies = await SubscriptionManager.getSubscriptionProxies(subId);
-    const info = SubscriptionFormatter.formatSubscriptionInfo(sub, proxies.length);
-    const proxyList = SubscriptionFormatter.formatProxiesForTelegram(proxies);
-    const links = SubscriptionManager.generateSubscriptionLinks(proxies);
-
-    let text = `${info}\n\n`;
-    text += `*Прокси:*\n${proxyList}\n\n`;
-    text += `*Готовые ссылки:*\n`;
-    
-    for (const link of links) {
-      text += `\`${link}\`\n`;
-    }
-
-    const keyboard = Markup.inlineKeyboard([
-      [
-        Markup.button.callback('📥 JSON для импорта', `sub_export_${subId}`),
-        Markup.button.callback('🔄 Обновить', `sub_refresh_${subId}`)
-      ],
-      [
-        Markup.button.callback(
-          sub.is_active ? '⏸ Деактивировать' : '▶️ Активировать',
-          `sub_toggle_${subId}`
-        ),
-        Markup.button.callback('🗑 Удалить', `sub_delete_${subId}`)
-      ]
-    ]);
-
-    await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
-    await ctx.answerCbQuery('Обновлено!');
-
-  } catch (err: any) {
-    await ctx.answerCbQuery(`Ошибка: ${err.message}`);
-  }
-});
-
-// Переключить статус подписки
-bot.action(/^sub_toggle_(\d+)$/, async (ctx) => {
-  const subId = parseInt(ctx.match[1]);
-
-  try {
-    await SubscriptionManager.toggleSubscription(subId);
-    await ctx.answerCbQuery('Статус изменён!');
-    
-    // Обновляем сообщение
-    const sub = queries.getSubscriptionById.get(subId) as any;
-    
-    if (sub) {
-      const proxies = await SubscriptionManager.getSubscriptionProxies(subId);
-      const info = SubscriptionFormatter.formatSubscriptionInfo(sub, proxies.length);
-      const proxyList = SubscriptionFormatter.formatProxiesForTelegram(proxies);
-      const links = SubscriptionManager.generateSubscriptionLinks(proxies);
-
-      let text = `${info}\n\n`;
-      text += `*Прокси:*\n${proxyList}\n\n`;
-      text += `*Готовые ссылки:*\n`;
-      
-      for (const link of links) {
-        text += `\`${link}\`\n`;
-      }
-
-      const keyboard = Markup.inlineKeyboard([
-        [
-          Markup.button.callback('📥 JSON для импорта', `sub_export_${subId}`),
-          Markup.button.callback('🔄 Обновить', `sub_refresh_${subId}`)
-        ],
-        [
-          Markup.button.callback(
-            sub.is_active ? '⏸ Деактивировать' : '▶️ Активировать',
-            `sub_toggle_${subId}`
-          ),
-          Markup.button.callback('🗑 Удалить', `sub_delete_${subId}`)
-        ]
-      ]);
-
-      await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
-    }
-
-  } catch (err: any) {
-    await ctx.answerCbQuery(`Ошибка: ${err.message}`);
-  }
-});
-
-// Удалить подписку
-bot.action(/^sub_delete_(\d+)$/, async (ctx) => {
-  const subId = parseInt(ctx.match[1]);
-  const sub = queries.getSubscriptionById.get(subId) as any;
-  
-  if (!sub) {
-    await ctx.answerCbQuery('Подписка не найдена');
-    return;
-  }
-
-  const keyboard = Markup.inlineKeyboard([
-    [
-      Markup.button.callback('✅ Да, удалить', `sub_delete_confirm_${subId}`),
-      Markup.button.callback('❌ Отмена', 'cancel')
-    ]
-  ]);
-
-  await ctx.editMessageText(
-    `⚠️ *Удаление подписки*\n\n` +
-    `Название: ${sub.name}\n\n` +
-    `Вы уверены? Это действие нельзя отменить.`,
-    { parse_mode: 'Markdown', ...keyboard }
-  );
-
-  await ctx.answerCbQuery();
-});
-
-// Подтверждение удаления
-bot.action(/^sub_delete_confirm_(\d+)$/, async (ctx) => {
-  const subId = parseInt(ctx.match[1]);
-
-  try {
-    await SubscriptionManager.deleteSubscription(subId);
-    
-    await ctx.editMessageText(
-      '✅ Подписка успешно удалена',
-      { parse_mode: 'Markdown' }
-    );
-    
-    await ctx.answerCbQuery('Удалено!');
-
-  } catch (err: any) {
-    await ctx.answerCbQuery(`Ошибка: ${err.message}`);
-  }
 });
 
 // ═══════════════════════════════════════════════
@@ -1178,244 +539,6 @@ cron.schedule('0 3 * * *', async () => {
   queries.cleanOldStats.run();
   queries.cleanOldLogs.run();
   console.log('[Cron] Очистка завершена');
-});
-
-// ═══════════════════════════════════════════════
-// УПРАВЛЕНИЕ ССЫЛКАМИ
-// ═══════════════════════════════════════════════
-
-bot.action('manage_links', async (ctx) => {
-  const nodes = queries.getAllNodes.all() as any[];
-  
-  if (nodes.length === 0) {
-    return ctx.editMessageText('📭 Нет добавленных нод.\n\nСначала добавьте ноду через /add_node', {
-      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'back_to_main')]])
-    });
-  }
-
-  let text = '🔗 *Управление ссылками*\n\nВыберите ноду для управления ссылками:\n\n';
-  
-  const buttons = [];
-  for (const node of nodes) {
-    const statusEmoji = node.status === 'online' ? '🟢' : 
-                       node.status === 'offline' ? '🔴' : '🟡';
-    
-    text += `${statusEmoji} *${node.name}*\n`;
-    
-    // Получаем количество ссылок
-    const secrets = queries.getNodeSecrets.all(node.id) as any[];
-    const socks5Accounts = queries.getNodeSocks5Accounts.all(node.id) as any[];
-    const totalLinks = secrets.length + socks5Accounts.length;
-    
-    text += `   Ссылок: ${totalLinks}\n\n`;
-    
-    buttons.push([Markup.button.callback(`${node.name} (${totalLinks})`, `manage_node_links_${node.id}`)]);
-  }
-  
-  buttons.push([Markup.button.callback('⬅️ Назад', 'back_to_main')]);
-  
-  await ctx.editMessageText(text, {
-    parse_mode: 'Markdown',
-    ...Markup.inlineKeyboard(buttons)
-  });
-});
-
-bot.action(/^manage_node_links_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  const node = queries.getNodeById.get(nodeId) as any;
-  
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  const secrets = queries.getNodeSecrets.all(nodeId) as any[];
-  const socks5Accounts = queries.getNodeSocks5Accounts.all(nodeId) as any[];
-  
-  let text = `🔗 *Управление ссылками - ${node.name}*\n\n`;
-  const buttons: any[][] = [];
-  
-  // MTProto ссылки
-  if (secrets.length > 0) {
-    text += `🟣 *MTProto (${secrets.length}):*\n`;
-    for (const secret of secrets) {
-      const type = secret.is_fake_tls ? '🔒 Fake-TLS' : '🔓 Обычный';
-      text += `   ${type}: \`${secret.secret}\`\n`;
-      if (secret.description) text += `   _${secret.description}_\n`;
-      buttons.push([Markup.button.callback(`🗑️ Удалить MTProto ${secret.secret.slice(-8)}`, `delete_mtproto_${secret.id}`)]);
-    }
-    text += '\n';
-  }
-  
-  // SOCKS5 аккаунты
-  if (socks5Accounts.length > 0) {
-    text += `🔵 *SOCKS5 (${socks5Accounts.length}):*\n`;
-    for (const account of socks5Accounts) {
-      text += `   👤 \`${account.username}\`\n`;
-      if (account.description) text += `   _${account.description}_\n`;
-      buttons.push([Markup.button.callback(`🗑️ Удалить SOCKS5 ${account.username}`, `delete_socks5_${account.id}`)]);
-    }
-    text += '\n';
-  }
-  
-  if (secrets.length === 0 && socks5Accounts.length === 0) {
-    text += '📭 Ссылок пока нет.\n\n';
-  }
-  
-  // Кнопки добавления
-  buttons.push([Markup.button.callback('➕ MTProto', `add_secret_${nodeId}`), Markup.button.callback('➕ SOCKS5', `add_socks5_${nodeId}`)]);
-  buttons.push([Markup.button.callback('⬅️ Назад', 'manage_links')]);
-  
-  await ctx.editMessageText(text, {
-    parse_mode: 'Markdown',
-    ...Markup.inlineKeyboard(buttons)
-  });
-});
-
-bot.action(/^add_secret_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-  // Перенаправляем на команду add_secret
-  ctx.message = { text: `/add_secret ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
-});
-
-bot.action(/^get_links_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-  // Перенаправляем на команду links
-  ctx.message = { text: `/links ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
-});
-
-bot.action(/^restart_node_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-  // Перенаправляем на команду restart_node
-  ctx.message = { text: `/restart_node ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
-});
-
-bot.action(/^logs_node_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  await ctx.answerCbQuery();
-  // Перенаправляем на команду logs
-  ctx.message = { text: `/logs ${nodeId}` } as any;
-  await bot.handleUpdate({ message: ctx.message } as any);
-});
-
-bot.action(/^confirm_delete_node_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  const node = queries.getNodeById.get(nodeId) as any;
-  
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  await ctx.editMessageText(
-    `⚠️ *Удаление ноды*\n\n` +
-    `Вы уверены, что хотите удалить ноду "${node.name}"?\n\n` +
-    `Это действие нельзя отменить!`,
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('❌ Да, удалить', `delete_node_${nodeId}`)],
-        [Markup.button.callback('✅ Отмена', 'show_nodes')]
-      ])
-    }
-  );
-});
-
-bot.action(/^delete_node_(\d+)$/, async (ctx) => {
-  const nodeId = parseInt(ctx.match[1]);
-  const node = queries.getNodeById.get(nodeId) as any;
-  
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  // Удаляем все связанные данные
-  queries.deleteNode.run(nodeId);
-  
-  await ctx.answerCbQuery('Нода удалена');
-  await ctx.editMessageText(
-    `✅ *Нода "${node.name}" успешно удалена!*`,
-    Markup.inlineKeyboard([[Markup.button.callback('⬅️ К списку нод', 'show_nodes')]])
-  );
-});
-
-// ─── УДАЛЕНИЕ ССЫЛОК ───
-
-bot.action(/^delete_mtproto_(\d+)$/, async (ctx) => {
-  const secretId = parseInt(ctx.match[1]);
-  const secret = queries.getSecretById.get(secretId) as any;
-  
-  if (!secret) {
-    await ctx.answerCbQuery('Секрет не найден');
-    return;
-  }
-
-  const node = queries.getNodeById.get(secret.node_id) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  // Удаляем из БД
-  queries.deactivateSecret.run(secretId);
-
-  // Отправляем на Node Agent для обновления конфига
-  const client = getNodeClient(secret.node_id);
-  if (client) {
-    try {
-      await client.removeMtProtoSecret(secret.secret);
-    } catch (err) {
-      console.error('Failed to remove secret from node:', err);
-    }
-  }
-
-  await ctx.answerCbQuery('MTProto секрет удален');
-  
-  // Обновляем сообщение
-  ctx.match = [null, secret.node_id.toString()];
-  await bot.actions.get('manage_node_links_' + secret.node_id)?.(ctx);
-});
-
-bot.action(/^delete_socks5_(\d+)$/, async (ctx) => {
-  const accountId = parseInt(ctx.match[1]);
-  const account = queries.getSocks5AccountById.get(accountId) as any;
-  
-  if (!account) {
-    await ctx.answerCbQuery('Аккаунт не найден');
-    return;
-  }
-
-  const node = queries.getNodeById.get(account.node_id) as any;
-  if (!node) {
-    await ctx.answerCbQuery('Нода не найдена');
-    return;
-  }
-
-  // Удаляем из БД
-  queries.deactivateSocks5Account.run(accountId);
-
-  // Отправляем на Node Agent для обновления конфига
-  const client = getNodeClient(account.node_id);
-  if (client) {
-    try {
-      await client.removeSocks5Account(account.username);
-    } catch (err) {
-      console.error('Failed to remove SOCKS5 account from node:', err);
-    }
-  }
-
-  await ctx.answerCbQuery('SOCKS5 аккаунт удален');
-  
-  // Обновляем сообщение
-  ctx.match = [null, account.node_id.toString()];
-  await bot.actions.get('manage_node_links_' + account.node_id)?.(ctx);
 });
 
 // ═══════════════════════════════════════════════

@@ -1,95 +1,38 @@
-#!/bin/bash
-# Скрипт управления MTProxy Node Agent
+#!/usr/bin/env bash
+set -euo pipefail
 
-set -e
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPOSE_FILE="${ROOT_DIR}/docker-compose.node.yml"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cmd="${1:-help}"
 
-cd "$PROJECT_ROOT"
+dc() {
+  docker compose -f "${COMPOSE_FILE}" "$@"
+}
 
-case "${1:-}" in
-  start)
-    echo "🚀 Запуск node-agent..."
-    docker compose -f docker-compose.node.yml up -d
-    echo "✅ Node-agent запущен"
-    docker compose -f docker-compose.node.yml ps
+case "${cmd}" in
+  up|start)
+    dc up -d --build
     ;;
-
-  stop)
-    echo "🛑 Остановка node-agent..."
-    docker compose -f docker-compose.node.yml down
-    echo "✅ Node-agent остановлен"
+  down|stop)
+    dc down
     ;;
-
   restart)
-    echo "🔄 Перезапуск node-agent..."
-    docker compose -f docker-compose.node.yml restart
-    echo "✅ Node-agent перезапущен"
-    docker compose -f docker-compose.node.yml ps
+    dc restart
     ;;
-
   logs)
-    if [ -n "$2" ]; then
-      docker compose -f docker-compose.node.yml logs -f "$2"
-    else
-      docker compose -f docker-compose.node.yml logs -f
-    fi
+    dc logs -f --tail 200
     ;;
-
   status)
-    echo "📊 Статус node-agent:"
-    docker compose -f docker-compose.node.yml ps
-    echo ""
-    echo "📈 Использование ресурсов:"
-    docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" \
-      $(docker ps --format '{{.Names}}' | grep -E "mtproxy-(node|socks5|local)") 2>/dev/null || echo "Нет запущенных контейнеров"
+    dc ps
     ;;
-
-  update)
-    echo "🔄 Обновление node-agent из GitHub..."
-    git pull origin master
-    echo "🔨 Пересборка node-agent..."
-    docker compose -f docker-compose.node.yml build --no-cache
-    echo "🚀 Перезапуск node-agent..."
-    docker compose -f docker-compose.node.yml up -d
-    echo "✅ Node-agent обновлён"
+  health)
+    # Node agent health endpoint:
+    curl -fsS -H "Authorization: Bearer ${API_TOKEN:-}" "http://127.0.0.1:8080/health" || true
     ;;
-
-  rebuild)
-    echo "🔨 Полная пересборка node-agent..."
-    docker compose -f docker-compose.node.yml down
-    docker compose -f docker-compose.node.yml build --no-cache
-    docker compose -f docker-compose.node.yml up -d
-    echo "✅ Node-agent пересобран"
-    docker compose -f docker-compose.node.yml ps
-    ;;
-
-  clean)
-    echo "🧹 Очистка node-agent..."
-    docker compose -f docker-compose.node.yml down -v
-    docker system prune -f
-    echo "✅ Очистка завершена"
-    ;;
-
   *)
-    echo ""
-    echo "Использование: $0 <команда>"
-    echo ""
-    echo "Команды для MTProxy Node Agent:"
-    echo "  start      Запустить node-agent"
-    echo "  stop       Остановить node-agent"
-    echo "  restart    Перезапустить node-agent"
-    echo "  logs [service]  Показать логи"
-    echo "  status     Показать статус и ресурсы"
-    echo "  update     Обновить из GitHub и перезапустить"
-    echo "  rebuild    Полная пересборка"
-    echo "  clean      Очистить Docker"
-    echo ""
-    echo "Примеры:"
-    echo "  $0 start"
-    echo "  $0 logs"
-    echo "  $0 status"
+    echo "Usage: $0 {start|stop|restart|logs|status|health}"
+    echo "Env: API_TOKEN must be exported for health check"
     exit 1
     ;;
 esac

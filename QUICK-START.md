@@ -1,176 +1,215 @@
-# 🚀 Быстрая установка
+# Quick Start Guide
 
-## ⚡ Control Panel (за 3 минуты)
+## 1. Установка Control Panel
+
+### Требования
+- Ubuntu 24.04 или выше
+- Docker и Docker Compose установлены
+- Telegram Bot Token (получить у @BotFather)
+
+### Шаги установки
 
 ```bash
-# 1. Клонировать
+# Клонируйте репозиторий
 git clone https://github.com/goodboy34-tech/eeee.git
-cd eeee/control-panel
+cd eeee
 
-# 2. Настроить .env
-cp .env.example .env
+# Скопируйте пример конфигурации
+cp ENV.example .env
+
+# Отредактируйте .env файл
 nano .env
-
-# Вставьте:
-# BOT_TOKEN=получите_у_@BotFather
-# ADMIN_IDS=получите_у_@userinfobot
-
-# 3. Установить
-sudo bash scripts/install.sh
 ```
 
-**Готово!** Откройте бота в Telegram и отправьте `/start`
+**Минимальные настройки в `.env`:**
+```bash
+BOT_TOKEN=your_bot_token_here
+ADMIN_IDS=123456789  # Ваш Telegram ID
+REMNAWAVE_API_KEY=change-me-to-secure-key
+WEB_API_KEY=change-me-to-secure-key
+BACKEND_BASE_URL=https://your-backend.com
+BACKEND_TOKEN=your-backend-token
+```
 
----
+**Запуск:**
+```bash
+./install-control.sh
+```
 
-## ⚡ Node Agent (за 5 минут)
+Или вручную:
+```bash
+docker compose up -d
+```
+
+**Проверка:**
+```bash
+docker logs mtproxy-control
+# Должны увидеть: "🌐 Remnawave API запущен на порту 8081"
+# И: "🌐 Web API запущен на порту 8082"
+```
+
+## 2. Установка Node Agent
+
+### На сервере с прокси
 
 ```bash
-# 1. Клонировать
-git clone https://github.com/goodboy34-tech/eeee.git
-cd eeee/node-agent
+# Скопируйте ENV.example
+cp ENV.example .env
 
-# 2. Сгенерировать ключи
-openssl rand -hex 32  # API Key → сохраните!
-openssl rand -hex 16  # MTProxy Secret
-
-# 3. Настроить .env
-cp .env.example .env
+# Отредактируйте .env
 nano .env
-
-# Заполните:
-# NODE_NAME=Node1
-# DOMAIN=ваш_домен_или_IP
-# API_KEY=ключ_из_шага_2
-# SECRET=секрет_из_шага_2
-# WORKERS=4
-
-# 4. Установить
-sudo bash scripts/install.sh
 ```
 
-**Готово!** Добавьте ноду в Control Panel через `/add_node`
-
----
-
-## 📝 Что нужно получить ПЕРЕД установкой
-
-### Control Panel:
-1. **Bot Token** от [@BotFather](https://t.me/BotFather):
-   - `/newbot` → придумайте имя → скопируйте токен
-
-2. **Ваш Telegram ID** от [@userinfobot](https://t.me/userinfobot):
-   - `/start` → скопируйте ID
-
-### Node Agent:
-1. **API Key** (32 байта):
-   ```bash
-   openssl rand -hex 32
-   ```
-
-2. **MTProxy Secret** (16 байт):
-   ```bash
-   openssl rand -hex 16
-   ```
-
-3. **Внешний IP**:
-   ```bash
-   curl ifconfig.me
-   ```
-
----
-
-## 🔗 Подключение ноды
-
-После установки обоих компонентов, в Telegram боте:
-
-```
-/add_node Node1 proxy.example.com https://IP:3001 API_KEY
-```
-
-Замените:
-- `Node1` - имя ноды (из .env)
-- `proxy.example.com` - домен (из .env)
-- `IP` - внешний IP сервера ноды
-- `API_KEY` - ключ из .env ноды
-
----
-
-## ✅ Проверка установки
-
-### Control Panel:
+**Минимальные настройки:**
 ```bash
-cd control-panel
-docker-compose ps  # Должен быть Up
-docker-compose logs -f  # Должно быть: Bot запущен!
+API_TOKEN=change-me-to-secure-token
+DOMAIN=proxy.example.com
+INTERNAL_IP=10.0.0.1  # Внутренний IP сервера
+MTPROTO_PORT=443
+WORKERS=2
+MT_PROXY_IMAGE=telegrammessenger/proxy:latest
+ENABLE_SOCKS5=false
 ```
 
-### Node Agent:
+**Запуск:**
 ```bash
-cd node-agent
-docker-compose ps  # Все 3 контейнера Up
-curl -k https://localhost:3001/health  # {"status":"ok"}
+./install-node.sh
 ```
 
----
-
-## 🎯 Первые шаги
-
-### 1. Создать MTProto прокси с Fake-TLS:
-```
-/add_secret 1 dd
-```
-
-### 2. Создать SOCKS5 с авторизацией:
-```
-/add_socks5 1
-```
-
-### 3. Получить ссылки для Telegram:
-```
-/links 1
-```
-
-### 4. Создать подписку для пользователей:
-```
-/create_subscription
-```
-
----
-
-## 📚 Полная документация
-
-- **[ENV-SETUP.md](./ENV-SETUP.md)** - Подробная настройка .env файлов
-- **[INSTALLATION.md](./INSTALLATION.md)** - Полная инструкция установки
-- **[README.md](./README.md)** - Обзор всей системы
-
----
-
-## ❓ Проблемы?
-
-### Бот не отвечает:
+Или вручную:
 ```bash
-cd control-panel
-cat .env | grep BOT_TOKEN  # Проверьте токен
-docker-compose restart
+docker compose -f docker-compose.node.yml up -d
 ```
 
-### Нода недоступна:
+**Проверка:**
 ```bash
-cd node-agent
-cat .env | grep API_KEY  # Проверьте ключ
-curl -k https://localhost:3001/health
-docker-compose restart
+docker logs mtproxy-node-agent
+# Должны увидеть: "Node Agent API запущен на порту 8080"
 ```
 
-### Порты заняты:
+## 3. Добавление ноды в Control Panel
+
+1. Откройте Telegram бота (токен из `.env`)
+2. Отправьте команду `/add_node`
+3. Заполните данные:
+   - **Name**: Имя ноды (например, "US-1")
+   - **Domain**: Домен ноды (например, "proxy.example.com")
+   - **IP**: IP адрес сервера
+   - **API URL**: `http://IP_НОДЫ:8080` (порт node-agent)
+   - **API Token**: Токен из `.env` ноды (`API_TOKEN`)
+
+4. Нода появится в списке `/nodes`
+
+## 4. Создание подписки
+
+1. В боте отправьте `/create_subscription Название`
+2. Выберите ноды для подписки
+3. Подписка будет создана и получит уникальный ID
+
+## 5. Интеграция с Remnawave
+
+### Настройка backend
+
+Убедитесь, что ваш backend (api-1.yaml) доступен и имеет эндпоинты:
+- `GET /api/users/by-telegram-id/{telegramId}`
+- `GET /api/users/{uuid}/accessible-nodes`
+
+### Выдача MTProto ссылок пользователям
+
+**Через Remnawave API:**
 ```bash
-netstat -tupln | grep -E '443|1080|3001'
-# Измените порты в .env и docker-compose.yml
+curl -X POST http://control-panel:8081/api/remnawave/authorize \
+  -H "X-API-KEY: your-remnawave-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "telegramId": 123456789,
+    "remnawaveSubscriptionId": "sub-123",
+    "localSubscriptionId": 1
+  }'
 ```
 
----
+**Через Web API (для веб-приложения):**
+```bash
+curl -X POST http://control-panel:8082/api/web/check-subscription \
+  -H "X-API-KEY: your-web-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "telegramId": 123456789,
+    "remnawaveSubscriptionId": "sub-123"
+  }'
+```
 
-**🎉 Удачи с установкой!**
+## 6. Проверка работы
 
-**⭐ Поставьте звезду на GitHub:** https://github.com/goodboy34-tech/eeee
+### В Telegram боте
+
+- `/stats` — общая статистика
+- `/health` — здоровье нод
+- `/nodes` — список нод
+- `/subscriptions` — список подписок
+
+### Проверка API
+
+```bash
+# Health check node-agent
+curl http://node-ip:8080/health \
+  -H "Authorization: Bearer your-api-token"
+
+# Статистика ноды
+curl http://node-ip:8080/stats \
+  -H "Authorization: Bearer your-api-token"
+```
+
+## 7. Управление
+
+### Остановка/запуск Control Panel
+
+```bash
+./scripts/manage-control.sh stop
+./scripts/manage-control.sh start
+./scripts/manage-control.sh restart
+```
+
+### Остановка/запуск Node Agent
+
+```bash
+./scripts/manage-node.sh stop
+./scripts/manage-node.sh start
+./scripts/manage-node.sh restart
+```
+
+### Просмотр логов
+
+```bash
+# Control Panel
+docker logs -f mtproxy-control
+
+# Node Agent
+docker logs -f mtproxy-node-agent
+```
+
+## Troubleshooting
+
+### Бот не отвечает
+
+1. Проверьте `BOT_TOKEN` в `.env`
+2. Проверьте логи: `docker logs mtproxy-control`
+3. Убедитесь, что ваш Telegram ID в `ADMIN_IDS`
+
+### Нода не подключается
+
+1. Проверьте доступность API ноды: `curl http://node-ip:8080/health`
+2. Проверьте `API_TOKEN` в `.env` ноды
+3. Проверьте firewall (порт 8080 должен быть открыт)
+
+### MTProto не работает
+
+1. Проверьте статус контейнера: `docker ps | grep mtproxy`
+2. Проверьте логи: `docker logs mtproxy`
+3. Убедитесь, что порт 443 открыт в firewall
+
+## Следующие шаги
+
+- Прочитайте [README.md](./README.md) для полной документации
+- Изучите [docs/PERFORMANCE.md](./docs/PERFORMANCE.md) для оптимизации
+- Настройте автоматические бэкапы базы данных

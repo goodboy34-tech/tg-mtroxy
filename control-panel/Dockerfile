@@ -1,23 +1,16 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
-# Установка зависимостей
-COPY package*.json ./
+COPY package.json package-lock.json tsconfig.json ./
 RUN npm ci
 
-# Копирование исходного кода
-COPY tsconfig.json ./
 COPY src ./src
 
-# Сборка TypeScript
 RUN npm run build
 
-# Удаление dev-зависимостей для уменьшения размера образа
-RUN npm prune --production
+ENV NODE_ENV=production
 
-# Создание директории для базы данных
-RUN mkdir -p /app/data
+VOLUME ["/app/data"]
 
-# Запуск бота
-CMD ["npm", "start"]
+CMD ["node", "dist/index.js"]

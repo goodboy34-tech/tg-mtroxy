@@ -1,0 +1,37 @@
+services:
+  node-agent:
+    build:
+      context: ./node-agent
+      dockerfile: Dockerfile
+    container_name: mtproxy-node-agent
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - API_TOKEN=${API_TOKEN}
+      - DOMAIN=${DOMAIN}
+      - INTERNAL_IP=${INTERNAL_IP}
+      - MTPROTO_PORT=${MTPROTO_PORT:-443}
+      - SOCKS5_PORT=${SOCKS5_PORT:-1080}
+      - WORKERS=${WORKERS:-2}
+      - AD_TAG=${AD_TAG}
+      - MT_PROXY_IMAGE=${MT_PROXY_IMAGE}
+      - ENABLE_SOCKS5=${ENABLE_SOCKS5:-false}
+      # Optional: add docker run constraints/log opts (do not set by default)
+      - MT_DOCKER_RUN_ARGS=${MT_DOCKER_RUN_ARGS}
+      - SOCKS5_DOCKER_RUN_ARGS=${SOCKS5_DOCKER_RUN_ARGS}
+    ports:
+      - "8080:8080"
+      - "${MTPROTO_PORT:-443}:${MTPROTO_PORT:-443}"
+      - "${SOCKS5_PORT:-1080}:${SOCKS5_PORT:-1080}"
+    volumes:
+      # node-agent state/config
+      - ./node-data:/app/data
+      # required for node-agent to manage docker containers on host
+      - /var/run/docker.sock:/var/run/docker.sock
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+

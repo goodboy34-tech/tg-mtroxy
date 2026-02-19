@@ -2,27 +2,7 @@ node_modules/
 dist/
 data/
 .env
-*.env
-!.env.example
 *.db
 *.db-journal
 *.db-wal
 .idea
-.vscode
-logs/
-certs/*.key
-certs/*.crt
-certs/*.csr
-certs/*.srl
-!certs/.gitkeep
-socks5/*.conf
-!socks5/.gitkeep
-*.log
-
-# Node-specific data and configs
-node-data/
-mtproxy-secrets.json
-socks5-accounts.json
-*.passwd
-proxy-secret
-proxy-multi.conf

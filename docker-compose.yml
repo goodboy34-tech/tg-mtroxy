@@ -9,11 +9,43 @@
       - NODE_ENV=production
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_IDS=${ADMIN_IDS}
+      - REMNAWAVE_API_KEY=${REMNAWAVE_API_KEY}
+      - REMNAWAVE_API_PORT=${REMNAWAVE_API_PORT:-8081}
+      - WEB_API_KEY=${WEB_API_KEY}
+      - WEB_API_PORT=${WEB_API_PORT:-8082}
+      # ваш backend (api-1.yaml) — источник правды по подпискам
+      - BACKEND_BASE_URL=${BACKEND_BASE_URL}
+      - BACKEND_TOKEN=${BACKEND_TOKEN}
+      # Remnawave direct API (опционально)
+      - REMNAWAVE_BASE_URL=${REMNAWAVE_BASE_URL}
+      - REMNAWAVE_TOKEN=${REMNAWAVE_TOKEN}
+      # Redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     volumes:
       - ./data:/app/data
       - ./certs:/app/certs:ro
+    ports:
+      - "${REMNAWAVE_API_PORT:-8081}:${REMNAWAVE_API_PORT:-8081}"
+      - "${WEB_API_PORT:-8082}:${WEB_API_PORT:-8082}"
+    depends_on:
+      - redis
     networks:
       - mtproxy-network
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: mtproxy-redis
+    restart: unless-stopped
+    networks:
+      - mtproxy-network
+    volumes:
+      - redis-data:/data
     logging:
       driver: json-file
       options:
@@ -23,3 +55,6 @@
 networks:
   mtproxy-network:
     driver: bridge
+
+volumes:
+  redis-data:

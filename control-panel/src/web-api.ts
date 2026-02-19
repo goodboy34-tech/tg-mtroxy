@@ -8,12 +8,13 @@ import { queries } from './database';
 import { getBackendClientFromEnv } from './backend-client';
 import { getRemnawaveClientFromEnv } from './remnawave-client';
 import { MtprotoUserManager } from './mtproto-user-manager';
+import { logger } from './logger';
 
 const WEB_API_PORT = parseInt(process.env.WEB_API_PORT || '8082', 10);
 const WEB_API_KEY = process.env.WEB_API_KEY || '';
 
 if (!WEB_API_KEY) {
-  console.warn('⚠️ WEB_API_KEY не задан – Web API будет недоступен до установки ключа.');
+  logger.warn('⚠️ WEB_API_KEY не задан – Web API будет недоступен до установки ключа.');
 }
 
 function getHeader(req: IncomingMessage, name: string): string | undefined {
@@ -163,7 +164,7 @@ async function handleCheckSubscription(req: IncomingMessage, res: ServerResponse
       links,
     });
   } catch (err: any) {
-    console.error('[Web API] check-subscription error:', err);
+    logger.error('[Web API] check-subscription error:', err);
     return json(res, 500, { error: err?.message || 'Internal error' });
   }
 }
@@ -193,7 +194,7 @@ async function handleUserStats(req: IncomingMessage, res: ServerResponse) {
       activeBindings: bindings.filter(b => b.status === 'active').length,
     });
   } catch (err: any) {
-    console.error('[Web API] user-stats error:', err);
+    logger.error('[Web API] user-stats error:', err);
     return json(res, 500, { error: err?.message || 'Internal error' });
   }
 }
@@ -230,13 +231,13 @@ export function startWebApi() {
 
       return json(res, 404, { error: 'Not found' });
     } catch (err: any) {
-      console.error('[Web API] error:', err);
+      logger.error('[Web API] error:', err);
       return json(res, 500, { error: err?.message || 'Internal error' });
     }
   });
 
   server.listen(WEB_API_PORT, () => {
-    console.log(`🌐 Web API запущен на порту ${WEB_API_PORT}`);
+    logger.info(`🌐 Web API запущен на порту ${WEB_API_PORT}`);
   });
 }
 

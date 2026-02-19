@@ -3,12 +3,13 @@ import { queries } from './database';
 import { SubscriptionManager } from './subscription-manager';
 import { getBackendClientFromEnv } from './backend-client';
 import { MtprotoUserManager } from './mtproto-user-manager';
+import { logger } from './logger';
 
 const REMNAWAVE_API_PORT = parseInt(process.env.REMNAWAVE_API_PORT || '8081', 10);
 const REMNAWAVE_API_KEY = process.env.REMNAWAVE_API_KEY || '';
 
 if (!REMNAWAVE_API_KEY) {
-  console.warn('⚠️ REMNAWAVE_API_KEY не задан – Remnawave API будет недоступен до установки ключа.');
+  logger.warn('⚠️ REMNAWAVE_API_KEY не задан – Remnawave API будет недоступен до установки ключа.');
 }
 
 interface RemnawaveSyncBody {
@@ -112,6 +113,24 @@ export function startRemnawaveApi() {
           return json(res, 400, { error: 'telegramId обязателен для выдачи персонального MTProto (точечного отключения)' });
         }
 
+        // Проверяем, есть ли купленные подписки
+        const { SalesManager } = await import('./sales-manager');
+        const userSubs = SalesManager.getUserSubscriptions(body.telegramId);
+        
+        // Если есть купленные подписки - Remnawave не нужен (приоритет продажам)
+        if (userSubs.length > 0) {
+          return json(res, 200, {
+            success: true,
+            status: 'active',
+            message: 'User has purchased subscription, Remnawave access not needed',
+            telegramId: body.telegramId,
+            backendUserUuid: userUuid,
+            remnawaveSubscriptionId: body.remnawaveSubscriptionId,
+            localSubscriptionId: body.localSubscriptionId,
+            links: [],
+          });
+        }
+
         const userLinks = await MtprotoUserManager.ensureUserSecretsOnNodes({
           telegramId: body.telegramId,
           nodeIds,
@@ -212,13 +231,13 @@ export function startRemnawaveApi() {
 
       return json(res, 404, { error: 'Not found' });
     } catch (err: any) {
-      console.error('[Remnawave API] error:', err);
+      logger.error('[Remnawave API] error:', err);
       return json(res, 500, { error: err?.message || 'Internal error' });
     }
   });
 
   server.listen(REMNAWAVE_API_PORT, () => {
-    console.log(`🌐 Remnawave API запущен на порту ${REMNAWAVE_API_PORT}`);
+    logger.info(`🌐 Remnawave API запущен на порту ${REMNAWAVE_API_PORT}`);
   });
 }
 

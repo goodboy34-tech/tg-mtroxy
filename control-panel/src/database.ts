@@ -103,6 +103,68 @@ db.exec(`
     FOREIGN KEY (local_subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE
   );
 
+  -- Тарифы для продажи MTProxy
+  CREATE TABLE IF NOT EXISTS products (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    emoji           TEXT DEFAULT '',
+    price           REAL NOT NULL DEFAULT 0,  -- цена в рублях (0 = бесплатно)
+    days            INTEGER NOT NULL DEFAULT 0, -- дни (0 = минуты, см. minutes)
+    minutes         INTEGER,                    -- для trial — длительность в минутах
+    max_connections INTEGER DEFAULT 1,
+    description     TEXT DEFAULT '',
+    is_trial        INTEGER DEFAULT 0,
+    is_active       INTEGER DEFAULT 1,
+    node_count      INTEGER DEFAULT 1,         -- количество нод для выдачи
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Заказы пользователей
+  CREATE TABLE IF NOT EXISTS orders (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id     INTEGER NOT NULL,
+    product_id      INTEGER NOT NULL,
+    status          TEXT DEFAULT 'pending',  -- pending | completed | cancelled | refunded
+    payment_method  TEXT DEFAULT 'yoomoney', -- yoomoney | telegram_stars | crypto
+    payment_id      TEXT,                     -- ID платежа в платежной системе
+    amount          REAL NOT NULL,            -- сумма платежа
+    expires_at      TEXT,                     -- дата окончания подписки
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+  );
+
+  -- Платежи
+  CREATE TABLE IF NOT EXISTS payments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id     INTEGER NOT NULL,
+    order_id        INTEGER,
+    product_id      TEXT NOT NULL,
+    amount          REAL NOT NULL,
+    status          TEXT DEFAULT 'pending',  -- pending | completed | refunded
+    payment_method  TEXT DEFAULT 'yoomoney',
+    payment_id      TEXT,                     -- ID платежа (label для YooMoney, charge_id для Stars)
+    created_at      TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
+  );
+
+  -- Подписки пользователей (купленные)
+  CREATE TABLE IF NOT EXISTS user_subscriptions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id     INTEGER NOT NULL,
+    product_id      INTEGER NOT NULL,
+    order_id        INTEGER,
+    local_subscription_id INTEGER,            -- привязка к локальной подписке (subscriptions)
+    status          TEXT DEFAULT 'active',   -- active | expired | cancelled
+    expires_at      TEXT NOT NULL,
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL,
+    FOREIGN KEY (local_subscription_id) REFERENCES subscriptions(id) ON DELETE SET NULL
+  );
+
   -- Таблица логов и событий
   CREATE TABLE IF NOT EXISTS logs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -454,6 +516,87 @@ export const queries = {
         updated_at = datetime('now')
     WHERE remnawave_subscription_id = @remnawave_subscription_id
   `),
+
+  // ═══ Продукты (тарифы) ═══
+  getAllProducts: db.prepare(`SELECT * FROM products WHERE is_active = 1 ORDER BY price ASC`),
+  getProductById: db.prepare(`SELECT * FROM products WHERE id = ?`),
+  insertProduct: db.prepare(`
+    INSERT INTO products (name, emoji, price, days, minutes, max_connections, description, is_trial, node_count)
+    VALUES (@name, @emoji, @price, @days, @minutes, @max_connections, @description, @is_trial, @node_count)
+  `),
+  updateProduct: db.prepare(`
+    UPDATE products
+    SET name = @name, emoji = @emoji, price = @price, days = @days, minutes = @minutes,
+        max_connections = @max_connections, description = @description, is_trial = @is_trial,
+        node_count = @node_count, is_active = @is_active, updated_at = datetime('now')
+    WHERE id = @id
+  `),
+  deleteProduct: db.prepare(`DELETE FROM products WHERE id = ?`),
+
+  // ═══ Заказы ═══
+  getOrderById: db.prepare(`SELECT * FROM orders WHERE id = ?`),
+  getOrdersByTelegramId: db.prepare(`SELECT * FROM orders WHERE telegram_id = ? ORDER BY created_at DESC`),
+  getPendingOrders: db.prepare(`SELECT * FROM orders WHERE status = 'pending' ORDER BY created_at DESC`),
+  insertOrder: db.prepare(`
+    INSERT INTO orders (telegram_id, product_id, status, payment_method, payment_id, amount, expires_at)
+    VALUES (@telegram_id, @product_id, @status, @payment_method, @payment_id, @amount, @expires_at)
+  `),
+  updateOrderStatus: db.prepare(`
+    UPDATE orders
+    SET status = @status, expires_at = @expires_at, updated_at = datetime('now')
+    WHERE id = @id
+  `),
+
+  // ═══ Платежи ═══
+  getPaymentById: db.prepare(`SELECT * FROM payments WHERE id = ?`),
+  getPaymentByPaymentId: db.prepare(`SELECT * FROM payments WHERE payment_id = ?`),
+  getPaymentsByTelegramId: db.prepare(`SELECT * FROM payments WHERE telegram_id = ? ORDER BY created_at DESC`),
+  insertPayment: db.prepare(`
+    INSERT INTO payments (telegram_id, order_id, product_id, amount, status, payment_method, payment_id)
+    VALUES (@telegram_id, @order_id, @product_id, @amount, @status, @payment_method, @payment_id)
+  `),
+  updatePaymentStatus: db.prepare(`
+    UPDATE payments SET status = @status WHERE id = @id
+  `),
+  getPaymentStats: db.prepare(`
+    SELECT
+      COUNT(*) as total_payments,
+      SUM(amount) as total_amount,
+      COUNT(CASE WHEN date(created_at) = date('now') THEN 1 END) as today_payments,
+      SUM(CASE WHEN date(created_at) = date('now') THEN amount ELSE 0 END) as today_amount
+    FROM payments WHERE status = 'completed'
+  `),
+
+  // ═══ Подписки пользователей (купленные) ═══
+  getUserSubscriptions: db.prepare(`
+    SELECT * FROM user_subscriptions
+    WHERE telegram_id = ? ORDER BY created_at DESC
+  `),
+  getActiveUserSubscriptions: db.prepare(`
+    SELECT * FROM user_subscriptions
+    WHERE telegram_id = ? AND status = 'active' AND expires_at > datetime('now')
+    ORDER BY expires_at DESC
+  `),
+  getUserSubscriptionById: db.prepare(`SELECT * FROM user_subscriptions WHERE id = ?`),
+  insertUserSubscription: db.prepare(`
+    INSERT INTO user_subscriptions (telegram_id, product_id, order_id, local_subscription_id, status, expires_at)
+    VALUES (@telegram_id, @product_id, @order_id, @local_subscription_id, @status, @expires_at)
+  `),
+  updateUserSubscriptionStatus: db.prepare(`
+    UPDATE user_subscriptions
+    SET status = @status, updated_at = datetime('now')
+    WHERE id = @id
+  `),
+  getExpiredUserSubscriptions: db.prepare(`
+    SELECT * FROM user_subscriptions
+    WHERE status = 'active' AND expires_at < datetime('now')
+  `),
+  deleteUserSubscription: db.prepare(`DELETE FROM user_subscriptions WHERE id = ?`),
+  deleteOrder: db.prepare(`DELETE FROM orders WHERE id = ?`),
+  deleteOldMetrics: db.prepare(`
+    DELETE FROM node_metrics WHERE created_at < ?
+  `),
+  getAllOrders: db.prepare(`SELECT * FROM orders ORDER BY created_at DESC`),
 };
 
 export default db;

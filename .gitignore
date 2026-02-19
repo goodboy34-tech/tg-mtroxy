@@ -6,3 +6,17 @@ data/
 *.db-journal
 *.db-wal
 .idea
+
+# Логи
+*.log
+logs/
+data/logs/
+
+# Docker volumes
+redis-data/
+node-data/
+
+# Временные файлы
+*.tmp
+*.temp
+.cache/

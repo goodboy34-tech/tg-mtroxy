@@ -134,6 +134,15 @@ export class NodeApiClient {
     return this.request<NodeStats>('GET', '/stats');
   }
 
+  /** Статистика по секретам (skrashevich/MTProxy поддерживает per-secret stats) */
+  async getMtProtoSecretsStats(): Promise<{
+    aggregate: NodeStats['mtproto'];
+    bySecret: Record<string, { connections: number; bytesIn: number; bytesOut: number }>;
+    secretsCount: number;
+  }> {
+    return this.request('GET', '/mtproto/secrets/stats');
+  }
+
   async ping(): Promise<{ pong: boolean; timestamp: number }> {
     return this.request('GET', '/ping');
   }

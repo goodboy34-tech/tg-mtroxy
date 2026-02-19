@@ -8,13 +8,19 @@ import crypto from 'crypto';
 import { startRemnawaveApi } from './remnawave-api';
 import { getBackendClientFromEnv } from './backend-client';
 import { MtprotoUserManager } from './mtproto-user-manager';
+import { SalesManager } from './sales-manager';
+import { DEFAULT_PRODUCTS, formatProductList, getProductById } from './products';
+import { createYooMoneyPaymentLink, checkYooMoneyPayment, activateAfterPayment, pendingPayments, startPaymentPolling } from './payment-handler';
+import { logger } from './logger';
 
 // ─── Конфиг ───
 const BOT_TOKEN = process.env.BOT_TOKEN!;
 const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(id => parseInt(id.trim())).filter(id => id > 0);
+const YOOMONEY_TOKEN = process.env.YOOMONEY_TOKEN || '';
+const YOOMONEY_WALLET = process.env.YOOMONEY_WALLET || '';
 
 if (!BOT_TOKEN || ADMIN_IDS.length === 0) {
-  console.error('❌ BOT_TOKEN и ADMIN_IDS обязательны в .env');
+  logger.error('❌ BOT_TOKEN и ADMIN_IDS обязательны в .env');
   process.exit(1);
 }
 
@@ -71,17 +77,74 @@ bot.use(async (ctx, next) => {
 // ═══════════════════════════════════════════════
 
 bot.start(async (ctx) => {
+  const userId = ctx.from.id;
+  
+  // Если пользователь - показываем меню продаж
+  if (!isAdmin(userId)) {
+    return handleUserStart(ctx);
+  }
+
+  // Если админ - показываем админ-меню
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('💰 Продажи', 'menu_sales'), Markup.button.callback('📡 Ноды', 'menu_nodes')],
+    [Markup.button.callback('📦 Подписки', 'menu_subscriptions'), Markup.button.callback('👤 Пользователи', 'menu_users')],
+    [Markup.button.callback('➕ Создать MTProto', 'menu_create_mtproto'), Markup.button.callback('📊 Статистика', 'menu_stats')],
+    [Markup.button.callback('⚙️ Настройки', 'menu_settings')],
+  ]);
+
   await ctx.reply(
     '👋 *MTProxy Management Bot*\n\n' +
-    'Управление прокси-серверами через Telegram.\n\n' +
-    'Основные команды:\n' +
-    '/nodes - список нод\n' +
-    '/add\\_node - добавить ноду\n' +
-    '/stats - общая статистика\n' +
-    '/help - справка',
-    { parse_mode: 'Markdown' }
+    'Выберите раздел для управления:\n\n' +
+    '💡 Все действия доступны через кнопки меню!',
+    { parse_mode: 'Markdown', ...keyboard }
   );
 });
+
+// Обработчик старта для обычных пользователей
+async function handleUserStart(ctx: any) {
+  const userId = ctx.from.id;
+  
+  // Проверяем активные подписки
+  const userSubs = SalesManager.getUserSubscriptions(userId);
+  const remnawaveBindings = queries.getRemnawaveBindingsByTelegramId.all(userId) as any[];
+  const hasRemnawave = remnawaveBindings.some(b => b.status === 'active');
+  
+  if (userSubs.length > 0 || hasRemnawave) {
+    // У пользователя есть активная подписка
+    const secrets = queries.getUserMtprotoSecretsByTelegramId.all(userId) as any[];
+    const links: string[] = [];
+    
+    for (const secret of secrets) {
+      const node = queries.getNodeById.get(secret.node_id) as any;
+      if (node) {
+        links.push(ProxyLinkGenerator.generateMtProtoLink(
+          node.domain,
+          node.mtproto_port,
+          secret.secret,
+          secret.is_fake_tls === 1
+        ));
+      }
+    }
+    
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('📋 Тарифы', 'cmd_tariffs')],
+      [Markup.button.callback('📊 Мой статус', 'cmd_status')],
+    ]);
+    
+    let text = '✅ *У вас есть активная подписка!*\n\n';
+    text += `🔗 *Ваши ссылки:*\n`;
+    for (const link of links) {
+      text += `\`${link}\`\n`;
+    }
+    text += `\n📊 /status — статус подписки\n`;
+    text += `💰 /tariffs — продлить подписку`;
+    
+    return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+  }
+  
+  // Нет активной подписки - показываем тарифы
+  return handleTariffs(ctx);
+}
 
 bot.help(async (ctx) => {
   await ctx.reply(
@@ -170,6 +233,52 @@ bot.command('disable_mtproxy', async (ctx) => {
   return ctx.reply(`✅ Доступ MTProto для TG ID ${telegramId} отключён (секреты удалены с нод).`);
 });
 
+// Обработчик информации о пользователе
+bot.action(/^user_info_(\d+)$/, async (ctx) => {
+  const telegramId = parseInt(ctx.match[1], 10);
+  const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+  const secrets = queries.getUserMtprotoSecretsByTelegramId.all(telegramId) as any[];
+
+  let text = `👤 *Информация о пользователе*\n\n`;
+  text += `*TG ID:* \`${telegramId}\`\n`;
+  text += `*Привязок:* ${bindings.length}\n`;
+  text += `*Секретов:* ${secrets.length}\n\n`;
+
+  if (bindings.length > 0) {
+    text += `*Привязки Remnawave:*\n`;
+    for (const b of bindings) {
+      text += `• Подписка: \`${b.remnawave_subscription_id}\`\n`;
+      text += `  Статус: ${b.status === 'active' ? '✅' : '❌'}\n`;
+      text += `  UUID: \`${b.remnawave_user_id}\`\n\n`;
+    }
+  }
+
+  if (secrets.length > 0) {
+    text += `*MTProto секреты:*\n`;
+    for (const s of secrets) {
+      const node = queries.getNodeById.get(s.node_id) as any;
+      const link = ProxyLinkGenerator.generateMtProtoLink(
+        node?.domain || 'N/A',
+        node?.mtproto_port || 443,
+        s.secret,
+        s.is_fake_tls === 1
+      );
+      text += `• Нода ${s.node_id}: \`${s.secret}\`\n`;
+      text += `  ${link}\n\n`;
+    }
+  } else {
+    text += `📭 Нет активных персональных секретов.\n`;
+  }
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('❌ Отключить доступ', `mtproto_disable_${telegramId}`)],
+    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+  ]);
+
+  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+  await ctx.answerCbQuery();
+});
+
 // Обработчик кнопки отключения MTProto
 bot.action(/^mtproto_disable_(\d+)$/, async (ctx) => {
   const telegramId = parseInt(ctx.match[1], 10);
@@ -183,6 +292,12 @@ bot.action(/^mtproto_disable_(\d+)$/, async (ctx) => {
   } catch (err: any) {
     await ctx.answerCbQuery(`Ошибка: ${err.message}`);
   }
+});
+
+// Обработчик кнопки отмены
+bot.action('cancel', async (ctx) => {
+  await ctx.editMessageText('❌ Действие отменено.');
+  await ctx.answerCbQuery();
 });
 
 bot.command('search_mtproxy', async (ctx) => {
@@ -288,28 +403,173 @@ bot.command('subscription_mtproxy', async (ctx) => {
 // УПРАВЛЕНИЕ НОДАМИ
 // ═══════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════
+// ИНТЕРАКТИВНОЕ МЕНЮ
+// ═══════════════════════════════════════════════
+
+// Главное меню
+bot.action('menu_main', async (ctx) => {
+  const userId = ctx.from.id;
+  
+  // Если пользователь - показываем меню продаж
+  if (!isAdmin(userId)) {
+    return handleUserStart(ctx);
+  }
+
+  // Если админ - показываем админ-меню
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('💰 Продажи', 'menu_sales'), Markup.button.callback('📡 Ноды', 'menu_nodes')],
+    [Markup.button.callback('📦 Подписки', 'menu_subscriptions'), Markup.button.callback('👤 Пользователи', 'menu_users')],
+    [Markup.button.callback('➕ Создать MTProto', 'menu_create_mtproto'), Markup.button.callback('📊 Статистика', 'menu_stats')],
+    [Markup.button.callback('⚙️ Настройки', 'menu_settings')],
+  ]);
+
+  await ctx.editMessageText(
+    '👋 *MTProxy Management Bot*\n\nВыберите раздел:\n\n' +
+    '💡 Все действия доступны через кнопки меню!',
+    { parse_mode: 'Markdown', ...keyboard }
+  );
+  await ctx.answerCbQuery();
+});
+
+// Меню нод
+bot.action('menu_nodes', async (ctx) => {
+  const nodes = queries.getAllNodes.all() as any[];
+  
+  if (nodes.length === 0) {
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('➕ Добавить ноду', 'node_add')],
+      [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+    ]);
+    await ctx.editMessageText(
+      '📡 *Ноды*\n\n📭 Нет добавленных нод.',
+      { parse_mode: 'Markdown', ...keyboard }
+    );
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const buttons = nodes.map(node => {
+    const statusEmoji = node.status === 'online' ? '🟢' : 
+                       node.status === 'offline' ? '🔴' : '🟡';
+    return [Markup.button.callback(
+      `${statusEmoji} ${node.name} (${node.domain})`,
+      `node_info_${node.id}`
+    )];
+  });
+
+  const keyboard = Markup.inlineKeyboard([
+    ...buttons,
+    [Markup.button.callback('➕ Добавить ноду', 'node_add')],
+    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+  ]);
+
+  let text = '📡 *Список нод:*\n\n';
+  for (const node of nodes) {
+    const statusEmoji = node.status === 'online' ? '🟢' : 
+                       node.status === 'offline' ? '🔴' : '🟡';
+    text += `${statusEmoji} *${node.name}*\n`;
+    text += `   Домен: \`${node.domain}\`\n`;
+    text += `   Статус: ${node.status}\n\n`;
+  }
+
+  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.answerCbQuery();
+});
+
 bot.command('nodes', async (ctx) => {
   const nodes = queries.getAllNodes.all() as any[];
   
   if (nodes.length === 0) {
-    return ctx.reply('📭 Нет добавленных нод.\n\nИспользуйте /add_node для добавления.');
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('➕ Добавить ноду', 'node_add')],
+      [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+    ]);
+    return ctx.reply('📡 *Ноды*\n\n📭 Нет добавленных нод.', { parse_mode: 'Markdown', ...keyboard });
   }
 
+  const buttons = nodes.map(node => {
+    const statusEmoji = node.status === 'online' ? '🟢' : 
+                       node.status === 'offline' ? '🔴' : '🟡';
+    return [Markup.button.callback(
+      `${statusEmoji} ${node.name} (${node.domain})`,
+      `node_info_${node.id}`
+    )];
+  });
+
+  const keyboard = Markup.inlineKeyboard([
+    ...buttons,
+    [Markup.button.callback('➕ Добавить ноду', 'node_add')],
+    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+  ]);
+
   let text = '📡 *Список нод:*\n\n';
-  
   for (const node of nodes) {
     const statusEmoji = node.status === 'online' ? '🟢' : 
                        node.status === 'offline' ? '🔴' : '🟡';
-    
     text += `${statusEmoji} *${node.name}*\n`;
-    text += `   ID: \`${node.id}\`\n`;
     text += `   Домен: \`${node.domain}\`\n`;
-    text += `   Статус: ${node.status}\n`;
-    text += `   Воркеры: ${node.workers}\n`;
-    text += `   /node ${node.id}\n\n`;
+    text += `   Статус: ${node.status}\n\n`;
   }
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+});
+
+// Обработчик кнопки информации о ноде
+bot.action(/^node_info_(\d+)$/, async (ctx) => {
+  const nodeId = parseInt(ctx.match[1], 10);
+  const node = queries.getNodeById.get(nodeId) as any;
+  if (!node) {
+    await ctx.answerCbQuery('Нода не найдена');
+    return;
+  }
+
+  const client = getNodeClient(nodeId);
+  let healthInfo = '';
+  let statsInfo = '';
+
+  try {
+    if (client) {
+      const health = await client.getHealth();
+      const stats = await client.getStats();
+      
+      healthInfo = `\n*Статус:* ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
+                   `*Uptime:* ${Math.floor(health.uptime / 3600)}ч ${Math.floor((health.uptime % 3600) / 60)}м\n` +
+                   `*CPU:* ${health.system.cpuUsage.toFixed(1)}%\n` +
+                   `*RAM:* ${health.system.ramUsage.toFixed(1)}%\n` +
+                   `*Disk:* ${health.system.diskUsage.toFixed(1)}%\n`;
+      
+      statsInfo = `\n*Статистика:*\n` +
+                  `MTProto подключений: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
+                  `SOCKS5 подключений: ${stats.socks5.connections}\n` +
+                  `Трафик: ↓${stats.network.inMb.toFixed(2)}MB ↑${stats.network.outMb.toFixed(2)}MB\n`;
+    }
+  } catch (err: any) {
+    healthInfo = `\n⚠️ Не удалось получить данные: ${err.message}\n`;
+  }
+
+  const statusEmoji = node.status === 'online' ? '🟢' : 
+                     node.status === 'offline' ? '🔴' : '🟡';
+
+  let text = `📡 *Информация о ноде*\n\n`;
+  text += `${statusEmoji} *${node.name}*\n`;
+  text += `ID: \`${node.id}\`\n`;
+  text += `Домен: \`${node.domain}\`\n`;
+  text += `IP: \`${node.ip}\`\n`;
+  text += `Порт MTProto: ${node.mtproto_port}\n`;
+  text += `Порт SOCKS5: ${node.socks5_port}\n`;
+  text += `Воркеры: ${node.workers}\n`;
+  text += healthInfo;
+  text += statsInfo;
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('🔄 Перезапустить', `node_restart_${nodeId}`)],
+    [Markup.button.callback('🗑 Удалить', `node_delete_${nodeId}`)],
+    [Markup.button.callback('🔙 К списку нод', 'menu_nodes')],
+  ]);
+
+  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.answerCbQuery();
 });
 
 bot.command('node', async (ctx) => {
@@ -927,37 +1187,138 @@ bot.command('create_subscription', async (ctx) => {
 /**
  * Список всех подписок
  */
+// Меню подписок
+bot.action('menu_subscriptions', async (ctx) => {
+  const subscriptions = queries.getAllSubscriptions.all() as any[];
+
+  if (subscriptions.length === 0) {
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('➕ Создать подписку', 'sub_create')],
+      [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+    ]);
+    await ctx.editMessageText(
+      '📦 *Подписки*\n\n📭 Нет созданных подписок.',
+      { parse_mode: 'Markdown', ...keyboard }
+    );
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const buttons = subscriptions.map(sub => {
+    const status = sub.is_active ? '🟢' : '🔴';
+    return [Markup.button.callback(
+      `${status} ${sub.name}`,
+      `sub_info_${sub.id}`
+    )];
+  });
+
+  const keyboard = Markup.inlineKeyboard([
+    ...buttons,
+    [Markup.button.callback('➕ Создать подписку', 'sub_create')],
+    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+  ]);
+
+  let text = '📦 *Список подписок*\n\n';
+  for (const sub of subscriptions) {
+    const status = sub.is_active ? '🟢' : '🔴';
+    const nodeIds = JSON.parse(sub.node_ids || '[]');
+    text += `${status} *${sub.name}*\n`;
+    text += `   ID: \`${sub.id}\` | Нод: ${nodeIds.length}\n`;
+    text += `   Обращений: ${sub.access_count}\n\n`;
+  }
+
+  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.answerCbQuery();
+});
+
 bot.command('subscriptions', async (ctx) => {
   const subscriptions = queries.getAllSubscriptions.all() as any[];
 
   if (subscriptions.length === 0) {
-    await ctx.reply('📭 Нет созданных подписок.\n\nИспользуйте /create_subscription для создания.');
-    return;
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('➕ Создать подписку', 'sub_create')],
+      [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+    ]);
+    return ctx.reply('📦 *Подписки*\n\n📭 Нет созданных подписок.', { parse_mode: 'Markdown', ...keyboard });
   }
 
-  let text = '📋 *Список подписок*\n\n';
+  const buttons = subscriptions.map(sub => {
+    const status = sub.is_active ? '🟢' : '🔴';
+    return [Markup.button.callback(
+      `${status} ${sub.name}`,
+      `sub_info_${sub.id}`
+    )];
+  });
 
+  const keyboard = Markup.inlineKeyboard([
+    ...buttons,
+    [Markup.button.callback('➕ Создать подписку', 'sub_create')],
+    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+  ]);
+
+  let text = '📦 *Список подписок*\n\n';
   for (const sub of subscriptions) {
     const status = sub.is_active ? '🟢' : '🔴';
     const nodeIds = JSON.parse(sub.node_ids || '[]');
-    
     text += `${status} *${sub.name}*\n`;
-    text += `ID: \`${sub.id}\`\n`;
-    text += `Нод: ${nodeIds.length}\n`;
-    text += `MTProto: ${sub.include_mtproto ? '✅' : '❌'} | SOCKS5: ${sub.include_socks5 ? '✅' : '❌'}\n`;
-    text += `Обращений: ${sub.access_count}\n`;
-    text += `\n`;
+    text += `   ID: \`${sub.id}\` | Нод: ${nodeIds.length}\n`;
+    text += `   Обращений: ${sub.access_count}\n\n`;
   }
 
-  text += `\nИспользуйте /subscription <id> для подробностей`;
-
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
 });
 
 /**
  * Детали подписки
  * Использование: /subscription <id>
  */
+// Обработчик кнопки информации о подписке
+bot.action(/^sub_info_(\d+)$/, async (ctx) => {
+  const subId = parseInt(ctx.match[1], 10);
+  const sub = queries.getSubscriptionById.get(subId) as any;
+  
+  if (!sub) {
+    await ctx.answerCbQuery('Подписка не найдена');
+    return;
+  }
+
+  try {
+    const proxies = await SubscriptionManager.getSubscriptionProxies(subId);
+    const info = SubscriptionFormatter.formatSubscriptionInfo(sub, proxies.length);
+    const proxyList = SubscriptionFormatter.formatProxiesForTelegram(proxies);
+    const links = SubscriptionManager.generateSubscriptionLinks(proxies);
+
+    let text = `${info}\n\n`;
+    text += `*Прокси:*\n${proxyList}\n\n`;
+    text += `*Готовые ссылки:*\n`;
+    
+    for (const link of links) {
+      text += `\`${link}\`\n`;
+    }
+
+    const keyboard = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('📥 JSON для импорта', `sub_export_${subId}`),
+        Markup.button.callback('🔄 Обновить', `sub_refresh_${subId}`)
+      ],
+      [
+        Markup.button.callback(
+          sub.is_active ? '⏸ Деактивировать' : '▶️ Активировать',
+          `sub_toggle_${subId}`
+        ),
+        Markup.button.callback('🗑 Удалить', `sub_delete_${subId}`)
+      ],
+      [Markup.button.callback('👥 Пользователи', `sub_users_${subId}`)],
+      [Markup.button.callback('🔙 К списку подписок', 'menu_subscriptions')],
+    ]);
+
+    await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+    await ctx.answerCbQuery();
+  } catch (err: any) {
+    await ctx.answerCbQuery(`Ошибка: ${err.message}`);
+  }
+});
+
 bot.command('subscription', async (ctx) => {
   const args = ctx.message.text.split(' ').slice(1);
   const subId = parseInt(args[0]);
@@ -1184,13 +1545,662 @@ bot.action(/^sub_delete_confirm_(\d+)$/, async (ctx) => {
   }
 });
 
+// Меню пользователей MTProto
+bot.action('menu_users', async (ctx) => {
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('🔍 Поиск по секрету/ID/UUID', 'user_search')],
+    [Markup.button.callback('📊 Статистика пользователей', 'user_stats')],
+    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+  ]);
+
+  await ctx.editMessageText(
+    '👤 *Пользователи MTProto*\n\nВыберите действие:',
+    { parse_mode: 'Markdown', ...keyboard }
+  );
+  await ctx.answerCbQuery();
+});
+
+// Меню продаж
+bot.action('menu_sales', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery('Доступно только админам');
+    return;
+  }
+
+  const products = queries.getAllProducts.all() as any[];
+  const payStats = queries.getPaymentStats.get() as any;
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('📋 Тарифы', 'sales_products')],
+    [Markup.button.callback('💰 Статистика продаж', 'sales_stats')],
+    [Markup.button.callback('📦 Заказы', 'sales_orders')],
+    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+  ]);
+
+  let text = '💰 *Продажи MTProxy*\n\n';
+  text += `*Статистика:*\n`;
+  text += `Всего платежей: ${payStats?.total_payments || 0}\n`;
+  text += `Всего выручка: ${payStats?.total_amount || 0} ₽\n`;
+  text += `Сегодня: ${payStats?.today_payments || 0} платежей (${payStats?.today_amount || 0} ₽)\n\n`;
+  text += `Активных тарифов: ${products.length}`;
+
+  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.answerCbQuery();
+});
+
+// Команда тарифов для пользователей
+bot.command('tariffs', handleTariffs);
+bot.action('cmd_tariffs', async (ctx) => {
+  await ctx.answerCbQuery();
+  await handleTariffs(ctx);
+});
+
+async function handleTariffs(ctx: any) {
+  const products = queries.getAllProducts.all() as any[];
+  
+  if (products.length === 0) {
+    // Инициализируем дефолтные тарифы если их нет
+    for (const product of DEFAULT_PRODUCTS) {
+      queries.insertProduct.run({
+        name: product.name,
+        emoji: product.emoji,
+        price: product.price,
+        days: product.days,
+        minutes: product.minutes || null,
+        max_connections: product.maxConnections,
+        description: product.description,
+        is_trial: product.isTrial ? 1 : 0,
+        node_count: product.nodeCount,
+      });
+    }
+    // Повторно получаем
+    const updatedProducts = queries.getAllProducts.all() as any[];
+    return showTariffs(ctx, updatedProducts);
+  }
+  
+  return showTariffs(ctx, products);
+}
+
+function showTariffs(ctx: any, products: any[]) {
+  const buttons = products.map(product => {
+    const price = product.price === 0 ? 'БЕСПЛАТНО' : `${product.price} ₽`;
+    const nodes = product.node_count > 1 ? ` (${product.node_count} ноды)` : '';
+    return [Markup.button.callback(
+      `${product.emoji} ${product.name} — ${price}${nodes}`,
+      `buy_${product.id}`
+    )];
+  });
+
+  const keyboard = Markup.inlineKeyboard([
+    ...buttons,
+    [Markup.button.callback('📊 Мой статус', 'cmd_status')],
+  ]);
+
+  let text = '💰 *Тарифы MTProxy*\n\n';
+  text += formatProductList(products.map(p => ({
+    name: p.name,
+    emoji: p.emoji,
+    price: p.price,
+    days: p.days,
+    minutes: p.minutes,
+    maxConnections: p.max_connections,
+    description: p.description,
+    isTrial: p.is_trial === 1,
+    nodeCount: p.node_count,
+  })));
+  text += '\n\nОплата банковской картой через ЮMoney.';
+
+  if (ctx.callbackQuery) {
+    return ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  } else {
+    return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+  }
+}
+
+// Команда статуса для пользователей
+bot.command('status', handleStatus);
+bot.action('cmd_status', async (ctx) => {
+  await ctx.answerCbQuery();
+  await handleStatus(ctx);
+});
+
+async function handleStatus(ctx: any) {
+  const userId = ctx.from.id;
+  const userSubs = SalesManager.getUserSubscriptions(userId);
+  const remnawaveBindings = queries.getRemnawaveBindingsByTelegramId.all(userId) as any[];
+  const secrets = queries.getUserMtprotoSecretsByTelegramId.all(userId) as any[];
+
+  if (userSubs.length === 0 && remnawaveBindings.length === 0) {
+    const text = '❌ У вас нет активной подписки.\n\n💰 /tariffs — выбрать тариф';
+    if (ctx.callbackQuery) {
+      return ctx.editMessageText(text, { parse_mode: 'Markdown' });
+    } else {
+      return ctx.reply(text, { parse_mode: 'Markdown' });
+    }
+  }
+
+  let text = '📊 *Ваш статус*\n\n';
+
+  if (userSubs.length > 0) {
+    text += `*Купленные подписки:*\n`;
+    for (const sub of userSubs) {
+      const product = queries.getProductById.get(sub.product_id) as any;
+      const expiresAt = new Date(sub.expires_at);
+      const now = new Date();
+      const daysLeft = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      text += `${product?.emoji || '📦'} ${product?.name || 'N/A'}\n`;
+      text += `  До: ${expiresAt.toLocaleDateString('ru-RU')} (${daysLeft} дн.)\n\n`;
+    }
+  }
+
+  if (remnawaveBindings.length > 0) {
+    text += `*Remnawave подписки:*\n`;
+    for (const binding of remnawaveBindings) {
+      text += `✅ ${binding.remnawave_subscription_id}\n`;
+      text += `  Статус: ${binding.status}\n\n`;
+    }
+  }
+
+  if (secrets.length > 0) {
+    text += `*Активных MTProto секретов:* ${secrets.length}\n`;
+    text += `🔗 /link — получить ссылки`;
+  }
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('💰 Тарифы', 'cmd_tariffs')],
+    [Markup.button.callback('🔗 Мои ссылки', 'cmd_link')],
+  ]);
+
+  if (ctx.callbackQuery) {
+    return ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  } else {
+    return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+  }
+}
+
+// Команда ссылок для пользователей
+bot.command('link', handleLink);
+bot.action('cmd_link', async (ctx) => {
+  await ctx.answerCbQuery();
+  await handleLink(ctx);
+});
+
+async function handleLink(ctx: any) {
+  const userId = ctx.from.id;
+  const secrets = queries.getUserMtprotoSecretsByTelegramId.all(userId) as any[];
+
+  if (secrets.length === 0) {
+    const text = '❌ Нет активных MTProto секретов.\n\n💰 /tariffs — выбрать тариф';
+    if (ctx.callbackQuery) {
+      return ctx.editMessageText(text, { parse_mode: 'Markdown' });
+    } else {
+      return ctx.reply(text, { parse_mode: 'Markdown' });
+    }
+  }
+
+  let text = '🔗 *Ваши MTProto ссылки:*\n\n';
+  for (const secret of secrets) {
+    const node = queries.getNodeById.get(secret.node_id) as any;
+    if (node) {
+      const link = ProxyLinkGenerator.generateMtProtoLink(
+        node.domain,
+        node.mtproto_port,
+        secret.secret,
+        secret.is_fake_tls === 1
+      );
+      text += `*Нода ${node.name}:*\n\`${link}\`\n\n`;
+    }
+  }
+  text += `⚠️ Ссылки только для вас! Не передавайте их другим.`;
+
+  if (ctx.callbackQuery) {
+    return ctx.editMessageText(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
+  } else {
+    return ctx.reply(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
+  }
+}
+
+// Меню создания MTProto
+bot.action('menu_create_mtproto', async (ctx) => {
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('🔗 По ссылке Remnawave', 'create_by_link')],
+    [Markup.button.callback('🆔 По Telegram ID', 'create_by_tgid')],
+    [Markup.button.callback('👤 По Username', 'create_by_username')],
+    [Markup.button.callback('🆔 По UUID', 'create_by_uuid')],
+    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+  ]);
+
+  await ctx.editMessageText(
+    '➕ *Создание MTProto*\n\nВыберите способ:\n\n' +
+    '• По ссылке Remnawave — вставьте ссылку на подписку\n' +
+    '• По Telegram ID — введите Telegram ID пользователя\n' +
+    '• По Username — введите @username\n' +
+    '• По UUID — введите UUID пользователя',
+    { parse_mode: 'Markdown', ...keyboard }
+  );
+  await ctx.answerCbQuery();
+});
+
+// Создание MTProto по ссылке
+bot.action('create_by_link', async (ctx) => {
+  await ctx.editMessageText(
+    '🔗 *Создание MTProto по ссылке Remnawave*\n\n' +
+    'Отправьте ссылку на подписку Remnawave.\n\n' +
+    'Пример: https://panel.example.com/subscription/abc123',
+    { parse_mode: 'Markdown' }
+  );
+  await ctx.answerCbQuery();
+  // Сохраняем состояние для следующего сообщения
+  (ctx as any).session = { action: 'create_mtproto_by_link' };
+});
+
+// Создание MTProto по Telegram ID
+bot.action('create_by_tgid', async (ctx) => {
+  await ctx.editMessageText(
+    '🆔 *Создание MTProto по Telegram ID*\n\n' +
+    'Отправьте Telegram ID пользователя.\n\n' +
+    'Пример: 123456789',
+    { parse_mode: 'Markdown' }
+  );
+  await ctx.answerCbQuery();
+  (ctx as any).session = { action: 'create_mtproto_by_tgid' };
+});
+
+// Создание MTProto по Username
+bot.action('create_by_username', async (ctx) => {
+  await ctx.editMessageText(
+    '👤 *Создание MTProto по Username*\n\n' +
+    'Отправьте username пользователя (без @).\n\n' +
+    'Пример: username',
+    { parse_mode: 'Markdown' }
+  );
+  await ctx.answerCbQuery();
+  (ctx as any).session = { action: 'create_mtproto_by_username' };
+});
+
+// Создание MTProto по UUID
+bot.action('create_by_uuid', async (ctx) => {
+  await ctx.editMessageText(
+    '🆔 *Создание MTProto по UUID*\n\n' +
+    'Отправьте UUID пользователя из Remnawave.\n\n' +
+    'Пример: abc-def-ghi',
+    { parse_mode: 'Markdown' }
+  );
+  await ctx.answerCbQuery();
+  (ctx as any).session = { action: 'create_mtproto_by_uuid' };
+});
+
+// Обработка текстовых сообщений для создания MTProto
+bot.on(message('text'), async (ctx) => {
+  const session = (ctx as any).session;
+  if (!session || !session.action) return;
+
+  const text = ctx.message.text.trim();
+
+  try {
+    if (session.action === 'create_mtproto_by_link') {
+      // Извлекаем subscription ID из ссылки или используем как есть
+      const subscriptionId = text.includes('/') ? text.split('/').pop() : text;
+      
+      await ctx.reply('⏳ Обработка...');
+      
+      // Ищем подписку в базе
+      const binding = queries.getRemnawaveBindingBySubscriptionId.get(subscriptionId) as any;
+      if (!binding) {
+        return ctx.reply('❌ Подписка не найдена в базе. Сначала создайте привязку через API или выберите локальную подписку.');
+      }
+
+      const sub = queries.getSubscriptionById.get(binding.local_subscription_id) as any;
+      if (!sub) {
+        return ctx.reply('❌ Локальная подписка не найдена.');
+      }
+
+      if (!binding.telegram_id) {
+        return ctx.reply('❌ У этой подписки нет привязанного Telegram ID. Используйте создание по Telegram ID.');
+      }
+
+      const nodeIds = JSON.parse(sub.node_ids || '[]') as number[];
+      const userLinks = await MtprotoUserManager.ensureUserSecretsOnNodes({
+        telegramId: binding.telegram_id,
+        nodeIds,
+        isFakeTls: true,
+      });
+
+      let resultText = '✅ *MTProto создан!*\n\n';
+      resultText += `*Telegram ID:* ${binding.telegram_id}\n`;
+      resultText += `*Подписка:* ${binding.remnawave_subscription_id}\n`;
+      resultText += `*Секретов:* ${userLinks.length}\n\n`;
+      resultText += '*Ссылки:*\n';
+      for (const link of userLinks) {
+        resultText += `\`${link.link}\`\n`;
+      }
+
+      const keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback('👤 Информация о пользователе', `user_info_${binding.telegram_id}`)],
+        [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+      ]);
+
+      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+      (ctx as any).session = null;
+
+    } else if (session.action === 'create_mtproto_by_tgid') {
+      const telegramId = parseInt(text, 10);
+      if (isNaN(telegramId)) {
+        return ctx.reply('❌ Неверный формат Telegram ID. Отправьте число.');
+      }
+
+      await ctx.reply('⏳ Обработка...');
+
+      const backend = getBackendClientFromEnv();
+      const backendUser = await backend.getUserByTelegramId(telegramId);
+      const userUuid = backendUser.uuid || backendUser.user?.uuid;
+      
+      if (!userUuid) {
+        return ctx.reply('❌ Пользователь не найден в backend.');
+      }
+
+      const acc = await backend.getAccessibleNodes(userUuid);
+      const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+      const hasAccess = Array.isArray(nodes) && nodes.length > 0;
+
+      if (!hasAccess) {
+        return ctx.reply('❌ У пользователя нет активных подписок в Remnawave.');
+      }
+
+      // Ищем активную привязку
+      const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+      const activeBinding = bindings.find(b => b.status === 'active');
+
+      if (!activeBinding) {
+        return ctx.reply('❌ Нет активной привязки подписки. Сначала создайте привязку через API.');
+      }
+
+      const sub = queries.getSubscriptionById.get(activeBinding.local_subscription_id) as any;
+      if (!sub) {
+        return ctx.reply('❌ Локальная подписка не найдена.');
+      }
+
+      const nodeIds = JSON.parse(sub.node_ids || '[]') as number[];
+      const userLinks = await MtprotoUserManager.ensureUserSecretsOnNodes({
+        telegramId,
+        nodeIds,
+        isFakeTls: true,
+      });
+
+      let resultText = '✅ *MTProto создан!*\n\n';
+      resultText += `*Telegram ID:* ${telegramId}\n`;
+      resultText += `*UUID:* ${userUuid}\n`;
+      resultText += `*Подписка:* ${activeBinding.remnawave_subscription_id}\n`;
+      resultText += `*Секретов:* ${userLinks.length}\n\n`;
+      resultText += '*Ссылки:*\n';
+      for (const link of userLinks) {
+        resultText += `\`${link.link}\`\n`;
+      }
+
+      const keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback('👤 Информация о пользователе', `user_info_${telegramId}`)],
+        [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+      ]);
+
+      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+      (ctx as any).session = null;
+
+    } else if (session.action === 'create_mtproto_by_username') {
+      const username = text.replace('@', '');
+      await ctx.reply('⏳ Обработка...');
+
+      const backend = getBackendClientFromEnv();
+      const backendUser = await backend.getUserByUsername(username);
+      const userUuid = backendUser.uuid || backendUser.user?.uuid;
+      
+      if (!userUuid) {
+        return ctx.reply('❌ Пользователь не найден в backend.');
+      }
+
+      const telegramId = backendUser.telegramId || backendUser.user?.telegramId;
+      if (!telegramId) {
+        return ctx.reply('❌ У пользователя нет привязанного Telegram ID.');
+      }
+
+      const acc = await backend.getAccessibleNodes(userUuid);
+      const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+      const hasAccess = Array.isArray(nodes) && nodes.length > 0;
+
+      if (!hasAccess) {
+        return ctx.reply('❌ У пользователя нет активных подписок в Remnawave.');
+      }
+
+      const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+      const activeBinding = bindings.find(b => b.status === 'active');
+
+      if (!activeBinding) {
+        return ctx.reply('❌ Нет активной привязки подписки. Сначала создайте привязку через API.');
+      }
+
+      const sub = queries.getSubscriptionById.get(activeBinding.local_subscription_id) as any;
+      if (!sub) {
+        return ctx.reply('❌ Локальная подписка не найдена.');
+      }
+
+      const nodeIds = JSON.parse(sub.node_ids || '[]') as number[];
+      const userLinks = await MtprotoUserManager.ensureUserSecretsOnNodes({
+        telegramId,
+        nodeIds,
+        isFakeTls: true,
+      });
+
+      let resultText = '✅ *MTProto создан!*\n\n';
+      resultText += `*Username:* @${username}\n`;
+      resultText += `*Telegram ID:* ${telegramId}\n`;
+      resultText += `*UUID:* ${userUuid}\n`;
+      resultText += `*Секретов:* ${userLinks.length}\n\n`;
+      resultText += '*Ссылки:*\n';
+      for (const link of userLinks) {
+        resultText += `\`${link.link}\`\n`;
+      }
+
+      const keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback('👤 Информация о пользователе', `user_info_${telegramId}`)],
+        [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+      ]);
+
+      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+      (ctx as any).session = null;
+
+    } else if (session.action === 'create_mtproto_by_uuid') {
+      await ctx.reply('⏳ Обработка...');
+
+      const backend = getBackendClientFromEnv();
+      const backendUser = await backend.getUserByShortUuid(text);
+      const userUuid = backendUser.uuid || backendUser.user?.uuid || text;
+      
+      const acc = await backend.getAccessibleNodes(userUuid);
+      const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+      const hasAccess = Array.isArray(nodes) && nodes.length > 0;
+
+      if (!hasAccess) {
+        return ctx.reply('❌ У пользователя нет активных подписок в Remnawave.');
+      }
+
+      const telegramId = backendUser.telegramId || backendUser.user?.telegramId;
+      if (!telegramId) {
+        return ctx.reply('❌ У пользователя нет привязанного Telegram ID. Используйте создание по Telegram ID.');
+      }
+
+      const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+      const activeBinding = bindings.find(b => b.status === 'active');
+
+      if (!activeBinding) {
+        return ctx.reply('❌ Нет активной привязки подписки. Сначала создайте привязку через API.');
+      }
+
+      const sub = queries.getSubscriptionById.get(activeBinding.local_subscription_id) as any;
+      if (!sub) {
+        return ctx.reply('❌ Локальная подписка не найдена.');
+      }
+
+      const nodeIds = JSON.parse(sub.node_ids || '[]') as number[];
+      const userLinks = await MtprotoUserManager.ensureUserSecretsOnNodes({
+        telegramId,
+        nodeIds,
+        isFakeTls: true,
+      });
+
+      let resultText = '✅ *MTProto создан!*\n\n';
+      resultText += `*UUID:* ${userUuid}\n`;
+      resultText += `*Telegram ID:* ${telegramId}\n`;
+      resultText += `*Секретов:* ${userLinks.length}\n\n`;
+      resultText += '*Ссылки:*\n';
+      for (const link of userLinks) {
+        resultText += `\`${link.link}\`\n`;
+      }
+
+      const keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback('👤 Информация о пользователе', `user_info_${telegramId}`)],
+        [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+      ]);
+
+      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+      (ctx as any).session = null;
+    }
+  } catch (err: any) {
+    await ctx.reply(`❌ Ошибка: ${err.message}`);
+    (ctx as any).session = null;
+  }
+});
+
+// Меню продаж для админа
+bot.action('sales_products', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery('Доступно только админам');
+    return;
+  }
+
+  const products = queries.getAllProducts.all() as any[];
+  
+  const buttons = products.map(product => {
+    const status = product.is_active ? '🟢' : '🔴';
+    return [Markup.button.callback(
+      `${status} ${product.emoji} ${product.name} — ${product.price} ₽`,
+      `product_info_${product.id}`
+    )];
+  });
+
+  const keyboard = Markup.inlineKeyboard([
+    ...buttons,
+    [Markup.button.callback('➕ Добавить тариф', 'product_add')],
+    [Markup.button.callback('🔙 К продажам', 'menu_sales')],
+  ]);
+
+  let text = '📋 *Тарифы*\n\n';
+  for (const product of products) {
+    const status = product.is_active ? '🟢' : '🔴';
+    text += `${status} *${product.emoji} ${product.name}*\n`;
+    text += `   Цена: ${product.price} ₽ | Дни: ${product.days || product.minutes + ' мин'}\n`;
+    text += `   Нод: ${product.node_count}\n\n`;
+  }
+
+  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.answerCbQuery();
+});
+
+bot.action('sales_stats', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery('Доступно только админам');
+    return;
+  }
+
+  const payStats = queries.getPaymentStats.get() as any;
+  const activeSubs = queries.getActiveUserSubscriptions.all() as any[];
+  const totalOrders = (queries.getOrdersByTelegramId?.all?.(0) || []) as any[];
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('🔄 Обновить', 'sales_stats')],
+    [Markup.button.callback('🔙 К продажам', 'menu_sales')],
+  ]);
+
+  let text = '💰 *Статистика продаж*\n\n';
+  text += `*Платежи:*\n`;
+  text += `Всего: ${payStats?.total_payments || 0} (${payStats?.total_amount || 0} ₽)\n`;
+  text += `Сегодня: ${payStats?.today_payments || 0} (${payStats?.today_amount || 0} ₽)\n\n`;
+  text += `*Подписки:*\n`;
+  text += `Активных: ${activeSubs.length}\n`;
+  text += `Всего заказов: ${totalOrders.length || 0}`;
+
+  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.answerCbQuery();
+});
+
+// Меню статистики
+bot.action('menu_stats', async (ctx) => {
+  const nodes = queries.getActiveNodes.all() as any[];
+  const allStats = queries.getAllNodesLatestStats.all() as any[];
+  
+  let text = '📊 *Общая статистика*\n\n';
+  text += `Нод активно: ${nodes.length}\n\n`;
+
+  let totalMtprotoConnections = 0;
+  let totalSocks5Connections = 0;
+  let totalNetworkIn = 0;
+  let totalNetworkOut = 0;
+
+  for (const stat of allStats) {
+    totalMtprotoConnections += stat.mtproto_connections || 0;
+    totalSocks5Connections += stat.socks5_connections || 0;
+    totalNetworkIn += stat.network_in_mb || 0;
+    totalNetworkOut += stat.network_out_mb || 0;
+    
+    text += `*${stat.node_name}*\n`;
+    text += `  MTProto: ${stat.mtproto_connections}/${stat.mtproto_max}\n`;
+    text += `  SOCKS5: ${stat.socks5_connections}\n`;
+    text += `  CPU: ${stat.cpu_usage?.toFixed(1)}% | RAM: ${stat.ram_usage?.toFixed(1)}%\n`;
+    text += `  Трафик: ↓${(stat.network_in_mb || 0).toFixed(2)}MB ↑${(stat.network_out_mb || 0).toFixed(2)}MB\n\n`;
+  }
+
+  text += `*Итого:*\n`;
+  text += `MTProto подключений: ${totalMtprotoConnections}\n`;
+  text += `SOCKS5 подключений: ${totalSocks5Connections}\n`;
+  text += `Трафик: ↓${totalNetworkIn.toFixed(2)}MB ↑${totalNetworkOut.toFixed(2)}MB\n`;
+
+  const activeUsers = queries.getActiveRemnawaveBindings.all() as any[];
+  const totalSecrets = queries.getAllUserMtprotoSecrets.all() as any[];
+  const activeSecrets = totalSecrets.filter(s => s.is_active === 1);
+
+  text += `\n*Пользователи:*\n`;
+  text += `Активных привязок: ${activeUsers.length}\n`;
+  text += `Активных секретов: ${activeSecrets.length}\n`;
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('🔄 Обновить', 'menu_stats')],
+    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+  ]);
+
+  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.answerCbQuery();
+});
+
+// Меню настроек
+bot.action('menu_settings', async (ctx) => {
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('🏥 Здоровье нод', 'health_check')],
+    [Markup.button.callback('📋 Логи', 'logs_menu')],
+    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+  ]);
+
+  await ctx.editMessageText(
+    '⚙️ *Настройки*\n\nВыберите действие:',
+    { parse_mode: 'Markdown', ...keyboard }
+  );
+  await ctx.answerCbQuery();
+});
+
 // ═══════════════════════════════════════════════
 // CRON: МОНИТОРИНГ
 // ═══════════════════════════════════════════════
 
 // Каждые 5 минут — проверка здоровья нод и сбор статистики
 cron.schedule('*/5 * * * *', async () => {
-  console.log('[Cron] Проверка здоровья нод...');
+  logger.debug('[Cron] Проверка здоровья нод...');
   
   const nodes = queries.getActiveNodes.all() as any[];
 
@@ -1220,9 +2230,9 @@ cron.schedule('*/5 * * * *', async () => {
         network_out_mb: stats.network.outMb,
       });
 
-      console.log(`[Cron] Node ${node.name}: ${health.status}`);
+      logger.debug(`[Cron] Node ${node.name}: ${health.status}`);
     } catch (err: any) {
-      console.error(`[Cron] Error checking node ${node.name}:`, err.message);
+      logger.error(`[Cron] Error checking node ${node.name}:`, err);
       
       queries.updateNodeStatus.run({
         id: node.id,
@@ -1241,7 +2251,7 @@ cron.schedule('*/5 * * * *', async () => {
 
 // Каждые 30 минут — проверка статусов Remnawave подписок
 cron.schedule('*/30 * * * *', async () => {
-  console.log('[Cron] Проверка статусов Remnawave подписок...');
+  logger.info('[Cron] Проверка статусов Remnawave подписок...');
   const activeBindings = queries.getActiveRemnawaveBindings.all() as any[];
   const backend = getBackendClientFromEnv();
 
@@ -1249,7 +2259,7 @@ cron.schedule('*/30 * * * *', async () => {
     try {
       const userUuid = binding.remnawave_user_id;
       if (!userUuid) {
-        console.warn(`[Cron] Binding ${binding.id} не имеет remnawave_user_id, пропускаем.`);
+        logger.warn(`[Cron] Binding ${binding.id} не имеет remnawave_user_id, пропускаем.`);
         continue;
       }
 
@@ -1257,42 +2267,287 @@ cron.schedule('*/30 * * * *', async () => {
       const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
       const hasAccess = Array.isArray(nodes) && nodes.length > 0;
 
-      if (!hasAccess) {
-        console.log(`[Cron] Пользователь ${binding.telegram_id} (${userUuid}) потерял доступ. Отключаем MTProto.`);
+      if (hasAccess && binding.status === 'active') {
+        // У пользователя есть доступ - выдаем MTProto если еще не выдано
         if (binding.telegram_id) {
-          await MtprotoUserManager.disableUser(binding.telegram_id);
+          await ensureRemnawaveUserAccess(binding.telegram_id, userUuid);
         }
-        queries.updateRemnawaveStatus.run({
-          status: 'expired',
-          remnawave_subscription_id: binding.remnawave_subscription_id,
-        });
+      } else if (!hasAccess && binding.status === 'active') {
+        // Проверяем, есть ли купленные подписки
+        if (binding.telegram_id) {
+          const userSubs = SalesManager.getUserSubscriptions(binding.telegram_id);
+          if (userSubs.length === 0) {
+            // Нет купленных подписок - отключаем MTProto
+            logger.info(`[Cron] Пользователь ${binding.telegram_id} (${userUuid}) потерял доступ. Отключаем MTProto.`);
+            await MtprotoUserManager.disableUser(binding.telegram_id);
+            queries.updateRemnawaveStatus.run({
+              status: 'expired',
+              remnawave_subscription_id: binding.remnawave_subscription_id,
+            });
+          } else {
+            // Есть купленные подписки - просто помечаем Remnawave как expired, но не отключаем MTProto
+            queries.updateRemnawaveStatus.run({
+              status: 'expired',
+              remnawave_subscription_id: binding.remnawave_subscription_id,
+            });
+          }
+        }
       }
     } catch (err: any) {
-      console.error(`[Cron] Ошибка при проверке подписки ${binding.id}:`, err.message);
+      logger.error(`[Cron] Ошибка при проверке подписки ${binding.id}:`, err);
     }
   }
-  console.log('[Cron] Проверка статусов Remnawave подписок завершена.');
+  logger.info('[Cron] Проверка статусов Remnawave подписок завершена.');
 });
 
 // Раз в день — очистка старых данных
 cron.schedule('0 3 * * *', async () => {
-  console.log('[Cron] Очистка старых данных...');
+  logger.info('[Cron] Очистка старых данных...');
   queries.cleanOldStats.run();
   queries.cleanOldLogs.run();
-  console.log('[Cron] Очистка завершена');
+  logger.info('[Cron] Очистка завершена');
 });
 
 // ═══════════════════════════════════════════════
 // ЗАПУСК
 // ═══════════════════════════════════════════════
 
+// Обработчик покупки тарифов (buy_1, buy_2, ... — id из БД)
+bot.action(/^buy_(\d+)$/, async (ctx: any) => {
+  await ctx.answerCbQuery();
+  try {
+    await ctx.editMessageReplyMarkup(undefined);
+  } catch {}
+
+  const userId = ctx.from.id;
+  const productId = parseInt(ctx.match[1], 10);
+
+  const dbProduct = queries.getProductById.get(productId) as any;
+  if (!dbProduct || !dbProduct.is_active) {
+    return ctx.reply('❌ Тариф не найден или неактивен. Обратитесь к администратору.');
+  }
+
+  if (dbProduct.is_trial === 1) {
+    return handleFreeTrial(ctx, dbProduct);
+  }
+
+  if (!YOOMONEY_WALLET) {
+    return ctx.reply('❌ Оплата временно недоступна. Напишите администратору.');
+  }
+
+  const { url, label } = createYooMoneyPaymentLink({
+    userId,
+    productId: dbProduct.id,
+    amount: dbProduct.price,
+  });
+
+  pendingPayments.set(label, {
+    userId,
+    productId: dbProduct.id,
+    createdAt: Date.now(),
+    chatId: ctx.chat.id,
+  });
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.url('💳 Оплатить', url)],
+    [Markup.button.callback('✅ Я оплатил', `check_${label}`)],
+  ]);
+
+  await ctx.reply(
+    `💳 *Оплата: ${dbProduct.emoji} ${dbProduct.name}*\n\n` +
+    `Сумма: ${dbProduct.price} ₽\n` +
+    `Количество нод: ${dbProduct.node_count}\n\n` +
+    `Нажмите кнопку для оплаты картой.\n` +
+    `После оплаты бот выдаст ссылки автоматически (до 30 сек).`,
+    { parse_mode: 'Markdown', ...keyboard }
+  );
+});
+
+// Обработчик "Я оплатил"
+bot.action(/^check_(.+)$/, async (ctx: any) => {
+  await ctx.answerCbQuery('Проверяю...');
+  const label = ctx.match[1];
+  const pending = pendingPayments.get(label);
+
+  if (!pending) {
+    return ctx.reply('❌ Платёж не найден или уже обработан.');
+  }
+
+  const paid = await checkYooMoneyPayment(label);
+  if (paid) {
+    const product = queries.getProductById.get(pending.productId) as any;
+    const result = await activateAfterPayment({
+      userId: pending.userId,
+      productId: pending.productId,
+      chatId: pending.chatId,
+      paymentMethod: 'yoomoney',
+      paymentId: label,
+      amount: product.price,
+    });
+
+    if (result.success && result.links) {
+      await ctx.editMessageText(
+        `✅ *Оплата принята! Спасибо!*\n\n` +
+        `Тариф: ${product.emoji} ${product.name}\n` +
+        `Количество нод: ${product.node_count}\n\n` +
+        `🔗 *Ваши ссылки:*\n${result.links.map(l => `\`${l}\``).join('\n')}\n\n` +
+        `⚠️ Ссылки только для вас!\n` +
+        `/link — ссылки, /status — статус`,
+        { parse_mode: 'Markdown', disable_web_page_preview: true }
+      );
+    } else {
+      await ctx.reply(`❌ Ошибка: ${result.error || 'Неизвестная ошибка'}`);
+    }
+  } else {
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('✅ Я оплатил', `check_${label}`)],
+    ]);
+    await ctx.reply(
+      '⏳ Оплата пока не поступила.\nПодождите 1-2 минуты или нажмите ещё раз.',
+      { ...keyboard }
+    );
+  }
+});
+
+// Обработка бесплатного триала
+async function handleFreeTrial(ctx: any, product: any) {
+  const userId = ctx.from.id;
+  
+  // Проверяем, есть ли уже активная подписка
+  const userSubs = SalesManager.getUserSubscriptions(userId);
+  const remnawaveBindings = queries.getRemnawaveBindingsByTelegramId.all(userId) as any[];
+  const hasActive = userSubs.length > 0 || remnawaveBindings.some(b => b.status === 'active');
+  
+  if (hasActive) {
+    return ctx.reply('✅ У вас уже есть активная подписка.\n/status — проверить');
+  }
+
+  // Выбираем ноды для триала
+  const activeNodes = queries.getActiveNodes.all() as any[];
+  if (activeNodes.length === 0) {
+    return ctx.reply('❌ Нет доступных нод. Обратитесь к администратору.');
+  }
+
+  const nodeIds = activeNodes.slice(0, product.node_count || 1).map(n => n.id);
+  
+  // Вычисляем дату окончания
+  const expiresAt = new Date(Date.now() + (product.minutes || 30) * 60000);
+
+  try {
+    await ctx.reply('⏳ Настраиваю прокси...');
+    
+    // Создаем заказ для триала
+    const result = await SalesManager.createOrder({
+      telegramId: userId,
+      productId: product.id,
+      paymentMethod: 'trial',
+      paymentId: `trial_${Date.now()}`,
+      amount: 0,
+    });
+
+    if (result.success && result.links) {
+      await ctx.reply(
+        `✅ *Пробный доступ активирован!*\n\n` +
+        `Длительность: ${product.minutes || 30} минут\n` +
+        `Количество нод: ${product.node_count || 1}\n\n` +
+        `🔗 *Ваши ссылки:*\n${result.links.map(l => `\`${l}\``).join('\n')}\n\n` +
+        `⏰ До: ${expiresAt.toLocaleString('ru-RU')}\n\n` +
+        `Понравилось? Продлите через /tariffs`,
+        { parse_mode: 'Markdown', disable_web_page_preview: true }
+      );
+    } else {
+      await ctx.reply(`❌ Ошибка: ${result.error || 'Неизвестная ошибка'}`);
+    }
+  } catch (err: any) {
+    await ctx.reply(`❌ Ошибка: ${err.message}`);
+  }
+}
+
 export function startBot() {
+  // Регистрация команд для удобства (все действия доступны через кнопки)
+  bot.telegram.setMyCommands([
+    { command: 'start', description: 'Главное меню' },
+    { command: 'tariffs', description: 'Тарифы и покупка' },
+    { command: 'status', description: 'Статус подписки' },
+    { command: 'link', description: 'Мои MTProto ссылки' },
+  ]).catch(() => {});
+
+  // Команды для админов
+  if (ADMIN_IDS.length > 0) {
+    bot.telegram.setMyCommands([
+      { command: 'start', description: 'Главное меню' },
+      { command: 'nodes', description: 'Список нод' },
+      { command: 'stats', description: 'Статистика системы' },
+      { command: 'health', description: 'Здоровье нод' },
+      { command: 'tariffs', description: 'Тарифы' },
+      { command: 'status', description: 'Статус подписки' },
+      { command: 'link', description: 'Мои ссылки' },
+    ], { scope: { type: 'chat', chat_id: ADMIN_IDS[0] } }).catch(() => {});
+  }
+
   bot.launch({
     dropPendingUpdates: true,
   });
 
+  // Инициализация дефолтных продуктов при первом запуске
+  const products = queries.getAllProducts.all() as any[];
+  if (products.length === 0) {
+    logger.info('[Init] Создание дефолтных тарифов...');
+    for (const product of DEFAULT_PRODUCTS) {
+      queries.insertProduct.run({
+        name: product.name,
+        emoji: product.emoji,
+        price: product.price,
+        days: product.days,
+        minutes: product.minutes || null,
+        max_connections: product.maxConnections,
+        description: product.description,
+        is_trial: product.isTrial ? 1 : 0,
+        node_count: product.nodeCount,
+      });
+    }
+    logger.info('[Init] Дефолтные тарифы созданы');
+  }
+
+  // Запуск поллинга платежей
+  startPaymentPolling(bot);
+
   // Поднимаем HTTP API для интеграции с Remnawave
   startRemnawaveApi();
+
+  // Каждую минуту проверяем истекшие подписки продаж
+  cron.schedule('*/1 * * * *', async () => {
+    const expiredSubs = queries.getExpiredUserSubscriptions.all() as any[];
+    if (expiredSubs.length === 0) return;
+
+    for (const sub of expiredSubs) {
+      queries.updateUserSubscriptionStatus.run({
+        id: sub.id,
+        status: 'expired',
+      });
+
+      // Проверяем, есть ли другие активные подписки или Remnawave
+      const userId = sub.telegram_id;
+      const activeSubs = queries.getActiveUserSubscriptions.all(userId) as any[];
+      const remnawaveBindings = queries.getRemnawaveBindingsByTelegramId.all(userId) as any[];
+      const hasRemnawave = remnawaveBindings.some(b => b.status === 'active');
+
+      // Если нет других активных подписок и нет Remnawave - отключаем MTProto
+      if (activeSubs.length === 0 && !hasRemnawave) {
+        await MtprotoUserManager.disableUser(userId);
+      }
+
+      // Уведомляем пользователя
+      try {
+        await bot.telegram.sendMessage(
+          userId,
+          '⏰ Ваша подписка истекла.\n\nПродлите чтобы продолжить пользоваться:\n/tariffs'
+        );
+      } catch {}
+    }
+
+    logger.info(`[Cron] Истекло подписок продаж: ${expiredSubs.length}`);
+  });
 
   // Каждые 30 минут проверяем активные MTProto-доступы и снимаем их при отсутствии подписок
   cron.schedule('*/30 * * * *', async () => {
@@ -1306,27 +2561,35 @@ export function startBot() {
         const acc = await backend.getAccessibleNodes(userUuid);
         const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
         const hasAccess = Array.isArray(nodes) && nodes.length > 0;
-        if (!hasAccess && b.status === 'active') {
-          await MtprotoUserManager.disableUser(telegramId);
-          queries.updateRemnawaveStatus.run({
-            status: 'expired',
-            remnawave_subscription_id: b.remnawave_subscription_id,
-          });
-          queries.insertLog.run({
-            node_id: null,
-            level: 'info',
-            message: 'MTProto access revoked (no accessible nodes)',
+        
+        if (hasAccess && b.status === 'active') {
+          // У пользователя есть доступ - выдаем MTProto если еще не выдано
+          await ensureRemnawaveUserAccess(telegramId, userUuid);
+        } else if (!hasAccess && b.status === 'active') {
+          // Проверяем, есть ли купленные подписки
+          const userSubs = SalesManager.getUserSubscriptions(telegramId);
+          if (userSubs.length === 0) {
+            // Нет купленных подписок - отключаем MTProto
+            await MtprotoUserManager.disableUser(telegramId);
+            queries.updateRemnawaveStatus.run({
+              status: 'expired',
+              remnawave_subscription_id: b.remnawave_subscription_id,
+            });
+            queries.insertLog.run({
+              node_id: null,
+              level: 'info',
+              message: 'MTProto access revoked (no accessible nodes)',
             details: `tg:${telegramId} backendUser:${userUuid}`,
           });
         }
       }
     } catch (e: any) {
-      console.error('[Cron] 30m access check failed:', e?.message || e);
+      logger.error('[Cron] 30m access check failed:', e);
     }
   });
 
-  console.log('🤖 MTProxy Management Bot запущен!');
-  console.log(`👑 Админы: ${ADMIN_IDS.join(', ')}`);
+  logger.info('🤖 MTProxy Management Bot запущен!');
+  logger.info(`👑 Админы: ${ADMIN_IDS.join(', ')}`);
 
   // Graceful stop
   process.once('SIGINT', () => bot.stop('SIGINT'));

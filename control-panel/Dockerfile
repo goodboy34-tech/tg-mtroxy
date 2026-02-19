@@ -2,12 +2,13 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-COPY package.json package-lock.json tsconfig.json ./
-RUN npm ci
+COPY package.json tsconfig.json ./
+# Создаем package-lock.json в Linux окружении для правильной синхронизации
+RUN npm install --package-lock-only
 
 COPY src ./src
 
-RUN npm run build
+RUN npm ci && npm run build
 
 ENV NODE_ENV=production
 

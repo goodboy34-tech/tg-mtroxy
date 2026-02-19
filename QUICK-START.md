@@ -6,7 +6,7 @@
 
 ```bash
 # Автоматическая установка - скрипт сам проверит зависимости и настроит всё
-bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install-control-standalone.sh)
+bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install.sh) control
 ```
 
 **Что делает скрипт автоматически:**
@@ -57,7 +57,7 @@ docker logs mtproxy-control
 
 ```bash
 # Автоматическая установка - скрипт сам проверит зависимости и настроит всё
-bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install-node-standalone.sh)
+bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install.sh) node
 ```
 
 **Что делает скрипт автоматически:**

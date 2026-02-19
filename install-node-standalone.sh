@@ -4,14 +4,14 @@
 # ═══════════════════════════════════════════════════════════════
 # 
 # Использование (одна команда):
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install-node-standalone.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node-standalone.sh | bash
 #   или
-#   wget -qO- https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install-node-standalone.sh | bash
+#   wget -qO- https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node-standalone.sh | bash
 
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/YOUR_USERNAME/YOUR_REPO}"
-REPO_BRANCH="${REPO_BRANCH:-main}"
+REPO_URL="${REPO_URL:-https://github.com/goodboy34-tech/eeee}"
+REPO_BRANCH="${REPO_BRANCH:-master}"
 
 # Цвета
 RED='\033[0;31m'
@@ -45,8 +45,18 @@ if ! command -v git &>/dev/null; then
     fi
 fi
 
+# Определяем имя директории из URL репозитория
+if [[ "$REPO_URL" =~ /([^/]+)\.git?$ ]] || [[ "$REPO_URL" =~ /([^/]+)/?$ ]]; then
+    PROJECT_DIR="${BASH_REMATCH[1]}"
+else
+    PROJECT_DIR="eeee"
+fi
+
+info "Реопозиторий: $REPO_URL"
+info "Ветка: $REPO_BRANCH"
+info "Директория: $PROJECT_DIR"
+
 # Клонирование репозитория
-PROJECT_DIR="tg-mtproxy"
 if [ -d "$PROJECT_DIR" ]; then
     info "Директория $PROJECT_DIR уже существует, обновляю..."
     cd "$PROJECT_DIR"
@@ -54,11 +64,11 @@ if [ -d "$PROJECT_DIR" ]; then
     cd ..
 else
     info "Клонирование репозитория..."
-    git clone -b "$REPO_BRANCH" "$REPO_URL" "$PROJECT_DIR" || error "Не удалось клонировать"
+    git clone -b "$REPO_BRANCH" "$REPO_URL" "$PROJECT_DIR" || error "Не удалось клонировать репозиторий"
 fi
 
 # Запуск основного скрипта установки
-cd "$PROJECT_DIR" || error "Не удалось перейти в директорию"
+cd "$PROJECT_DIR" || error "Не удалось перейти в директорию: $PROJECT_DIR"
 chmod +x install-node.sh
 ./install-node.sh
 

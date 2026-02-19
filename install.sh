@@ -170,30 +170,37 @@ check_dependencies() {
 # Определение репозитория
 # ═══════════════════════════════════════════════════════════════
 
-REPO_URL="${REPO_URL:-}"
-REPO_BRANCH="${REPO_BRANCH:-main}"
+# URL репозитория по умолчанию (можно переопределить через переменную окружения)
+REPO_URL="${REPO_URL:-https://github.com/goodboy34-tech/eeee}"
+REPO_BRANCH="${REPO_BRANCH:-master}"
 
-if [ -z "$REPO_URL" ]; then
-    echo ""
-    info "Укажите URL репозитория GitHub:"
-    echo "  Пример: https://github.com/username/tg-mtproxy"
-    read -p "URL репозитория: " REPO_URL
-    
-    if [ -z "$REPO_URL" ]; then
-        error "URL репозитория обязателен"
-    fi
+# Если репозиторий не указан, используем значение по умолчанию
+if [ -z "$REPO_URL" ] || [ "$REPO_URL" = "" ]; then
+    REPO_URL="https://github.com/goodboy34-tech/eeee"
 fi
 
-# Нормализация URL
+# Нормализация URL (убираем .git если есть, но сохраняем полный URL)
 REPO_URL=$(echo "$REPO_URL" | sed 's/\.git$//')
-REPO_URL=$(echo "$REPO_URL" | sed 's|^https://github.com/||')
-REPO_URL="https://github.com/$REPO_URL"
+if [[ ! "$REPO_URL" =~ ^https?:// ]]; then
+    # Если указан только username/repo, добавляем https://github.com/
+    REPO_URL=$(echo "$REPO_URL" | sed 's|^github.com/||')
+    REPO_URL="https://github.com/$REPO_URL"
+fi
 
 # ═══════════════════════════════════════════════════════════════
 # Клонирование или обновление репозитория
 # ═══════════════════════════════════════════════════════════════
 
-PROJECT_DIR="tg-mtproxy"
+# Определяем имя директории из URL репозитория
+if [[ "$REPO_URL" =~ /([^/]+)\.git?$ ]] || [[ "$REPO_URL" =~ /([^/]+)/?$ ]]; then
+    PROJECT_DIR="${BASH_REMATCH[1]}"
+else
+    PROJECT_DIR="tg-mtproxy"
+fi
+
+info "Реопозиторий: $REPO_URL"
+info "Ветка: $REPO_BRANCH"
+info "Директория: $PROJECT_DIR"
 
 if [ -d "$PROJECT_DIR" ]; then
     info "Директория $PROJECT_DIR уже существует"
@@ -207,15 +214,15 @@ if [ -d "$PROJECT_DIR" ]; then
     fi
 else
     if check_command git; then
-        info "Клонирование репозитория..."
-        git clone -b "$REPO_BRANCH" "$REPO_URL" "$PROJECT_DIR" || error "Не удалось клонировать репозиторий"
+        info "Клонирование репозитория $REPO_URL..."
+        git clone -b "$REPO_BRANCH" "$REPO_URL" "$PROJECT_DIR" || error "Не удалось клонировать репозиторий. Проверьте URL и доступность репозитория."
         success "Реопозиторий клонирован"
     else
-        error "Git не найден. Установите Git или укажите REPO_URL для скачивания архива."
+        error "Git не найден. Установите Git: sudo apt-get install git"
     fi
 fi
 
-cd "$PROJECT_DIR" || error "Не удалось перейти в директорию проекта"
+cd "$PROJECT_DIR" || error "Не удалось перейти в директорию проекта: $PROJECT_DIR"
 
 # ═══════════════════════════════════════════════════════════════
 # Запуск соответствующего скрипта установки

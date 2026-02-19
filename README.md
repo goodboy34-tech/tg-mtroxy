@@ -54,21 +54,21 @@
 
 ```bash
 # Автоматическая установка (скачивает репозиторий и запускает установку)
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install-control-standalone.sh | bash
+curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-control-standalone.sh | bash
 ```
 
 Или через универсальный установщик:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install.sh | bash -s control
+curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install.sh | bash -s control
 ```
 
 #### Ручная установка:
 
 ```bash
 # На главном сервере управления
-git clone <ваш-репозиторий>
-cd tg-mtproxy
+git clone https://github.com/goodboy34-tech/eeee.git
+cd eeee
 ./install-control.sh
 ```
 
@@ -94,21 +94,21 @@ cd tg-mtproxy
 
 ```bash
 # Автоматическая установка (скачивает репозиторий и запускает установку)
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install-node-standalone.sh | bash
+curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node-standalone.sh | bash
 ```
 
 Или через универсальный установщик:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install.sh | bash -s node
+curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install.sh | bash -s node
 ```
 
 #### Ручная установка:
 
 ```bash
 # На каждом сервере с прокси (ноде)
-git clone <ваш-репозиторий>
-cd tg-mtproxy
+git clone https://github.com/goodboy34-tech/eeee.git
+cd eeee
 ./install-node.sh
 ```
 

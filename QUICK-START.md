@@ -6,7 +6,7 @@
 
 ```bash
 # Автоматическая установка - скрипт сам проверит зависимости и настроит всё
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install-control-standalone.sh | bash
+curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-control-standalone.sh | bash
 ```
 
 **Что делает скрипт автоматически:**
@@ -22,8 +22,8 @@ curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/instal
 
 ```bash
 # Клонируйте репозиторий
-git clone <ваш-репозиторий>
-cd tg-mtproxy
+git clone https://github.com/goodboy34-tech/eeee.git
+cd eeee
 
 # Запустите скрипт установки (он сам всё настроит)
 ./install-control.sh
@@ -57,7 +57,7 @@ docker logs mtproxy-control
 
 ```bash
 # Автоматическая установка - скрипт сам проверит зависимости и настроит всё
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install-node-standalone.sh | bash
+curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node-standalone.sh | bash
 ```
 
 **Что делает скрипт автоматически:**
@@ -73,8 +73,8 @@ curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/instal
 
 ```bash
 # На сервере с прокси
-git clone <ваш-репозиторий>
-cd tg-mtproxy
+git clone https://github.com/goodboy34-tech/eeee.git
+cd eeee
 
 # Запустите скрипт установки (он сам всё настроит)
 ./install-node.sh

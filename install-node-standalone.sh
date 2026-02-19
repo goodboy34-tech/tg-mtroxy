@@ -4,13 +4,11 @@
 # ═══════════════════════════════════════════════════════════════
 # 
 # Использование (одна команда):
-#   curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node-standalone.sh | bash
-#   или
-#   wget -qO- https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node-standalone.sh | bash
+#   bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install-node-standalone.sh)
 
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/goodboy34-tech/eeee}"
+REPO_URL="${REPO_URL:-https://github.com/goodboy34-tech/tg-mtroxy}"
 REPO_BRANCH="${REPO_BRANCH:-master}"
 
 # Цвета
@@ -45,14 +43,17 @@ if ! command -v git &>/dev/null; then
     fi
 fi
 
-# Определяем имя директории из URL репозитория
+# Определяем имя директории из URL репозитория (до удаления .git)
 if [[ "$REPO_URL" =~ /([^/]+)\.git?$ ]] || [[ "$REPO_URL" =~ /([^/]+)/?$ ]]; then
     PROJECT_DIR="${BASH_REMATCH[1]}"
 else
-    PROJECT_DIR="eeee"
+    PROJECT_DIR="tg-mtroxy"
 fi
 
-info "Реопозиторий: $REPO_URL"
+# Убираем .git из URL для git clone (работает и с .git и без)
+REPO_URL_CLONE=$(echo "$REPO_URL" | sed 's/\.git$//')
+
+info "Реопозиторий: $REPO_URL_CLONE"
 info "Ветка: $REPO_BRANCH"
 info "Директория: $PROJECT_DIR"
 
@@ -64,7 +65,7 @@ if [ -d "$PROJECT_DIR" ]; then
     cd ..
 else
     info "Клонирование репозитория..."
-    git clone -b "$REPO_BRANCH" "$REPO_URL" "$PROJECT_DIR" || error "Не удалось клонировать репозиторий"
+    git clone -b "$REPO_BRANCH" "$REPO_URL_CLONE" "$PROJECT_DIR" || error "Не удалось клонировать репозиторий"
 fi
 
 # Запуск основного скрипта установки

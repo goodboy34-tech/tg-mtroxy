@@ -54,21 +54,23 @@
 
 ```bash
 # Автоматическая установка (скачивает репозиторий и запускает установку)
-curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-control-standalone.sh | bash
+bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install-control-standalone.sh)
 ```
 
 Или через универсальный установщик:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install.sh | bash -s control
+bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install.sh) control
+# или с разделителем @:
+bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install.sh) @ control
 ```
 
 #### Ручная установка:
 
 ```bash
-# На главном сервере управления
-git clone https://github.com/goodboy34-tech/eeee.git
-cd eeee
+# На главном сервере управления (Ubuntu 24)
+git clone https://github.com/goodboy34-tech/tg-mtroxy.git
+cd tg-mtroxy
 ./install-control.sh
 ```
 
@@ -94,21 +96,23 @@ cd eeee
 
 ```bash
 # Автоматическая установка (скачивает репозиторий и запускает установку)
-curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node-standalone.sh | bash
+bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install-node-standalone.sh)
 ```
 
 Или через универсальный установщик:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install.sh | bash -s node
+bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install.sh) node
+# или с разделителем @:
+bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install.sh) @ node
 ```
 
 #### Ручная установка:
 
 ```bash
-# На каждом сервере с прокси (ноде)
-git clone https://github.com/goodboy34-tech/eeee.git
-cd eeee
+# На каждом сервере с прокси (ноде, Ubuntu 24)
+git clone https://github.com/goodboy34-tech/tg-mtroxy.git
+cd tg-mtroxy
 ./install-node.sh
 ```
 
@@ -126,7 +130,14 @@ cd eeee
 - `API_TOKEN` — токен для доступа к API ноды
 - `DOMAIN`, `INTERNAL_IP` — сетевые настройки
 - `MTPROTO_PORT`, `WORKERS` — настройки MTProto
-- `MT_PROXY_IMAGE` — образ Docker для MTProto
+- `MT_PROXY_IMAGE` — образ Docker для MTProto (рекомендуется `skrashevich/mtproxy:latest`)
+
+**TLS маскировка (опционально, для обхода цензуры):**
+- `TLS_DOMAIN` — домен для маскировки (например, `web.max.ru`)
+- `TLS_CERT_PATH` — путь к TLS сертификату
+- `TLS_KEY_PATH` — путь к TLS ключу
+
+Подробнее: [docs/TLS-MASKING.md](./docs/TLS-MASKING.md)
 
 ## 💰 Настройка продаж
 
@@ -492,6 +503,7 @@ npm run build
 ## 📚 Дополнительная документация
 
 - [QUICK-START.md](./QUICK-START.md) — быстрый старт
+- [docs/TLS-MASKING.md](./docs/TLS-MASKING.md) — настройка TLS маскировки для обхода цензуры
 - [docs/backend-contract.md](./docs/backend-contract.md) — контракт API с backend
 
 ## 🤝 Поддержка

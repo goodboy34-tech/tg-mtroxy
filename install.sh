@@ -4,12 +4,12 @@
 # ═══════════════════════════════════════════════════════════════
 # 
 # Использование:
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install.sh | bash -s control
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install.sh | bash -s node
+#   bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install.sh) control
+#   bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install.sh) node
 #
-# Или скачать и запустить:
-#   wget -qO- https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install.sh | bash -s control
-#   wget -qO- https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install.sh | bash -s node
+# Или с разделителем @:
+#   bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install.sh) @ control
+#   bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install.sh) @ node
 
 set -euo pipefail
 
@@ -26,8 +26,11 @@ success() { echo -e "${GREEN}✅${NC} $1"; }
 warning() { echo -e "${YELLOW}⚠️${NC} $1"; }
 error() { echo -e "${RED}❌${NC} $1"; exit 1; }
 
-# Определяем тип установки
+# Определяем тип установки (поддержка @ как разделителя: @ control / @ node)
 INSTALL_TYPE="${1:-}"
+if [ "$INSTALL_TYPE" = "@" ]; then
+    INSTALL_TYPE="${2:-}"
+fi
 if [ -z "$INSTALL_TYPE" ]; then
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
@@ -171,16 +174,15 @@ check_dependencies() {
 # ═══════════════════════════════════════════════════════════════
 
 # URL репозитория по умолчанию (можно переопределить через переменную окружения)
-REPO_URL="${REPO_URL:-https://github.com/goodboy34-tech/eeee}"
+REPO_URL="${REPO_URL:-https://github.com/goodboy34-tech/tg-mtroxy}"
 REPO_BRANCH="${REPO_BRANCH:-master}"
 
 # Если репозиторий не указан, используем значение по умолчанию
 if [ -z "$REPO_URL" ] || [ "$REPO_URL" = "" ]; then
-    REPO_URL="https://github.com/goodboy34-tech/eeee"
+    REPO_URL="https://github.com/goodboy34-tech/tg-mtroxy"
 fi
 
-# Нормализация URL (убираем .git если есть, но сохраняем полный URL)
-REPO_URL=$(echo "$REPO_URL" | sed 's/\.git$//')
+# Нормализация URL
 if [[ ! "$REPO_URL" =~ ^https?:// ]]; then
     # Если указан только username/repo, добавляем https://github.com/
     REPO_URL=$(echo "$REPO_URL" | sed 's|^github.com/||')
@@ -191,12 +193,15 @@ fi
 # Клонирование или обновление репозитория
 # ═══════════════════════════════════════════════════════════════
 
-# Определяем имя директории из URL репозитория
+# Определяем имя директории из URL репозитория (до удаления .git)
 if [[ "$REPO_URL" =~ /([^/]+)\.git?$ ]] || [[ "$REPO_URL" =~ /([^/]+)/?$ ]]; then
     PROJECT_DIR="${BASH_REMATCH[1]}"
 else
-    PROJECT_DIR="tg-mtproxy"
+    PROJECT_DIR="tg-mtroxy"
 fi
+
+# Убираем .git из URL для git clone (работает и с .git и без)
+REPO_URL=$(echo "$REPO_URL" | sed 's/\.git$//')
 
 info "Реопозиторий: $REPO_URL"
 info "Ветка: $REPO_BRANCH"

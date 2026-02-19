@@ -6,7 +6,7 @@
 
 ```bash
 # Автоматическая установка - скрипт сам проверит зависимости и настроит всё
-curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-control-standalone.sh | bash
+bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install-control-standalone.sh)
 ```
 
 **Что делает скрипт автоматически:**
@@ -21,9 +21,9 @@ curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-
 ### Ручная установка
 
 ```bash
-# Клонируйте репозиторий
-git clone https://github.com/goodboy34-tech/eeee.git
-cd eeee
+# Клонируйте репозиторий (Ubuntu 24)
+git clone https://github.com/goodboy34-tech/tg-mtroxy.git
+cd tg-mtroxy
 
 # Запустите скрипт установки (он сам всё настроит)
 ./install-control.sh
@@ -57,7 +57,7 @@ docker logs mtproxy-control
 
 ```bash
 # Автоматическая установка - скрипт сам проверит зависимости и настроит всё
-curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-node-standalone.sh | bash
+bash <(curl -Ls https://github.com/goodboy34-tech/tg-mtroxy/raw/master/install-node-standalone.sh)
 ```
 
 **Что делает скрипт автоматически:**
@@ -72,9 +72,9 @@ curl -fsSL https://raw.githubusercontent.com/goodboy34-tech/eeee/master/install-
 ### Ручная установка
 
 ```bash
-# На сервере с прокси
-git clone https://github.com/goodboy34-tech/eeee.git
-cd eeee
+# На сервере с прокси (Ubuntu 24)
+git clone https://github.com/goodboy34-tech/tg-mtroxy.git
+cd tg-mtroxy
 
 # Запустите скрипт установки (он сам всё настроит)
 ./install-node.sh

@@ -46,13 +46,98 @@ if [ "$EUID" -eq 0 ]; then
     warning "Не рекомендуется запускать скрипт от root. Используйте обычного пользователя с sudo."
 fi
 
-# Проверка Docker
+# Функция установки Docker
+install_docker() {
+    info "Установка Docker..."
+    
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$ID
+    else
+        error "Не удалось определить ОС"
+    fi
+    
+    case $OS in
+        ubuntu|debian)
+            info "Обновление пакетов..."
+            sudo apt-get update -qq
+            
+            info "Установка зависимостей..."
+            sudo apt-get install -y -qq \
+                ca-certificates \
+                curl \
+                gnupg \
+                lsb-release
+            
+            info "Добавление GPG ключа Docker..."
+            sudo install -m 0755 -d /etc/apt/keyrings
+            curl -fsSL https://download.docker.com/linux/$OS/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+            sudo chmod a+r /etc/apt/keyrings/docker.gpg
+            
+            info "Добавление репозитория Docker..."
+            echo \
+              "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$OS \
+              $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            
+            info "Установка Docker и Docker Compose..."
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            
+            # Запуск и включение Docker сервиса
+            info "Запуск Docker сервиса..."
+            sudo systemctl enable docker
+            sudo systemctl start docker
+            
+            # Ждем запуска Docker
+            sleep 2
+            
+            # Проверяем статус
+            if sudo systemctl is-active --quiet docker; then
+                success "Docker установлен и запущен"
+            else
+                warning "Docker установлен, но сервис не запущен. Попробуйте: sudo systemctl start docker"
+            fi
+            ;;
+        *)
+            error "Автоматическая установка Docker для $OS не поддерживается. Установите вручную: https://docs.docker.com/engine/install/"
+            ;;
+    esac
+}
+
+# Проверка и установка Docker
 if ! command -v docker &>/dev/null; then
-    error "Docker не найден. Установите Docker: https://docs.docker.com/engine/install/"
+    warning "Docker не найден"
+    read -p "Установить Docker автоматически? [Y/n] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        install_docker
+    else
+        error "Установите Docker: https://docs.docker.com/engine/install/"
+    fi
 fi
 
+# Проверка Docker Compose
 if ! docker compose version &>/dev/null; then
-    error "Docker Compose не найден. Установите Docker Compose plugin."
+    warning "Docker Compose не найден"
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        if [ "$ID" = "ubuntu" ] || [ "$ID" = "debian" ]; then
+            read -p "Установить Docker Compose автоматически? [Y/n] " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                info "Установка Docker Compose plugin..."
+                sudo apt-get update -qq
+                sudo apt-get install -y -qq docker-compose-plugin
+                success "Docker Compose установлен"
+            else
+                error "Установите Docker Compose plugin: https://docs.docker.com/compose/install/"
+            fi
+        else
+            error "Установите Docker Compose plugin: https://docs.docker.com/compose/install/"
+        fi
+    else
+        error "Установите Docker Compose plugin: https://docs.docker.com/compose/install/"
+    fi
 fi
 
 success "Docker: $(docker --version | cut -d' ' -f3 | cut -d',' -f1)"
@@ -63,10 +148,28 @@ if ! docker ps &> /dev/null; then
     warning "Нет прав на выполнение Docker команд"
     info "Добавление пользователя $USER в группу docker..."
     sudo usermod -aG docker "$USER" || true
-    warning "Пользователь добавлен в группу docker"
-    warning "Выйдите и войдите снова, или выполните: newgrp docker"
-    warning "Затем запустите скрипт снова"
-    exit 1
+    success "Пользователь добавлен в группу docker"
+    
+    # Пытаемся активировать группу без перелогина
+    if command -v newgrp &>/dev/null; then
+        info "Активация группы docker..."
+        newgrp docker <<EOF
+docker ps &> /dev/null && echo "Группа docker активирована" || echo "Требуется перелогин"
+EOF
+    fi
+    
+    warning "Если Docker команды не работают, выполните: newgrp docker"
+    warning "Или выйдите и войдите снова, затем запустите скрипт снова"
+    
+    # Проверяем еще раз после добавления в группу
+    if ! docker ps &> /dev/null 2>&1; then
+        warning "Docker команды все еще не работают. Попробуйте выполнить: newgrp docker"
+        read -p "Продолжить установку? (Docker команды могут не работать) [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
 fi
 
 # Проверка портов

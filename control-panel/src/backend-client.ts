@@ -73,11 +73,12 @@ export class BackendClient {
   }
 }
 
-export function getBackendClientFromEnv(): BackendClient {
+export function getBackendClientFromEnv(): BackendClient | null {
   const baseUrl = process.env.BACKEND_BASE_URL || '';
   const token = process.env.BACKEND_TOKEN || '';
   if (!baseUrl || !token) {
-    throw new Error('BACKEND_BASE_URL и BACKEND_TOKEN обязательны для интеграции с backend (api-1.yaml)');
+    // Backend не обязателен - используется только для интеграции с веб-приложением
+    return null;
   }
   return new BackendClient({ baseUrl, token });
 }

@@ -1892,6 +1892,9 @@ bot.on(message('text'), async (ctx) => {
       await ctx.reply('⏳ Обработка...');
 
       const backend = getBackendClientFromEnv();
+      if (!backend) {
+        return ctx.reply('❌ Backend не настроен. Укажите BACKEND_BASE_URL и BACKEND_TOKEN в .env');
+      }
       const backendUser = await backend.getUserByTelegramId(telegramId);
       const userUuid = backendUser.uuid || backendUser.user?.uuid;
       
@@ -1950,6 +1953,9 @@ bot.on(message('text'), async (ctx) => {
       await ctx.reply('⏳ Обработка...');
 
       const backend = getBackendClientFromEnv();
+      if (!backend) {
+        return ctx.reply('❌ Backend не настроен. Укажите BACKEND_BASE_URL и BACKEND_TOKEN в .env');
+      }
       const backendUser = await backend.getUserByUsername(username);
       const userUuid = backendUser.uuid || backendUser.user?.uuid;
       
@@ -2011,6 +2017,9 @@ bot.on(message('text'), async (ctx) => {
       await ctx.reply('⏳ Обработка...');
 
       const backend = getBackendClientFromEnv();
+      if (!backend) {
+        return ctx.reply('❌ Backend не настроен. Укажите BACKEND_BASE_URL и BACKEND_TOKEN в .env');
+      }
       const backendUser = await backend.getUserByShortUuid(text);
       const userUuid = backendUser.uuid || backendUser.user?.uuid || text;
       
@@ -2254,6 +2263,11 @@ cron.schedule('*/30 * * * *', async () => {
   logger.info('[Cron] Проверка статусов Remnawave подписок...');
   const activeBindings = queries.getActiveRemnawaveBindings.all() as any[];
   const backend = getBackendClientFromEnv();
+  
+  if (!backend) {
+    logger.warn('[Cron] Backend не настроен, пропускаем проверку статусов Remnawave подписок');
+    return;
+  }
 
   for (const binding of activeBindings) {
     try {
@@ -2553,6 +2567,10 @@ export function startBot() {
   cron.schedule('*/30 * * * *', async () => {
     try {
       const backend = getBackendClientFromEnv();
+      if (!backend) {
+        logger.warn('[Cron] Backend не настроен, пропускаем проверку активных MTProto-доступов');
+        return;
+      }
       const bindings = (queries.getActiveRemnawaveBindings?.all?.() || []) as any[];
       for (const b of bindings) {
         const telegramId = b.telegram_id as number | null;

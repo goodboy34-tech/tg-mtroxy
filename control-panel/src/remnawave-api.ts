@@ -78,6 +78,9 @@ export function startRemnawaveApi() {
         }
 
         const backend = getBackendClientFromEnv();
+        if (!backend) {
+          return json(res, 503, { error: 'Backend не настроен. Укажите BACKEND_BASE_URL и BACKEND_TOKEN в .env для интеграции с веб-приложением' });
+        }
 
         let backendUser: any;
         if (body.telegramId) backendUser = await backend.getUserByTelegramId(body.telegramId);

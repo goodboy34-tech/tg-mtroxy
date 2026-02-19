@@ -2,26 +2,34 @@
 
 ## 1. Установка Control Panel
 
-### Требования
-- Ubuntu 24.04 или выше
-- Docker и Docker Compose установлены
-- Telegram Bot Token (получить у @BotFather)
+### Быстрая установка одной командой (рекомендуется)
 
-### Шаги установки
+```bash
+# Автоматическая установка - скрипт сам проверит зависимости и настроит всё
+curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install-control-standalone.sh | bash
+```
+
+**Что делает скрипт автоматически:**
+- ✅ Проверяет и устанавливает Docker (если нужно)
+- ✅ Проверяет Docker Compose
+- ✅ Проверяет права доступа
+- ✅ Проверяет порты и ресурсы
+- ✅ Клонирует репозиторий
+- ✅ Создает `.env` и предлагает интерактивный ввод переменных
+- ✅ Запускает Control Panel и Redis
+
+### Ручная установка
 
 ```bash
 # Клонируйте репозиторий
-git clone https://github.com/goodboy34-tech/eeee.git
-cd eeee
+git clone <ваш-репозиторий>
+cd tg-mtproxy
 
-# Скопируйте пример конфигурации
-cp ENV.example .env
-
-# Отредактируйте .env файл
-nano .env
+# Запустите скрипт установки (он сам всё настроит)
+./install-control.sh
 ```
 
-**Минимальные настройки в `.env`:**
+**Минимальные настройки в `.env` (запрашиваются интерактивно):**
 ```bash
 BOT_TOKEN=your_bot_token_here
 ADMIN_IDS=123456789  # Ваш Telegram ID
@@ -31,12 +39,7 @@ BACKEND_BASE_URL=https://your-backend.com
 BACKEND_TOKEN=your-backend-token
 ```
 
-**Запуск:**
-```bash
-./install-control.sh
-```
-
-Или вручную:
+**Запуск вручную (если нужно):**
 ```bash
 docker compose up -d
 ```
@@ -50,17 +53,34 @@ docker logs mtproxy-control
 
 ## 2. Установка Node Agent
 
-### На сервере с прокси
+### Быстрая установка одной командой (рекомендуется)
 
 ```bash
-# Скопируйте ENV.example
-cp ENV.example .env
-
-# Отредактируйте .env
-nano .env
+# Автоматическая установка - скрипт сам проверит зависимости и настроит всё
+curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install-node-standalone.sh | bash
 ```
 
-**Минимальные настройки:**
+**Что делает скрипт автоматически:**
+- ✅ Проверяет и устанавливает Docker (если нужно)
+- ✅ Проверяет Docker Compose
+- ✅ Проверяет права доступа
+- ✅ Проверяет порты и ресурсы
+- ✅ Клонирует репозиторий
+- ✅ Создает `.env` и предлагает интерактивный ввод переменных
+- ✅ Запускает Node Agent
+
+### Ручная установка
+
+```bash
+# На сервере с прокси
+git clone <ваш-репозиторий>
+cd tg-mtproxy
+
+# Запустите скрипт установки (он сам всё настроит)
+./install-node.sh
+```
+
+**Минимальные настройки (запрашиваются интерактивно):**
 ```bash
 API_TOKEN=change-me-to-secure-token
 DOMAIN=proxy.example.com
@@ -71,12 +91,7 @@ MT_PROXY_IMAGE=telegrammessenger/proxy:latest
 ENABLE_SOCKS5=false
 ```
 
-**Запуск:**
-```bash
-./install-node.sh
-```
-
-Или вручную:
+**Запуск вручную (если нужно):**
 ```bash
 docker compose -f docker-compose.node.yml up -d
 ```

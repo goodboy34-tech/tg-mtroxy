@@ -78,6 +78,10 @@ async function handleCheckSubscription(req: IncomingMessage, res: ServerResponse
 
     // Определяем пользователя
     const backend = getBackendClientFromEnv();
+    if (!backend) {
+      return json(res, 503, { error: 'Backend не настроен. Укажите BACKEND_BASE_URL и BACKEND_TOKEN в .env' });
+    }
+    
     let backendUser: any;
 
     if (body.telegramId) {

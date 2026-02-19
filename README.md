@@ -50,14 +50,37 @@
 
 ### Установка Control Panel (на МЕЙН-СЕРВЕР)
 
+#### Быстрая установка одной командой:
+
+```bash
+# Автоматическая установка (скачивает репозиторий и запускает установку)
+curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install-control-standalone.sh | bash
+```
+
+Или через универсальный установщик:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install.sh | bash -s control
+```
+
+#### Ручная установка:
+
 ```bash
 # На главном сервере управления
 git clone <ваш-репозиторий>
 cd tg-mtproxy
-cp ENV.example .env
-# Отредактируйте .env файл (BOT_TOKEN, ADMIN_IDS, REMNAWAVE_API_KEY и т.д.)
 ./install-control.sh
 ```
+
+**Что делает скрипт автоматически:**
+- ✅ Проверяет Docker и Docker Compose (предлагает установку если нет)
+- ✅ Проверяет права доступа к Docker
+- ✅ Проверяет порты (8081, 8082, 6379)
+- ✅ Проверяет свободное место на диске и память
+- ✅ Создает `.env` из `ENV.example`
+- ✅ Предлагает интерактивный ввод переменных
+- ✅ Создает необходимые директории
+- ✅ Запускает Control Panel и Redis
 
 **Важно:** На мейн-сервере нужны только переменные для `control-panel`:
 - `BOT_TOKEN`, `ADMIN_IDS`
@@ -67,14 +90,37 @@ cp ENV.example .env
 
 ### Установка Node Agent (на КАЖДУЮ НОДУ)
 
+#### Быстрая установка одной командой:
+
+```bash
+# Автоматическая установка (скачивает репозиторий и запускает установку)
+curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install-node-standalone.sh | bash
+```
+
+Или через универсальный установщик:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install.sh | bash -s node
+```
+
+#### Ручная установка:
+
 ```bash
 # На каждом сервере с прокси (ноде)
 git clone <ваш-репозиторий>
 cd tg-mtproxy
-cp ENV.example .env
-# Отредактируйте .env файл (API_TOKEN, DOMAIN, INTERNAL_IP и т.д.)
 ./install-node.sh
 ```
+
+**Что делает скрипт автоматически:**
+- ✅ Проверяет Docker и Docker Compose (предлагает установку если нет)
+- ✅ Проверяет права доступа к Docker
+- ✅ Проверяет порты (8080, 443, 1080)
+- ✅ Проверяет свободное место на диске и память
+- ✅ Создает `.env` из `ENV.example`
+- ✅ Предлагает интерактивный ввод переменных
+- ✅ Создает необходимые директории
+- ✅ Запускает Node Agent
 
 **Важно:** На ноде нужны только переменные для `node-agent`:
 - `API_TOKEN` — токен для доступа к API ноды

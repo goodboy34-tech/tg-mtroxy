@@ -20,7 +20,6 @@
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
     "@types/node-cron": "^3.0.11",
-    "@types/redis": "^4.0.11",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.0"
   }

@@ -295,72 +295,92 @@ if [ ! -f .env ]; then
         sed -i "s|^ADMIN_IDS=.*|ADMIN_IDS=$ADMIN_IDS_ESC|" .env
         sed -i "s|^WEB_API_KEY=.*|WEB_API_KEY=$WEB_API_KEY_ESC|" .env
         
-        # Обновляем домен для Caddy
+        # Обновляем домен для Caddy (только в секции control-panel, не в node-agent)
         if [ -n "$DOMAIN" ]; then
-            if grep -q "^DOMAIN=" .env; then
-                sed -i "s|^DOMAIN=.*|DOMAIN=$DOMAIN_ESC|" .env
-            else
-                # Добавляем после комментария о домене или в конец файла
-                if grep -q "^# Домен для автоматического HTTPS" .env; then
-                    sed -i "/^# Домен для автоматического HTTPS/a DOMAIN=$DOMAIN_ESC" .env
+            # Ищем DOMAIN в секции control-panel (до секции node-agent)
+            if grep -q "^# Домен для автоматического HTTPS" .env; then
+                # Если есть комментарий, обновляем или добавляем после него
+                if grep -A 5 "^# Домен для автоматического HTTPS" .env | grep -q "^DOMAIN="; then
+                    # Обновляем существующий DOMAIN в секции control-panel
+                    sed -i "/^# Домен для автоматического HTTPS/,/^# node-agent/ s|^DOMAIN=.*|DOMAIN=$DOMAIN_ESC|" .env
                 else
+                    # Добавляем после комментария
+                    sed -i "/^# Домен для автоматического HTTPS/a DOMAIN=$DOMAIN_ESC" .env
+                fi
+            else
+                # Если комментария нет, добавляем перед секцией node-agent или в конец секции control-panel
+                if grep -q "^# node-agent" .env; then
+                    sed -i "/^# node-agent/i # Домен для автоматического HTTPS через Caddy (обязательно для продакшена)\n# Если указан - Caddy автоматически получит SSL сертификат от Let's Encrypt\n# Пример: DOMAIN=your-domain.com\nDOMAIN=$DOMAIN_ESC\n" .env
+                else
+                    # Если секции node-agent нет, добавляем в конец
+                    echo "" >> .env
+                    echo "# Домен для автоматического HTTPS через Caddy (обязательно для продакшена)" >> .env
+                    echo "# Если указан - Caddy автоматически получит SSL сертификат от Let's Encrypt" >> .env
+                    echo "# Пример: DOMAIN=your-domain.com" >> .env
                     echo "DOMAIN=$DOMAIN_ESC" >> .env
                 fi
             fi
             # Обновляем Caddyfile с доменом
             if [ -f Caddyfile ]; then
-                # Заменяем домен в Caddyfile (первая строка с доменом)
-                sed -i "1,10s|^[^#]*$|$DOMAIN_ESC {|" Caddyfile
-                sed -i "s|^example.com|$DOMAIN_ESC|" Caddyfile
+                # Заменяем домен в Caddyfile (ищем строку с доменом в начале блока)
+                sed -i "s|^[a-zA-Z0-9.-]* {|$DOMAIN_ESC {|" Caddyfile
+                sed -i "s|^example.com|$DOMAIN_ESC|g" Caddyfile
             fi
         fi
         
-        # Обновляем опциональные переменные только если они заполнены
-        # Используем grep для проверки существования переменной, если нет - добавляем
-        if [ -n "$REMNAWAVE_API_KEY" ]; then
-            REMNAWAVE_API_KEY_ESC=$(escape_sed "$REMNAWAVE_API_KEY")
-            if grep -q "^REMNAWAVE_API_KEY=" .env; then
-                sed -i "s|^REMNAWAVE_API_KEY=.*|REMNAWAVE_API_KEY=$REMNAWAVE_API_KEY_ESC|" .env
+        # Функция для безопасного обновления переменной только в секции control-panel
+        update_env_var() {
+            local var_name="$1"
+            local var_value="$2"
+            local var_escaped=$(escape_sed "$var_value")
+            
+            # Проверяем, есть ли секция node-agent
+            if grep -q "^# node-agent" .env; then
+                # Обновляем только в секции control-panel (до node-agent)
+                # Ищем переменную в секции control-panel (не закомментированную)
+                if sed -n "/^# control-panel/,/^# node-agent/p" .env | grep -q "^${var_name}="; then
+                    # Переменная существует в секции control-panel - обновляем
+                    sed -i "/^# control-panel/,/^# node-agent/ s|^${var_name}=.*|${var_name}=${var_escaped}|" .env
+                else
+                    # Переменной нет - добавляем перед секцией node-agent (после последней переменной control-panel)
+                    # Ищем последнюю непустую строку перед node-agent
+                    if grep -B 5 "^# node-agent" .env | grep -q "^[A-Z_]*="; then
+                        # Есть переменные перед node-agent - добавляем после последней
+                        sed -i "/^# node-agent/i ${var_name}=${var_escaped}" .env
+                    else
+                        # Нет переменных - добавляем после комментария control-panel или перед node-agent
+                        sed -i "/^# node-agent/i ${var_name}=${var_escaped}" .env
+                    fi
+                fi
             else
-                echo "REMNAWAVE_API_KEY=$REMNAWAVE_API_KEY_ESC" >> .env
+                # Секции node-agent нет - обновляем первое вхождение или добавляем в конец
+                if grep -q "^${var_name}=" .env; then
+                    sed -i "0,/^${var_name}=/ s|^${var_name}=.*|${var_name}=${var_escaped}|" .env
+                else
+                    echo "${var_name}=${var_escaped}" >> .env
+                fi
             fi
+        }
+        
+        # Обновляем опциональные переменные только если они заполнены
+        if [ -n "$REMNAWAVE_API_KEY" ]; then
+            update_env_var "REMNAWAVE_API_KEY" "$REMNAWAVE_API_KEY"
         fi
         
         if [ -n "$REMNAWAVE_BASE_URL" ]; then
-            REMNAWAVE_BASE_URL_ESC=$(escape_sed "$REMNAWAVE_BASE_URL")
-            if grep -q "^REMNAWAVE_BASE_URL=" .env; then
-                sed -i "s|^REMNAWAVE_BASE_URL=.*|REMNAWAVE_BASE_URL=$REMNAWAVE_BASE_URL_ESC|" .env
-            else
-                echo "REMNAWAVE_BASE_URL=$REMNAWAVE_BASE_URL_ESC" >> .env
-            fi
+            update_env_var "REMNAWAVE_BASE_URL" "$REMNAWAVE_BASE_URL"
         fi
         
         if [ -n "$REMNAWAVE_TOKEN" ]; then
-            REMNAWAVE_TOKEN_ESC=$(escape_sed "$REMNAWAVE_TOKEN")
-            if grep -q "^REMNAWAVE_TOKEN=" .env; then
-                sed -i "s|^REMNAWAVE_TOKEN=.*|REMNAWAVE_TOKEN=$REMNAWAVE_TOKEN_ESC|" .env
-            else
-                echo "REMNAWAVE_TOKEN=$REMNAWAVE_TOKEN_ESC" >> .env
-            fi
+            update_env_var "REMNAWAVE_TOKEN" "$REMNAWAVE_TOKEN"
         fi
         
-        # Обновляем опциональные переменные только если они заполнены
         if [ -n "$BACKEND_BASE_URL" ]; then
-            BACKEND_BASE_URL_ESC=$(escape_sed "$BACKEND_BASE_URL")
-            if grep -q "^BACKEND_BASE_URL=" .env; then
-                sed -i "s|^BACKEND_BASE_URL=.*|BACKEND_BASE_URL=$BACKEND_BASE_URL_ESC|" .env
-            else
-                echo "BACKEND_BASE_URL=$BACKEND_BASE_URL_ESC" >> .env
-            fi
+            update_env_var "BACKEND_BASE_URL" "$BACKEND_BASE_URL"
         fi
         
         if [ -n "$BACKEND_TOKEN" ]; then
-            BACKEND_TOKEN_ESC=$(escape_sed "$BACKEND_TOKEN")
-            if grep -q "^BACKEND_TOKEN=" .env; then
-                sed -i "s|^BACKEND_TOKEN=.*|BACKEND_TOKEN=$BACKEND_TOKEN_ESC|" .env
-            else
-                echo "BACKEND_TOKEN=$BACKEND_TOKEN_ESC" >> .env
-            fi
+            update_env_var "BACKEND_TOKEN" "$BACKEND_TOKEN"
         fi
         
         
@@ -413,7 +433,7 @@ success "Все обязательные переменные заполнены
 # ═══════════════════════════════════════════════════════════════
 
 info "Создание необходимых директорий..."
-mkdir -p data certs data/logs
+mkdir -p data certs data/logs data/logs/caddy
 success "Директории созданы"
 
 # Проверка наличия скриптов управления

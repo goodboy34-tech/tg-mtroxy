@@ -12,33 +12,26 @@ example.com {
         output file /var/log/caddy/access.log
         format json
     }
+    
+    # Логи ошибок
+    log {
+        output file /var/log/caddy/error.log
+        level ERROR
+    }
 
     # Remnawave API webhook'и
     handle /api/remnawave/* {
-        reverse_proxy mtproxy-control:8081 {
-            # Передаем заголовки для аутентификации
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
+        reverse_proxy mtproxy-control:8081
     }
 
     # Web API
     handle /api/web/* {
-        reverse_proxy mtproxy-control:8082 {
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
+        reverse_proxy mtproxy-control:8082
     }
 
     # Все остальные запросы проксируем на Remnawave API
     handle {
-        reverse_proxy mtproxy-control:8081 {
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
+        reverse_proxy mtproxy-control:8081
     }
 }
 

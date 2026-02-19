@@ -12,6 +12,7 @@
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+      - ./data/logs:/var/log/caddy
     networks:
       - mtproxy-network
     environment:

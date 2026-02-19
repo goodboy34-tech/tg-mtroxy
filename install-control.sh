@@ -297,7 +297,16 @@ if [ ! -f .env ]; then
         
         # Обновляем домен для Caddy
         if [ -n "$DOMAIN" ]; then
-            sed -i "s|^DOMAIN=.*|DOMAIN=$DOMAIN_ESC|" .env
+            if grep -q "^DOMAIN=" .env; then
+                sed -i "s|^DOMAIN=.*|DOMAIN=$DOMAIN_ESC|" .env
+            else
+                # Добавляем после комментария о домене или в конец файла
+                if grep -q "^# Домен для автоматического HTTPS" .env; then
+                    sed -i "/^# Домен для автоматического HTTPS/a DOMAIN=$DOMAIN_ESC" .env
+                else
+                    echo "DOMAIN=$DOMAIN_ESC" >> .env
+                fi
+            fi
             # Обновляем Caddyfile с доменом
             if [ -f Caddyfile ]; then
                 # Заменяем домен в Caddyfile (первая строка с доменом)
@@ -307,31 +316,53 @@ if [ ! -f .env ]; then
         fi
         
         # Обновляем опциональные переменные только если они заполнены
+        # Используем grep для проверки существования переменной, если нет - добавляем
         if [ -n "$REMNAWAVE_API_KEY" ]; then
             REMNAWAVE_API_KEY_ESC=$(escape_sed "$REMNAWAVE_API_KEY")
-            sed -i "s|^REMNAWAVE_API_KEY=.*|REMNAWAVE_API_KEY=$REMNAWAVE_API_KEY_ESC|" .env
+            if grep -q "^REMNAWAVE_API_KEY=" .env; then
+                sed -i "s|^REMNAWAVE_API_KEY=.*|REMNAWAVE_API_KEY=$REMNAWAVE_API_KEY_ESC|" .env
+            else
+                echo "REMNAWAVE_API_KEY=$REMNAWAVE_API_KEY_ESC" >> .env
+            fi
         fi
         
         if [ -n "$REMNAWAVE_BASE_URL" ]; then
             REMNAWAVE_BASE_URL_ESC=$(escape_sed "$REMNAWAVE_BASE_URL")
-            sed -i "s|^REMNAWAVE_BASE_URL=.*|REMNAWAVE_BASE_URL=$REMNAWAVE_BASE_URL_ESC|" .env
+            if grep -q "^REMNAWAVE_BASE_URL=" .env; then
+                sed -i "s|^REMNAWAVE_BASE_URL=.*|REMNAWAVE_BASE_URL=$REMNAWAVE_BASE_URL_ESC|" .env
+            else
+                echo "REMNAWAVE_BASE_URL=$REMNAWAVE_BASE_URL_ESC" >> .env
+            fi
         fi
         
         if [ -n "$REMNAWAVE_TOKEN" ]; then
             REMNAWAVE_TOKEN_ESC=$(escape_sed "$REMNAWAVE_TOKEN")
-            sed -i "s|^REMNAWAVE_TOKEN=.*|REMNAWAVE_TOKEN=$REMNAWAVE_TOKEN_ESC|" .env
+            if grep -q "^REMNAWAVE_TOKEN=" .env; then
+                sed -i "s|^REMNAWAVE_TOKEN=.*|REMNAWAVE_TOKEN=$REMNAWAVE_TOKEN_ESC|" .env
+            else
+                echo "REMNAWAVE_TOKEN=$REMNAWAVE_TOKEN_ESC" >> .env
+            fi
         fi
         
         # Обновляем опциональные переменные только если они заполнены
         if [ -n "$BACKEND_BASE_URL" ]; then
             BACKEND_BASE_URL_ESC=$(escape_sed "$BACKEND_BASE_URL")
-            sed -i "s|^BACKEND_BASE_URL=.*|BACKEND_BASE_URL=$BACKEND_BASE_URL_ESC|" .env
+            if grep -q "^BACKEND_BASE_URL=" .env; then
+                sed -i "s|^BACKEND_BASE_URL=.*|BACKEND_BASE_URL=$BACKEND_BASE_URL_ESC|" .env
+            else
+                echo "BACKEND_BASE_URL=$BACKEND_BASE_URL_ESC" >> .env
+            fi
         fi
         
         if [ -n "$BACKEND_TOKEN" ]; then
             BACKEND_TOKEN_ESC=$(escape_sed "$BACKEND_TOKEN")
-            sed -i "s|^BACKEND_TOKEN=.*|BACKEND_TOKEN=$BACKEND_TOKEN_ESC|" .env
+            if grep -q "^BACKEND_TOKEN=" .env; then
+                sed -i "s|^BACKEND_TOKEN=.*|BACKEND_TOKEN=$BACKEND_TOKEN_ESC|" .env
+            else
+                echo "BACKEND_TOKEN=$BACKEND_TOKEN_ESC" >> .env
+            fi
         fi
+        
         
         success "Основные переменные сохранены"
         info "Остальные переменные можно настроить позже в файле .env"

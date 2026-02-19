@@ -29,6 +29,26 @@ const bot = new Telegraf(BOT_TOKEN);
 // Хранилище клиентов для нод (кэш)
 const nodeClients = new Map<number, NodeApiClient>();
 
+// Функция для экранирования HTML символов
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Функция для конвертации Markdown в HTML (для совместимости)
+function markdownToHtml(text: string): string {
+  // Экранируем HTML символы сначала
+  let html = escapeHtml(text);
+  // Заменяем Markdown на HTML
+  html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'); // **bold**
+  html = html.replace(/\*(.+?)\*/g, '<b>$1</b>'); // *bold*
+  html = html.replace(/`(.+?)`/g, '<code>$1</code>'); // `code`
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>'); // [text](url)
+  return html;
+}
+
 /**
  * Получить клиент для ноды
  */
@@ -93,10 +113,10 @@ bot.start(async (ctx) => {
   ]);
 
   await ctx.reply(
-    '👋 *MTProxy Management Bot*\n\n' +
+    '👋 <b>MTProxy Management Bot</b>\n\n' +
     'Выберите раздел для управления:\n\n' +
     '💡 Все действия доступны через кнопки меню!',
-    { parse_mode: 'Markdown', ...keyboard }
+    { parse_mode: 'HTML', ...keyboard }
   );
 });
 
@@ -131,15 +151,15 @@ async function handleUserStart(ctx: any) {
       [Markup.button.callback('📊 Мой статус', 'cmd_status')],
     ]);
     
-    let text = '✅ *У вас есть активная подписка!*\n\n';
-    text += `🔗 *Ваши ссылки:*\n`;
+    let text = '✅ <b>У вас есть активная подписка!</b>\n\n';
+    text += `🔗 <b>Ваши ссылки:</b>\n`;
     for (const link of links) {
-      text += `\`${link}\`\n`;
+      text += `<code>${escapeHtml(link)}</code>\n`;
     }
     text += `\n📊 /status — статус подписки\n`;
     text += `💰 /tariffs — продлить подписку`;
     
-    return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+    return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
   }
   
   // Нет активной подписки - показываем тарифы
@@ -148,29 +168,29 @@ async function handleUserStart(ctx: any) {
 
 bot.help(async (ctx) => {
   await ctx.reply(
-    '📖 *Справка по командам*\n\n' +
-    '*Управление нодами:*\n' +
+    '📖 <b>Справка по командам</b>\n\n' +
+    '<b>Управление нодами:</b>\n' +
     '/nodes - список всех нод\n' +
     '/add\\_node - добавить новую ноду\n' +
-    '/node <id> - информация о ноде\n' +
-    '/remove\\_node <id> - удалить ноду\n' +
-    '/restart\\_node <id> - перезапустить прокси\n\n' +
-    '*Получение доступов:*\n' +
-    '/links <node\\_id> - получить все ссылки\n' +
-    '/add\\_secret <node\\_id> - добавить секрет\n' +
-    '/add\\_socks5 <node\\_id> - добавить SOCKS5 аккаунт\n\n' +
-    '*Подписки:*\n' +
-    '/create\\_subscription <название> - создать подписку\n' +
+    '/node &lt;id&gt; - информация о ноде\n' +
+    '/remove\\_node &lt;id&gt; - удалить ноду\n' +
+    '/restart\\_node &lt;id&gt; - перезапустить прокси\n\n' +
+    '<b>Получение доступов:</b>\n' +
+    '/links &lt;node\\_id&gt; - получить все ссылки\n' +
+    '/add\\_secret &lt;node\\_id&gt; - добавить секрет\n' +
+    '/add\\_socks5 &lt;node\\_id&gt; - добавить SOCKS5 аккаунт\n\n' +
+    '<b>Подписки:</b>\n' +
+    '/create\\_subscription &lt;название&gt; - создать подписку\n' +
     '/subscriptions - список всех подписок\n' +
-    '/subscription <id> - детали подписки\n\n' +
-    '*Мониторинг:*\n' +
+    '/subscription &lt;id&gt; - детали подписки\n\n' +
+    '<b>Мониторинг:</b>\n' +
     '/stats - общая статистика\n' +
     '/health - здоровье всех нод\n' +
-    '/logs <node\\_id> - логи ноды\n\n' +
-    '*Настройки:*\n' +
+    '/logs &lt;node\\_id&gt; - логи ноды\n\n' +
+    '<b>Настройки:</b>\n' +
     '/set\\_workers <node\\_id> <count> - воркеры\n' +
     '/update\\_node <id> - обновить конфиг',
-    { parse_mode: 'Markdown' }
+    { parse_mode: 'HTML' }
   );
 });
 
@@ -188,25 +208,25 @@ bot.command('user_mtproxy', async (ctx) => {
   const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
   const secrets = queries.getUserMtprotoSecretsByTelegramId.all(telegramId) as any[];
 
-  let text = `👤 *MTProto user*\n\n` +
-    `*TG ID:* \`${telegramId}\`\n` +
-    `*Bindings:* ${bindings.length}\n` +
-    `*Secrets:* ${secrets.length}\n\n`;
+  let text = `👤 <b>MTProto user</b>\n\n` +
+    `<b>TG ID:</b> <code>${telegramId}</code>\n` +
+    `<b>Bindings:</b> ${bindings.length}\n` +
+    `<b>Secrets:</b> ${secrets.length}\n\n`;
 
   if (bindings.length > 0) {
     const b = bindings[0];
-    text += `*Status:* ${b.status}\n`;
-    text += `*RemnaSubId:* \`${b.remnawave_subscription_id}\`\n`;
-    text += `*BackendUser:* \`${b.remnawave_user_id}\`\n`;
-    text += `*LocalSub:* \`${b.local_subscription_id}\`\n\n`;
+    text += `<b>Status:</b> ${b.status}\n`;
+    text += `<b>RemnaSubId:</b> <code>${b.remnawave_subscription_id}</code>\n`;
+    text += `<b>BackendUser:</b> <code>${b.remnawave_user_id}</code>\n`;
+    text += `<b>LocalSub:</b> <code>${b.local_subscription_id}</code>\n\n`;
   }
 
   if (secrets.length === 0) {
     text += '📭 Нет активных персональных секретов.\n';
-    return ctx.reply(text, { parse_mode: 'Markdown' });
+    return ctx.reply(text, { parse_mode: 'HTML' });
   }
 
-  text += '*Links:*\n';
+  text += '<b>Links:</b>\n';
   for (const s of secrets) {
     const node = queries.getNodeById.get(s.node_id) as any;
     if (!node) continue;
@@ -216,10 +236,10 @@ bot.command('user_mtproxy', async (ctx) => {
       s.secret,
       s.is_fake_tls === 1
     );
-    text += `- Node \`${node.id}\`: ${link}\n`;
+    text += `- Node <code>${node.id}</code>: ${escapeHtml(link)}\n`;
   }
 
-  return ctx.reply(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
+  return ctx.reply(text, { parse_mode: 'HTML' });
 });
 
 bot.command('disable_mtproxy', async (ctx) => {
@@ -239,22 +259,22 @@ bot.action(/^user_info_(\d+)$/, async (ctx) => {
   const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
   const secrets = queries.getUserMtprotoSecretsByTelegramId.all(telegramId) as any[];
 
-  let text = `👤 *Информация о пользователе*\n\n`;
-  text += `*TG ID:* \`${telegramId}\`\n`;
-  text += `*Привязок:* ${bindings.length}\n`;
-  text += `*Секретов:* ${secrets.length}\n\n`;
+  let text = `👤 <b>Информация о пользователе</b>\n\n`;
+  text += `<b>TG ID:</b> <code>${telegramId}</code>\n`;
+  text += `<b>Привязок:</b> ${bindings.length}\n`;
+  text += `<b>Секретов:</b> ${secrets.length}\n\n`;
 
   if (bindings.length > 0) {
-    text += `*Привязки Remnawave:*\n`;
+    text += `<b>Привязки Remnawave:</b>\n`;
     for (const b of bindings) {
-      text += `• Подписка: \`${b.remnawave_subscription_id}\`\n`;
+      text += `• Подписка: <code>${b.remnawave_subscription_id}</code>\n`;
       text += `  Статус: ${b.status === 'active' ? '✅' : '❌'}\n`;
-      text += `  UUID: \`${b.remnawave_user_id}\`\n\n`;
+      text += `  UUID: <code>${b.remnawave_user_id}</code>\n\n`;
     }
   }
 
   if (secrets.length > 0) {
-    text += `*MTProto секреты:*\n`;
+    text += `<b>MTProto секреты:</b>\n`;
     for (const s of secrets) {
       const node = queries.getNodeById.get(s.node_id) as any;
       const link = ProxyLinkGenerator.generateMtProtoLink(
@@ -263,8 +283,8 @@ bot.action(/^user_info_(\d+)$/, async (ctx) => {
         s.secret,
         s.is_fake_tls === 1
       );
-      text += `• Нода ${s.node_id}: \`${s.secret}\`\n`;
-      text += `  ${link}\n\n`;
+      text += `• Нода ${s.node_id}: <code>${escapeHtml(s.secret)}</code>\n`;
+      text += `  ${escapeHtml(link)}\n\n`;
     }
   } else {
     text += `📭 Нет активных персональных секретов.\n`;
@@ -275,7 +295,7 @@ bot.action(/^user_info_(\d+)$/, async (ctx) => {
     [Markup.button.callback('🔙 Главное меню', 'menu_main')],
   ]);
 
-  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
   await ctx.answerCbQuery();
 });
 
@@ -286,7 +306,7 @@ bot.action(/^mtproto_disable_(\d+)$/, async (ctx) => {
     await MtprotoUserManager.disableUser(telegramId);
     await ctx.editMessageText(
       `✅ Доступ MTProto для TG ID ${telegramId} отключён.\n\nСекреты удалены со всех нод.`,
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'HTML' }
     );
     await ctx.answerCbQuery('Отключено');
   } catch (err: any) {
@@ -311,18 +331,18 @@ bot.command('search_mtproxy', async (ctx) => {
   if (bySecret) {
     const node = queries.getNodeById.get(bySecret.node_id) as any;
     const bindings = queries.getRemnawaveBindingsByTelegramId.all(bySecret.telegram_id) as any[];
-    let text = `🔍 *Найден MTProto секрет*\n\n`;
-    text += `*Секрет:* \`${bySecret.secret}\`\n`;
-    text += `*Telegram ID:* ${bySecret.telegram_id}\n`;
-    text += `*Нода:* ${node?.name || 'N/A'} (ID: ${bySecret.node_id})\n`;
-    text += `*Статус:* ${bySecret.is_active ? '✅ Активен' : '❌ Неактивен'}\n`;
-    text += `*Fake TLS:* ${bySecret.is_fake_tls ? 'Да' : 'Нет'}\n`;
-    text += `*Создан:* ${bySecret.created_at}\n\n`;
+    let text = `🔍 <b>Найден MTProto секрет</b>\n\n`;
+    text += `<b>Секрет:</b> <code>${escapeHtml(bySecret.secret)}</code>\n`;
+    text += `<b>Telegram ID:</b> ${bySecret.telegram_id}\n`;
+    text += `<b>Нода:</b> ${escapeHtml(node?.name || 'N/A')} (ID: ${bySecret.node_id})\n`;
+    text += `<b>Статус:</b> ${bySecret.is_active ? '✅ Активен' : '❌ Неактивен'}\n`;
+    text += `<b>Fake TLS:</b> ${bySecret.is_fake_tls ? 'Да' : 'Нет'}\n`;
+    text += `<b>Создан:</b> ${bySecret.created_at}\n\n`;
     
     if (bindings.length > 0) {
-      text += `*Привязки Remnawave:*\n`;
+      text += `<b>Привязки Remnawave:</b>\n`;
       for (const b of bindings) {
-        text += `- Подписка: ${b.remnawave_subscription_id}\n`;
+        text += `- Подписка: ${escapeHtml(b.remnawave_subscription_id)}\n`;
         text += `  Статус: ${b.status}\n`;
       }
     }
@@ -331,7 +351,7 @@ bot.command('search_mtproxy', async (ctx) => {
       [Markup.button.callback('❌ Отключить доступ', `mtproto_disable_${bySecret.telegram_id}`)]
     ]);
     
-    return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+    return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
   }
 
   // Поиск по Telegram ID
@@ -339,34 +359,34 @@ bot.command('search_mtproxy', async (ctx) => {
   if (!isNaN(tgId)) {
     const secrets = queries.getUserMtprotoSecretsByTelegramId.all(tgId) as any[];
     if (secrets.length > 0) {
-      let text = `🔍 *Найдено секретов для TG ID ${tgId}:* ${secrets.length}\n\n`;
+      let text = `🔍 <b>Найдено секретов для TG ID ${tgId}:</b> ${secrets.length}\n\n`;
       for (const s of secrets) {
         const node = queries.getNodeById.get(s.node_id) as any;
-        text += `*Нода:* ${node?.name || 'N/A'}\n`;
-        text += `*Секрет:* \`${s.secret}\`\n`;
-        text += `*Статус:* ${s.is_active ? '✅' : '❌'}\n\n`;
+        text += `<b>Нода:</b> ${escapeHtml(node?.name || 'N/A')}\n`;
+        text += `<b>Секрет:</b> <code>${escapeHtml(s.secret)}</code>\n`;
+        text += `<b>Статус:</b> ${s.is_active ? '✅' : '❌'}\n\n`;
       }
       const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('❌ Отключить все', `mtproto_disable_${tgId}`)]
       ]);
-      return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+      return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
     }
   }
 
   // Поиск по UUID (через remnawave_bindings)
   const byUuid = queries.getRemnawaveBindingsByUserId.all(arg) as any[];
   if (byUuid.length > 0) {
-    let text = `🔍 *Найдено привязок для UUID:* ${arg}\n\n`;
+    let text = `🔍 <b>Найдено привязок для UUID:</b> ${escapeHtml(arg)}\n\n`;
     for (const b of byUuid) {
       const sub = queries.getSubscriptionById.get(b.local_subscription_id) as any;
       const secrets = b.telegram_id ? queries.getUserMtprotoSecretsByTelegramId.all(b.telegram_id) as any[] : [];
-      text += `*Подписка Remnawave:* ${b.remnawave_subscription_id}\n`;
-      text += `*Локальная подписка:* ${sub?.name || 'N/A'} (ID: ${b.local_subscription_id})\n`;
-      text += `*Telegram ID:* ${b.telegram_id || 'N/A'}\n`;
-      text += `*Статус:* ${b.status}\n`;
-      text += `*Секретов MTProto:* ${secrets.length}\n\n`;
+      text += `<b>Подписка Remnawave:</b> ${escapeHtml(b.remnawave_subscription_id)}\n`;
+      text += `<b>Локальная подписка:</b> ${escapeHtml(sub?.name || 'N/A')} (ID: ${b.local_subscription_id})\n`;
+      text += `<b>Telegram ID:</b> ${b.telegram_id || 'N/A'}\n`;
+      text += `<b>Статус:</b> ${b.status}\n`;
+      text += `<b>Секретов MTProto:</b> ${secrets.length}\n\n`;
     }
-    return ctx.reply(text, { parse_mode: 'Markdown' });
+    return ctx.reply(text, { parse_mode: 'HTML' });
   }
 
   return ctx.reply('❌ Ничего не найдено. Проверьте правильность ввода.');
@@ -386,17 +406,17 @@ bot.command('subscription_mtproxy', async (ctx) => {
   const active = bindings.filter(b => b.status === 'active');
   const expired = bindings.filter(b => b.status !== 'active');
 
-  let text = `📦 *Local subscription*\n\n` +
-    `*ID:* \`${localSubId}\`\n` +
-    `*Name:* ${sub.name}\n` +
-    `*Bindings:* ${bindings.length} (active: ${active.length}, inactive: ${expired.length})\n\n`;
+  let text = `📦 <b>Local subscription</b>\n\n` +
+    `<b>ID:</b> <code>${localSubId}</code>\n` +
+    `<b>Name:</b> ${escapeHtml(sub.name)}\n` +
+    `<b>Bindings:</b> ${bindings.length} (active: ${active.length}, inactive: ${expired.length})\n\n`;
 
-  text += '*Последние 10:*\n';
+  text += '<b>Последние 10:</b>\n';
   for (const b of bindings.slice(0, 10)) {
-    text += `- tg:\`${b.telegram_id ?? 'n/a'}\` status:${b.status} remna:\`${b.remnawave_subscription_id}\`\n`;
+    text += `- tg:<code>${b.telegram_id ?? 'n/a'}</code> status:${b.status} remna:<code>${escapeHtml(b.remnawave_subscription_id)}</code>\n`;
   }
 
-  return ctx.reply(text, { parse_mode: 'Markdown' });
+  return ctx.reply(text, { parse_mode: 'HTML' });
 });
 
 // ═══════════════════════════════════════════════
@@ -425,9 +445,9 @@ bot.action('menu_main', async (ctx) => {
   ]);
 
   await ctx.editMessageText(
-    '👋 *MTProxy Management Bot*\n\nВыберите раздел:\n\n' +
+    '👋 <b>MTProxy Management Bot</b>\n\nВыберите раздел:\n\n' +
     '💡 Все действия доступны через кнопки меню!',
-    { parse_mode: 'Markdown', ...keyboard }
+    { parse_mode: 'HTML', ...keyboard }
   );
   await ctx.answerCbQuery();
 });
@@ -442,8 +462,8 @@ bot.action('menu_nodes', async (ctx) => {
       [Markup.button.callback('🔙 Главное меню', 'menu_main')],
     ]);
     await ctx.editMessageText(
-      '📡 *Ноды*\n\n📭 Нет добавленных нод.',
-      { parse_mode: 'Markdown', ...keyboard }
+      '📡 <b>Ноды</b>\n\n📭 Нет добавленных нод.',
+      { parse_mode: 'HTML', ...keyboard }
     );
     await ctx.answerCbQuery();
     return;
@@ -464,16 +484,16 @@ bot.action('menu_nodes', async (ctx) => {
     [Markup.button.callback('🔙 Главное меню', 'menu_main')],
   ]);
 
-  let text = '📡 *Список нод:*\n\n';
+  let text = '📡 <b>Список нод:</b>\n\n';
   for (const node of nodes) {
     const statusEmoji = node.status === 'online' ? '🟢' : 
                        node.status === 'offline' ? '🔴' : '🟡';
-    text += `${statusEmoji} *${node.name}*\n`;
-    text += `   Домен: \`${node.domain}\`\n`;
+    text += `${statusEmoji} <b>${escapeHtml(node.name)}</b>\n`;
+    text += `   Домен: <code>${escapeHtml(node.domain)}</code>\n`;
     text += `   Статус: ${node.status}\n\n`;
   }
 
-  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
   await ctx.answerCbQuery();
 });
 
@@ -485,7 +505,7 @@ bot.command('nodes', async (ctx) => {
       [Markup.button.callback('➕ Добавить ноду', 'node_add')],
       [Markup.button.callback('🔙 Главное меню', 'menu_main')],
     ]);
-    return ctx.reply('📡 *Ноды*\n\n📭 Нет добавленных нод.', { parse_mode: 'Markdown', ...keyboard });
+    return ctx.reply('📡 <b>Ноды</b>\n\n📭 Нет добавленных нод.', { parse_mode: 'HTML', ...keyboard });
   }
 
   const buttons = nodes.map(node => {
@@ -503,16 +523,16 @@ bot.command('nodes', async (ctx) => {
     [Markup.button.callback('🔙 Главное меню', 'menu_main')],
   ]);
 
-  let text = '📡 *Список нод:*\n\n';
+  let text = '📡 <b>Список нод:</b>\n\n';
   for (const node of nodes) {
     const statusEmoji = node.status === 'online' ? '🟢' : 
                        node.status === 'offline' ? '🔴' : '🟡';
-    text += `${statusEmoji} *${node.name}*\n`;
-    text += `   Домен: \`${node.domain}\`\n`;
+    text += `${statusEmoji} <b>${escapeHtml(node.name)}</b>\n`;
+    text += `   Домен: <code>${escapeHtml(node.domain)}</code>\n`;
     text += `   Статус: ${node.status}\n\n`;
   }
 
-  await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
 });
 
 // Обработчик кнопки информации о ноде
@@ -533,13 +553,13 @@ bot.action(/^node_info_(\d+)$/, async (ctx) => {
       const health = await client.getHealth();
       const stats = await client.getStats();
       
-      healthInfo = `\n*Статус:* ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
-                   `*Uptime:* ${Math.floor(health.uptime / 3600)}ч ${Math.floor((health.uptime % 3600) / 60)}м\n` +
-                   `*CPU:* ${health.system.cpuUsage.toFixed(1)}%\n` +
-                   `*RAM:* ${health.system.ramUsage.toFixed(1)}%\n` +
-                   `*Disk:* ${health.system.diskUsage.toFixed(1)}%\n`;
+      healthInfo = `\n<b>Статус:</b> ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
+                   `<b>Uptime:</b> ${Math.floor(health.uptime / 3600)}ч ${Math.floor((health.uptime % 3600) / 60)}м\n` +
+                   `<b>CPU:</b> ${health.system.cpuUsage.toFixed(1)}%\n` +
+                   `<b>RAM:</b> ${health.system.ramUsage.toFixed(1)}%\n` +
+                   `<b>Disk:</b> ${health.system.diskUsage.toFixed(1)}%\n`;
       
-      statsInfo = `\n*Статистика:*\n` +
+      statsInfo = `\n<b>Статистика:</b>\n` +
                   `MTProto подключений: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
                   `SOCKS5 подключений: ${stats.socks5.connections}\n` +
                   `Трафик: ↓${stats.network.inMb.toFixed(2)}MB ↑${stats.network.outMb.toFixed(2)}MB\n`;
@@ -551,11 +571,11 @@ bot.action(/^node_info_(\d+)$/, async (ctx) => {
   const statusEmoji = node.status === 'online' ? '🟢' : 
                      node.status === 'offline' ? '🔴' : '🟡';
 
-  let text = `📡 *Информация о ноде*\n\n`;
-  text += `${statusEmoji} *${node.name}*\n`;
-  text += `ID: \`${node.id}\`\n`;
-  text += `Домен: \`${node.domain}\`\n`;
-  text += `IP: \`${node.ip}\`\n`;
+  let text = `📡 <b>Информация о ноде</b>\n\n`;
+  text += `${statusEmoji} <b>${escapeHtml(node.name)}</b>\n`;
+  text += `ID: <code>${node.id}</code>\n`;
+  text += `Домен: <code>${escapeHtml(node.domain)}</code>\n`;
+  text += `IP: <code>${escapeHtml(node.ip)}</code>\n`;
   text += `Порт MTProto: ${node.mtproto_port}\n`;
   text += `Порт SOCKS5: ${node.socks5_port}\n`;
   text += `Воркеры: ${node.workers}\n`;
@@ -568,7 +588,7 @@ bot.action(/^node_info_(\d+)$/, async (ctx) => {
     [Markup.button.callback('🔙 К списку нод', 'menu_nodes')],
   ]);
 
-  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
   await ctx.answerCbQuery();
 });
 
@@ -592,17 +612,17 @@ bot.command('node', async (ctx) => {
       const health = await client.getHealth();
       const stats = await client.getStats();
       
-      healthInfo = `\n*Статус:* ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
-                   `*Uptime:* ${Math.floor(health.uptime / 3600)}ч ${Math.floor((health.uptime % 3600) / 60)}м\n` +
-                   `*CPU:* ${health.system.cpuUsage.toFixed(1)}%\n` +
-                   `*RAM:* ${health.system.ramUsage.toFixed(1)}%\n`;
+      healthInfo = `\n<b>Статус:</b> ${health.status === 'healthy' ? '✅ Здорова' : '⚠️ Проблемы'}\n` +
+                   `<b>Uptime:</b> ${Math.floor(health.uptime / 3600)}ч ${Math.floor((health.uptime % 3600) / 60)}м\n` +
+                   `<b>CPU:</b> ${health.system.cpuUsage.toFixed(1)}%\n` +
+                   `<b>RAM:</b> ${health.system.ramUsage.toFixed(1)}%\n`;
       
-      statsInfo = `\n*MTProto:*\n` +
+      statsInfo = `\n<b>MTProto:</b>\n` +
                   `  Подключений: ${stats.mtproto.connections}/${stats.mtproto.maxConnections}\n` +
                   `  Telegram серверов: ${stats.mtproto.activeTargets}/${stats.mtproto.readyTargets}\n` +
-                  `*SOCKS5:*\n` +
+                  `<b>SOCKS5:</b>\n` +
                   `  Подключений: ${stats.socks5.connections}\n` +
-                  `*Трафик:*\n` +
+                  `<b>Трафик:</b>\n` +
                   `  ⬇️ ${stats.network.inMb.toFixed(2)} MB\n` +
                   `  ⬆️ ${stats.network.outMb.toFixed(2)} MB\n`;
     }
@@ -611,28 +631,28 @@ bot.command('node', async (ctx) => {
   }
 
   await ctx.reply(
-    `📡 *Нода: ${node.name}*\n\n` +
-    `*ID:* \`${node.id}\`\n` +
-    `*Домен:* \`${node.domain}\`\n` +
-    `*IP:* \`${node.ip}\`\n` +
-    `*MTProto порт:* ${node.mtproto_port}\n` +
-    `*SOCKS5 порт:* ${node.socks5_port}\n` +
-    `*Воркеры:* ${node.workers}\n` +
-    `*CPU ядер:* ${node.cpu_cores}\n` +
-    `*RAM:* ${node.ram_mb} MB\n` +
+    `📡 <b>Нода: ${escapeHtml(node.name)}</b>\n\n` +
+    `<b>ID:</b> <code>${node.id}</code>\n` +
+    `<b>Домен:</b> <code>${escapeHtml(node.domain)}</code>\n` +
+    `<b>IP:</b> <code>${escapeHtml(node.ip)}</code>\n` +
+    `<b>MTProto порт:</b> ${node.mtproto_port}\n` +
+    `<b>SOCKS5 порт:</b> ${node.socks5_port}\n` +
+    `<b>Воркеры:</b> ${node.workers}\n` +
+    `<b>CPU ядер:</b> ${node.cpu_cores}\n` +
+    `<b>RAM:</b> ${node.ram_mb} MB\n` +
     healthInfo +
     statsInfo +
-    `\n*Команды:*\n` +
+    `\n<b>Команды:</b>\n` +
     `/links ${node.id} - получить ссылки\n` +
     `/restart_node ${node.id} - перезапустить\n` +
     `/logs ${node.id} - показать логи`,
-    { parse_mode: 'Markdown' }
+    { parse_mode: 'HTML' }
   );
 });
 
 bot.command('add_node', async (ctx) => {
   await ctx.reply(
-    '➕ *Добавление новой ноды*\n\n' +
+    '➕ <b>Добавление новой ноды</b>\n\n' +
     'Отправьте данные ноды в формате:\n\n' +
     '```\n' +
     'name: My Node 1\n' +
@@ -646,7 +666,7 @@ bot.command('add_node', async (ctx) => {
     'ram_mb: 2048\n' +
     '```\n\n' +
     'API токен будет сгенерирован автоматически.',
-    { parse_mode: 'Markdown' }
+    { parse_mode: 'HTML' }
   );
   
   // TODO: Реализовать conversation handler для добавления ноды
@@ -723,11 +743,11 @@ bot.command('links', async (ctx) => {
     );
   }
 
-  let text = `🔗 *Доступы для ноды "${node.name}"*\n\n`;
+  let text = `🔗 <b>Доступы для ноды "${escapeHtml(node.name)}"</b>\n\n`;
 
   // MTProto секреты
   if (secrets.length > 0) {
-    text += '*MTProto:*\n\n';
+    text += '<b>MTProto:</b>\n\n';
     for (const secret of secrets) {
       const type = secret.is_fake_tls ? '🔒 Fake-TLS (dd)' : '🔓 Обычный';
       const link = ProxyLinkGenerator.generateMtProtoLink(
@@ -752,7 +772,7 @@ bot.command('links', async (ctx) => {
 
   // SOCKS5 аккаунты
   if (socks5Accounts.length > 0) {
-    text += '*SOCKS5:*\n\n';
+    text += '<b>SOCKS5:</b>\n\n';
     for (const account of socks5Accounts) {
       const tgLink = ProxyLinkGenerator.generateSocks5TgLink(
         node.domain,
@@ -774,7 +794,7 @@ bot.command('links', async (ctx) => {
     }
   }
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text, { parse_mode: 'HTML' });
 });
 
 bot.command('add_secret', async (ctx) => {
@@ -792,12 +812,12 @@ bot.command('add_secret', async (ctx) => {
   const secret = SecretGenerator.generateMtProtoSecret();
   
   await ctx.reply(
-    `🔐 *Добавление MTProto секрета*\n\n` +
-    `Нода: ${node.name}\n` +
-    `Секрет: \`${secret}\`\n\n` +
+    `🔐 <b>Добавление MTProto секрета</b>\n\n` +
+    `Нода: ${escapeHtml(node.name)}\n` +
+    `Секрет: <code>${escapeHtml(secret)}</code>\n\n` +
     `Выберите тип:`,
     {
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
         [Markup.button.callback('🔒 Fake-TLS (dd) - рекомендуется', `add_secret_dd_${nodeId}_${secret}`)],
         [Markup.button.callback('🔓 Обычный', `add_secret_normal_${nodeId}_${secret}`)],
@@ -851,11 +871,11 @@ bot.action(/^add_secret_(dd|normal)_(\d+)_([a-f0-9]{32})$/, async (ctx) => {
 
   await ctx.answerCbQuery('Секрет добавлен!');
   await ctx.editMessageText(
-    `✅ *Секрет успешно добавлен!*\n\n` +
-    `Нода: ${node.name}\n` +
+    `✅ <b>Секрет успешно добавлен!</b>\n\n` +
+    `Нода: ${escapeHtml(node.name)}\n` +
     `Тип: ${isFakeTls ? 'Fake-TLS (dd)' : 'Обычный'}\n\n` +
     `Ссылка:\n\`${link}\``,
-    { parse_mode: 'Markdown' }
+    { parse_mode: 'HTML' }
   );
 
   queries.insertLog.run({
@@ -884,13 +904,13 @@ bot.command('add_socks5', async (ctx) => {
   const password = SecretGenerator.generatePassword();
   
   await ctx.reply(
-    `🔐 *Добавление SOCKS5 аккаунта*\n\n` +
-    `Нода: ${node.name}\n` +
-    `Username: \`${username}\`\n` +
+    `🔐 <b>Добавление SOCKS5 аккаунта</b>\n\n` +
+    `Нода: ${escapeHtml(node.name)}\n` +
+    `Username: <code>${escapeHtml(username)}</code>\n` +
     `Password: \`${password}\`\n\n` +
     `Подтвердите добавление:`,
     {
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
         [Markup.button.callback('✅ Добавить', `add_socks5_confirm_${nodeId}_${username}_${password}`)],
         [Markup.button.callback('❌ Отмена', 'cancel')],
@@ -934,14 +954,14 @@ bot.action(/^add_socks5_confirm_(\d+)_([^_]+)_([^_]+)$/, async (ctx) => {
 
     await ctx.answerCbQuery('SOCKS5 аккаунт добавлен!');
     await ctx.editMessageText(
-      `✅ *SOCKS5 аккаунт успешно добавлен!*\n\n` +
-      `Нода: ${node.name}\n` +
-      `Username: \`${username}\`\n` +
-      `Password: \`${password}\`\n\n` +
-      `*Ссылки для импорта:*\n` +
+      `✅ <b>SOCKS5 аккаунт успешно добавлен!</b>\n\n` +
+      `Нода: ${escapeHtml(node.name)}\n` +
+      `Username: <code>${escapeHtml(username)}</code>\n` +
+      `Password: <code>${escapeHtml(password)}</code>\n\n` +
+      `<b>Ссылки для импорта:</b>\n` +
       `\`${tgLink}\`\n\n` +
       `\`${tmeLink}\``,
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'HTML' }
     );
 
     queries.insertLog.run({
@@ -964,7 +984,7 @@ bot.command('stats', async (ctx) => {
   const nodes = queries.getActiveNodes.all() as any[];
   const allStats = queries.getAllNodesLatestStats.all() as any[];
   
-  let text = '📊 *Общая статистика*\n\n';
+  let text = '📊 <b>Общая статистика</b>\n\n';
   text += `Нод активно: ${nodes.length}\n\n`;
 
   let totalMtprotoConnections = 0;
@@ -978,14 +998,14 @@ bot.command('stats', async (ctx) => {
     totalNetworkIn += stat.network_in_mb || 0;
     totalNetworkOut += stat.network_out_mb || 0;
     
-    text += `*${stat.node_name}*\n`;
+    text += `<b>${escapeHtml(stat.node_name)}</b>\n`;
     text += `  MTProto: ${stat.mtproto_connections}/${stat.mtproto_max}\n`;
     text += `  SOCKS5: ${stat.socks5_connections}\n`;
     text += `  CPU: ${stat.cpu_usage?.toFixed(1)}% | RAM: ${stat.ram_usage?.toFixed(1)}%\n`;
     text += `  Трафик: ↓${(stat.network_in_mb || 0).toFixed(2)}MB ↑${(stat.network_out_mb || 0).toFixed(2)}MB\n\n`;
   }
 
-  text += `*Итого:*\n`;
+  text += `<b>Итого:</b>\n`;
   text += `MTProto подключений: ${totalMtprotoConnections}\n`;
   text += `SOCKS5 подключений: ${totalSocks5Connections}\n`;
   text += `Трафик: ↓${totalNetworkIn.toFixed(2)}MB ↑${totalNetworkOut.toFixed(2)}MB\n`;
@@ -995,17 +1015,17 @@ bot.command('stats', async (ctx) => {
   const totalSecrets = queries.getAllUserMtprotoSecrets.all() as any[];
   const activeSecrets = totalSecrets.filter(s => s.is_active === 1);
 
-  text += `\n*Пользователи:*\n`;
+  text += `\n<b>Пользователи:</b>\n`;
   text += `Активных привязок: ${activeUsers.length}\n`;
   text += `Активных секретов: ${activeSecrets.length}\n`;
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text, { parse_mode: 'HTML' });
 });
 
 bot.command('health', async (ctx) => {
   const nodes = queries.getActiveNodes.all() as any[];
   
-  let text = '🏥 *Здоровье нод*\n\n';
+  let text = '🏥 <b>Здоровье нод</b>\n\n';
 
   for (const node of nodes) {
     const client = getNodeClient(node.id);
@@ -1023,13 +1043,13 @@ bot.command('health', async (ctx) => {
       details = err.message;
     }
 
-    text += `*${node.name}*\n`;
+    text += `<b>${escapeHtml(node.name)}</b>\n`;
     text += `Status: ${status}\n`;
     if (details) text += `${details}\n`;
     text += `\n`;
   }
 
-  await ctx.reply(text, { parse_mode: 'Markdown' });
+  await ctx.reply(text, { parse_mode: 'HTML' });
 });
 
 bot.command('logs', async (ctx) => {
@@ -1058,19 +1078,19 @@ bot.command('logs', async (ctx) => {
     const logs = await client.getLogs(lines);
 
     // Форматируем для Telegram (лимит 4096 символов)
-    let text = `📋 *Логи ноды: ${node.name}*\n\n`;
+    let text = `📋 <b>Логи ноды: ${escapeHtml(node.name)}</b>\n\n`;
     
-    text += `*MTProxy (последние ${lines} строк):*\n`;
-    text += '```\n';
-    text += logs.mtproto.substring(Math.max(0, logs.mtproto.length - 1500)); // Последние 1500 символов
-    text += '\n```\n\n';
+    text += `<b>MTProxy (последние ${lines} строк):</b>\n`;
+    text += '<pre>\n';
+    text += escapeHtml(logs.mtproto.substring(Math.max(0, logs.mtproto.length - 1500))); // Последние 1500 символов
+    text += '\n</pre>\n\n';
     
-    text += `*SOCKS5 (последние ${lines} строк):*\n`;
-    text += '```\n';
-    text += logs.socks5.substring(Math.max(0, logs.socks5.length - 1500));
-    text += '\n```';
+    text += `<b>SOCKS5 (последние ${lines} строк):</b>\n`;
+    text += '<pre>\n';
+    text += escapeHtml(logs.socks5.substring(Math.max(0, logs.socks5.length - 1500)));
+    text += '\n</pre>';
 
-    await ctx.reply(text, { parse_mode: 'Markdown' });
+    await ctx.reply(text, { parse_mode: 'HTML' });
 
   } catch (err: any) {
     await ctx.reply(`❌ Ошибка: ${err.message}`);
@@ -1123,12 +1143,12 @@ bot.command('set_workers', async (ctx) => {
     });
 
     await ctx.reply(
-      `✅ *Воркеры обновлены!*\n\n` +
-      `Нода: ${node.name}\n` +
+      `✅ <b>Воркеры обновлены!</b>\n\n` +
+      `Нода: ${escapeHtml(node.name)}\n` +
       `Воркеров: ${workers}\n` +
       `Max соединений: ${workers * 60000}\n\n` +
       `MTProxy перезапущен с новыми настройками.`,
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'HTML' }
     );
 
     queries.insertLog.run({
@@ -1177,10 +1197,10 @@ bot.command('create_subscription', async (ctx) => {
 
   // Сохраняем временное состояние в контексте (в реальном проекте лучше использовать сессии)
   await ctx.reply(
-    `📝 *Создание подписки*\n\n` +
-    `Название: ${name}\n\n` +
+    `📝 <b>Создание подписки</b>\n\n` +
+    `Название: ${escapeHtml(name)}\n\n` +
     `Выберите ноды, которые будут включены в подписку:`,
-    { parse_mode: 'Markdown', ...keyboard }
+    { parse_mode: 'HTML', ...keyboard }
   );
 });
 
@@ -1197,8 +1217,8 @@ bot.action('menu_subscriptions', async (ctx) => {
       [Markup.button.callback('🔙 Главное меню', 'menu_main')],
     ]);
     await ctx.editMessageText(
-      '📦 *Подписки*\n\n📭 Нет созданных подписок.',
-      { parse_mode: 'Markdown', ...keyboard }
+      '📦 <b>Подписки</b>\n\n📭 Нет созданных подписок.',
+      { parse_mode: 'HTML', ...keyboard }
     );
     await ctx.answerCbQuery();
     return;
@@ -1218,16 +1238,16 @@ bot.action('menu_subscriptions', async (ctx) => {
     [Markup.button.callback('🔙 Главное меню', 'menu_main')],
   ]);
 
-  let text = '📦 *Список подписок*\n\n';
+  let text = '📦 <b>Список подписок</b>\n\n';
   for (const sub of subscriptions) {
     const status = sub.is_active ? '🟢' : '🔴';
     const nodeIds = JSON.parse(sub.node_ids || '[]');
-    text += `${status} *${sub.name}*\n`;
-    text += `   ID: \`${sub.id}\` | Нод: ${nodeIds.length}\n`;
+    text += `${status} <b>${escapeHtml(sub.name)}</b>\n`;
+    text += `   ID: <code>${sub.id}</code> | Нод: ${nodeIds.length}\n`;
     text += `   Обращений: ${sub.access_count}\n\n`;
   }
 
-  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
   await ctx.answerCbQuery();
 });
 
@@ -1239,7 +1259,7 @@ bot.command('subscriptions', async (ctx) => {
       [Markup.button.callback('➕ Создать подписку', 'sub_create')],
       [Markup.button.callback('🔙 Главное меню', 'menu_main')],
     ]);
-    return ctx.reply('📦 *Подписки*\n\n📭 Нет созданных подписок.', { parse_mode: 'Markdown', ...keyboard });
+    return ctx.reply('📦 <b>Подписки</b>\n\n📭 Нет созданных подписок.', { parse_mode: 'HTML', ...keyboard });
   }
 
   const buttons = subscriptions.map(sub => {
@@ -1256,16 +1276,16 @@ bot.command('subscriptions', async (ctx) => {
     [Markup.button.callback('🔙 Главное меню', 'menu_main')],
   ]);
 
-  let text = '📦 *Список подписок*\n\n';
+  let text = '📦 <b>Список подписок</b>\n\n';
   for (const sub of subscriptions) {
     const status = sub.is_active ? '🟢' : '🔴';
     const nodeIds = JSON.parse(sub.node_ids || '[]');
-    text += `${status} *${sub.name}*\n`;
-    text += `   ID: \`${sub.id}\` | Нод: ${nodeIds.length}\n`;
+    text += `${status} <b>${escapeHtml(sub.name)}</b>\n`;
+    text += `   ID: <code>${sub.id}</code> | Нод: ${nodeIds.length}\n`;
     text += `   Обращений: ${sub.access_count}\n\n`;
   }
 
-  await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
 });
 
 /**
@@ -1289,8 +1309,8 @@ bot.action(/^sub_info_(\d+)$/, async (ctx) => {
     const links = SubscriptionManager.generateSubscriptionLinks(proxies);
 
     let text = `${info}\n\n`;
-    text += `*Прокси:*\n${proxyList}\n\n`;
-    text += `*Готовые ссылки:*\n`;
+    text += `<b>Прокси:</b>\n${escapeHtml(proxyList)}\n\n`;
+    text += `<b>Готовые ссылки:</b>\n`;
     
     for (const link of links) {
       text += `\`${link}\`\n`;
@@ -1312,7 +1332,7 @@ bot.action(/^sub_info_(\d+)$/, async (ctx) => {
       [Markup.button.callback('🔙 К списку подписок', 'menu_subscriptions')],
     ]);
 
-    await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
     await ctx.answerCbQuery();
   } catch (err: any) {
     await ctx.answerCbQuery(`Ошибка: ${err.message}`);
@@ -1347,8 +1367,8 @@ bot.command('subscription', async (ctx) => {
     const links = SubscriptionManager.generateSubscriptionLinks(proxies);
 
     let text = `${info}\n\n`;
-    text += `*Прокси:*\n${proxyList}\n\n`;
-    text += `*Готовые ссылки:*\n`;
+    text += `<b>Прокси:</b>\n${escapeHtml(proxyList)}\n\n`;
+    text += `<b>Готовые ссылки:</b>\n`;
     
     for (const link of links) {
       text += `\`${link}\`\n`;
@@ -1369,7 +1389,7 @@ bot.command('subscription', async (ctx) => {
       ]
     ]);
 
-    await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+    await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
 
   } catch (err: any) {
     await ctx.reply(`❌ Ошибка: ${err.message}`);
@@ -1423,8 +1443,8 @@ bot.action(/^sub_refresh_(\d+)$/, async (ctx) => {
     const links = SubscriptionManager.generateSubscriptionLinks(proxies);
 
     let text = `${info}\n\n`;
-    text += `*Прокси:*\n${proxyList}\n\n`;
-    text += `*Готовые ссылки:*\n`;
+    text += `<b>Прокси:</b>\n${escapeHtml(proxyList)}\n\n`;
+    text += `<b>Готовые ссылки:</b>\n`;
     
     for (const link of links) {
       text += `\`${link}\`\n`;
@@ -1444,7 +1464,7 @@ bot.action(/^sub_refresh_(\d+)$/, async (ctx) => {
       ]
     ]);
 
-    await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
     await ctx.answerCbQuery('Обновлено!');
 
   } catch (err: any) {
@@ -1470,11 +1490,11 @@ bot.action(/^sub_toggle_(\d+)$/, async (ctx) => {
       const links = SubscriptionManager.generateSubscriptionLinks(proxies);
 
       let text = `${info}\n\n`;
-      text += `*Прокси:*\n${proxyList}\n\n`;
-      text += `*Готовые ссылки:*\n`;
+      text += `<b>Прокси:</b>\n${escapeHtml(proxyList)}\n\n`;
+      text += `<b>Готовые ссылки:</b>\n`;
       
       for (const link of links) {
-        text += `\`${link}\`\n`;
+        text += `<code>${escapeHtml(link)}</code>\n`;
       }
 
       const keyboard = Markup.inlineKeyboard([
@@ -1491,7 +1511,7 @@ bot.action(/^sub_toggle_(\d+)$/, async (ctx) => {
         ]
       ]);
 
-      await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+      await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
     }
 
   } catch (err: any) {
@@ -1517,10 +1537,10 @@ bot.action(/^sub_delete_(\d+)$/, async (ctx) => {
   ]);
 
   await ctx.editMessageText(
-    `⚠️ *Удаление подписки*\n\n` +
+    `⚠️ <b>Удаление подписки</b>\n\n` +
     `Название: ${sub.name}\n\n` +
     `Вы уверены? Это действие нельзя отменить.`,
-    { parse_mode: 'Markdown', ...keyboard }
+    { parse_mode: 'HTML', ...keyboard }
   );
 
   await ctx.answerCbQuery();
@@ -1535,7 +1555,7 @@ bot.action(/^sub_delete_confirm_(\d+)$/, async (ctx) => {
     
     await ctx.editMessageText(
       '✅ Подписка успешно удалена',
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'HTML' }
     );
     
     await ctx.answerCbQuery('Удалено!');
@@ -1554,8 +1574,8 @@ bot.action('menu_users', async (ctx) => {
   ]);
 
   await ctx.editMessageText(
-    '👤 *Пользователи MTProto*\n\nВыберите действие:',
-    { parse_mode: 'Markdown', ...keyboard }
+    '👤 <b>Пользователи MTProto</b>\n\nВыберите действие:',
+    { parse_mode: 'HTML', ...keyboard }
   );
   await ctx.answerCbQuery();
 });
@@ -1577,14 +1597,14 @@ bot.action('menu_sales', async (ctx) => {
     [Markup.button.callback('🔙 Главное меню', 'menu_main')],
   ]);
 
-  let text = '💰 *Продажи MTProxy*\n\n';
-  text += `*Статистика:*\n`;
+  let text = '💰 <b>Продажи MTProxy</b>\n\n';
+  text += `<b>Статистика:</b>\n`;
   text += `Всего платежей: ${payStats?.total_payments || 0}\n`;
   text += `Всего выручка: ${payStats?.total_amount || 0} ₽\n`;
   text += `Сегодня: ${payStats?.today_payments || 0} платежей (${payStats?.today_amount || 0} ₽)\n\n`;
   text += `Активных тарифов: ${products.length}`;
 
-  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
   await ctx.answerCbQuery();
 });
 
@@ -1636,7 +1656,7 @@ function showTariffs(ctx: any, products: any[]) {
     [Markup.button.callback('📊 Мой статус', 'cmd_status')],
   ]);
 
-  let text = '💰 *Тарифы MTProxy*\n\n';
+  let text = '💰 <b>Тарифы MTProxy</b>\n\n';
   text += formatProductList(products.map(p => ({
     name: p.name,
     emoji: p.emoji,
@@ -1651,9 +1671,9 @@ function showTariffs(ctx: any, products: any[]) {
   text += '\n\nОплата банковской картой через ЮMoney.';
 
   if (ctx.callbackQuery) {
-    return ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+    return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
   } else {
-    return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+    return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
   }
 }
 
@@ -1673,16 +1693,16 @@ async function handleStatus(ctx: any) {
   if (userSubs.length === 0 && remnawaveBindings.length === 0) {
     const text = '❌ У вас нет активной подписки.\n\n💰 /tariffs — выбрать тариф';
     if (ctx.callbackQuery) {
-      return ctx.editMessageText(text, { parse_mode: 'Markdown' });
+      return ctx.editMessageText(text, { parse_mode: 'HTML' });
     } else {
-      return ctx.reply(text, { parse_mode: 'Markdown' });
+      return ctx.reply(text, { parse_mode: 'HTML' });
     }
   }
 
-  let text = '📊 *Ваш статус*\n\n';
+  let text = '📊 <b>Ваш статус</b>\n\n';
 
   if (userSubs.length > 0) {
-    text += `*Купленные подписки:*\n`;
+    text += `<b>Купленные подписки:</b>\n`;
     for (const sub of userSubs) {
       const product = queries.getProductById.get(sub.product_id) as any;
       const expiresAt = new Date(sub.expires_at);
@@ -1694,7 +1714,7 @@ async function handleStatus(ctx: any) {
   }
 
   if (remnawaveBindings.length > 0) {
-    text += `*Remnawave подписки:*\n`;
+    text += `<b>Remnawave подписки:</b>\n`;
     for (const binding of remnawaveBindings) {
       text += `✅ ${binding.remnawave_subscription_id}\n`;
       text += `  Статус: ${binding.status}\n\n`;
@@ -1702,7 +1722,7 @@ async function handleStatus(ctx: any) {
   }
 
   if (secrets.length > 0) {
-    text += `*Активных MTProto секретов:* ${secrets.length}\n`;
+    text += `<b>Активных MTProto секретов:</b> ${secrets.length}\n`;
     text += `🔗 /link — получить ссылки`;
   }
 
@@ -1712,9 +1732,9 @@ async function handleStatus(ctx: any) {
   ]);
 
   if (ctx.callbackQuery) {
-    return ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+    return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
   } else {
-    return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+    return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
   }
 }
 
@@ -1732,13 +1752,13 @@ async function handleLink(ctx: any) {
   if (secrets.length === 0) {
     const text = '❌ Нет активных MTProto секретов.\n\n💰 /tariffs — выбрать тариф';
     if (ctx.callbackQuery) {
-      return ctx.editMessageText(text, { parse_mode: 'Markdown' });
+      return ctx.editMessageText(text, { parse_mode: 'HTML' });
     } else {
-      return ctx.reply(text, { parse_mode: 'Markdown' });
+      return ctx.reply(text, { parse_mode: 'HTML' });
     }
   }
 
-  let text = '🔗 *Ваши MTProto ссылки:*\n\n';
+  let text = '🔗 <b>Ваши MTProto ссылки:</b>\n\n';
   for (const secret of secrets) {
     const node = queries.getNodeById.get(secret.node_id) as any;
     if (node) {
@@ -1748,15 +1768,15 @@ async function handleLink(ctx: any) {
         secret.secret,
         secret.is_fake_tls === 1
       );
-      text += `*Нода ${node.name}:*\n\`${link}\`\n\n`;
+      text += `<b>Нода ${escapeHtml(node.name)}:</b>\n<code>${escapeHtml(link)}</code>\n\n`;
     }
   }
   text += `⚠️ Ссылки только для вас! Не передавайте их другим.`;
 
   if (ctx.callbackQuery) {
-    return ctx.editMessageText(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
+    return ctx.editMessageText(text, { parse_mode: 'HTML' });
   } else {
-    return ctx.reply(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
+    return ctx.reply(text, { parse_mode: 'HTML' });
   }
 }
 
@@ -1771,12 +1791,12 @@ bot.action('menu_create_mtproto', async (ctx) => {
   ]);
 
   await ctx.editMessageText(
-    '➕ *Создание MTProto*\n\nВыберите способ:\n\n' +
+    '➕ <b>Создание MTProto</b>\n\nВыберите способ:\n\n' +
     '• По ссылке Remnawave — вставьте ссылку на подписку\n' +
     '• По Telegram ID — введите Telegram ID пользователя\n' +
     '• По Username — введите @username\n' +
     '• По UUID — введите UUID пользователя',
-    { parse_mode: 'Markdown', ...keyboard }
+    { parse_mode: 'HTML', ...keyboard }
   );
   await ctx.answerCbQuery();
 });
@@ -1784,10 +1804,10 @@ bot.action('menu_create_mtproto', async (ctx) => {
 // Создание MTProto по ссылке
 bot.action('create_by_link', async (ctx) => {
   await ctx.editMessageText(
-    '🔗 *Создание MTProto по ссылке Remnawave*\n\n' +
+    '🔗 <b>Создание MTProto по ссылке Remnawave</b>\n\n' +
     'Отправьте ссылку на подписку Remnawave.\n\n' +
     'Пример: https://panel.example.com/subscription/abc123',
-    { parse_mode: 'Markdown' }
+    { parse_mode: 'HTML' }
   );
   await ctx.answerCbQuery();
   // Сохраняем состояние для следующего сообщения
@@ -1797,10 +1817,10 @@ bot.action('create_by_link', async (ctx) => {
 // Создание MTProto по Telegram ID
 bot.action('create_by_tgid', async (ctx) => {
   await ctx.editMessageText(
-    '🆔 *Создание MTProto по Telegram ID*\n\n' +
+    '🆔 <b>Создание MTProto по Telegram ID</b>\n\n' +
     'Отправьте Telegram ID пользователя.\n\n' +
     'Пример: 123456789',
-    { parse_mode: 'Markdown' }
+    { parse_mode: 'HTML' }
   );
   await ctx.answerCbQuery();
   (ctx as any).session = { action: 'create_mtproto_by_tgid' };
@@ -1812,7 +1832,7 @@ bot.action('create_by_username', async (ctx) => {
     '👤 *Создание MTProto по Username*\n\n' +
     'Отправьте username пользователя (без @).\n\n' +
     'Пример: username',
-    { parse_mode: 'Markdown' }
+    { parse_mode: 'HTML' }
   );
   await ctx.answerCbQuery();
   (ctx as any).session = { action: 'create_mtproto_by_username' };
@@ -1824,7 +1844,7 @@ bot.action('create_by_uuid', async (ctx) => {
     '🆔 *Создание MTProto по UUID*\n\n' +
     'Отправьте UUID пользователя из Remnawave.\n\n' +
     'Пример: abc-def-ghi',
-    { parse_mode: 'Markdown' }
+    { parse_mode: 'HTML' }
   );
   await ctx.answerCbQuery();
   (ctx as any).session = { action: 'create_mtproto_by_uuid' };
@@ -1880,7 +1900,7 @@ bot.on(message('text'), async (ctx) => {
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
-      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+      await ctx.reply(resultText, { parse_mode: 'HTML', ...keyboard });
       (ctx as any).session = null;
 
     } else if (session.action === 'create_mtproto_by_tgid') {
@@ -1945,7 +1965,7 @@ bot.on(message('text'), async (ctx) => {
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
-      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+      await ctx.reply(resultText, { parse_mode: 'HTML', ...keyboard });
       (ctx as any).session = null;
 
     } else if (session.action === 'create_mtproto_by_username') {
@@ -2010,7 +2030,7 @@ bot.on(message('text'), async (ctx) => {
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
-      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+      await ctx.reply(resultText, { parse_mode: 'HTML', ...keyboard });
       (ctx as any).session = null;
 
     } else if (session.action === 'create_mtproto_by_uuid') {
@@ -2069,7 +2089,7 @@ bot.on(message('text'), async (ctx) => {
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
-      await ctx.reply(resultText, { parse_mode: 'Markdown', ...keyboard, disable_web_page_preview: true });
+      await ctx.reply(resultText, { parse_mode: 'HTML', ...keyboard });
       (ctx as any).session = null;
     }
   } catch (err: any) {
@@ -2109,7 +2129,7 @@ bot.action('sales_products', async (ctx) => {
     text += `   Нод: ${product.node_count}\n\n`;
   }
 
-  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
   await ctx.answerCbQuery();
 });
 
@@ -2136,7 +2156,7 @@ bot.action('sales_stats', async (ctx) => {
   text += `Активных: ${activeSubs.length}\n`;
   text += `Всего заказов: ${totalOrders.length || 0}`;
 
-  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
   await ctx.answerCbQuery();
 });
 
@@ -2184,7 +2204,7 @@ bot.action('menu_stats', async (ctx) => {
     [Markup.button.callback('🔙 Главное меню', 'menu_main')],
   ]);
 
-  await ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
   await ctx.answerCbQuery();
 });
 
@@ -2198,7 +2218,7 @@ bot.action('menu_settings', async (ctx) => {
 
   await ctx.editMessageText(
     '⚙️ *Настройки*\n\nВыберите действие:',
-    { parse_mode: 'Markdown', ...keyboard }
+    { parse_mode: 'HTML', ...keyboard }
   );
   await ctx.answerCbQuery();
 });
@@ -2408,7 +2428,7 @@ bot.action(/^buy_(\d+)$/, async (ctx: any) => {
     `Количество нод: ${dbProduct.node_count}\n\n` +
     `Нажмите кнопку для оплаты картой.\n` +
     `После оплаты бот выдаст ссылки автоматически (до 30 сек).`,
-    { parse_mode: 'Markdown', ...keyboard }
+    { parse_mode: 'HTML', ...keyboard }
   );
 });
 
@@ -2442,7 +2462,7 @@ bot.action(/^check_(.+)$/, async (ctx: any) => {
         `🔗 *Ваши ссылки:*\n${result.links.map(l => `\`${l}\``).join('\n')}\n\n` +
         `⚠️ Ссылки только для вас!\n` +
         `/link — ссылки, /status — статус`,
-        { parse_mode: 'Markdown', disable_web_page_preview: true }
+        { parse_mode: 'HTML' }
       );
     } else {
       await ctx.reply(`❌ Ошибка: ${result.error || 'Неизвестная ошибка'}`);
@@ -2502,7 +2522,7 @@ async function handleFreeTrial(ctx: any, product: any) {
         `🔗 *Ваши ссылки:*\n${result.links.map(l => `\`${l}\``).join('\n')}\n\n` +
         `⏰ До: ${expiresAt.toLocaleString('ru-RU')}\n\n` +
         `Понравилось? Продлите через /tariffs`,
-        { parse_mode: 'Markdown', disable_web_page_preview: true }
+        { parse_mode: 'HTML' }
       );
     } else {
       await ctx.reply(`❌ Ошибка: ${result.error || 'Неизвестная ошибка'}`);

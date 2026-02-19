@@ -208,7 +208,7 @@ db.exec(`
 
 // ─── Подготовленные запросы ───
 
-export const queries = {
+export const queries: Record<string, any> = {
   // ═══ Ноды ═══
   getAllNodes: db.prepare(`SELECT * FROM nodes ORDER BY created_at DESC`),
   getActiveNodes: db.prepare(`SELECT * FROM nodes WHERE is_active = 1 ORDER BY name`),

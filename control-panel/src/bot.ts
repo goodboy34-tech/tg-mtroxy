@@ -2597,8 +2597,9 @@ export function startBot() {
               node_id: null,
               level: 'info',
               message: 'MTProto access revoked (no accessible nodes)',
-            details: `tg:${telegramId} backendUser:${userUuid}`,
-          });
+              details: `tg:${telegramId} backendUser:${userUuid}`,
+            });
+          }
         }
       }
     } catch (e: any) {

@@ -239,10 +239,12 @@ if [ ! -f .env ]; then
     echo ""
     echo "  BOT_TOKEN          — токен бота от @BotFather"
     echo "  ADMIN_IDS          — ваш Telegram ID (через запятую для нескольких)"
-    echo "  REMNAWAVE_API_KEY  — секретный ключ для Remnawave API"
-    echo "  REMNAWAVE_BASE_URL — домен панели Remnawave (например: https://panel.example.com)"
-    echo "  REMNAWAVE_TOKEN    — токен для Remnawave API (если используете прямой доступ)"
+    echo "  REMNAWAVE_API_KEY  — секретный ключ для входящих запросов от Remnawave панели"
     echo "  WEB_API_KEY        — секретный ключ для Web API"
+    echo ""
+    echo "Опционально (для прямого доступа к Remnawave API вместо backend):"
+    echo "  REMNAWAVE_BASE_URL — домен панели Remnawave (например: https://panel.example.com)"
+    echo "  REMNAWAVE_TOKEN    — токен для исходящих запросов к Remnawave API"
     echo ""
     echo "Опционально (для интеграции с веб-приложением):"
     echo "  BACKEND_BASE_URL   — URL вашего backend (api-1.yaml), если используете"
@@ -263,10 +265,12 @@ if [ ! -f .env ]; then
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         read -p "BOT_TOKEN: " BOT_TOKEN
         read -p "ADMIN_IDS (через запятую): " ADMIN_IDS
-        read -p "REMNAWAVE_API_KEY: " REMNAWAVE_API_KEY
-        read -p "REMNAWAVE_BASE_URL (домен панели, например: https://panel.example.com): " REMNAWAVE_BASE_URL
-        read -p "REMNAWAVE_TOKEN (оставьте пустым если не используете прямой доступ к Remnawave): " REMNAWAVE_TOKEN
+        read -p "REMNAWAVE_API_KEY (ключ для входящих запросов от Remnawave панели): " REMNAWAVE_API_KEY
         read -p "WEB_API_KEY: " WEB_API_KEY
+        echo ""
+        echo "Опционально (для прямого доступа к Remnawave API вместо backend):"
+        read -p "REMNAWAVE_BASE_URL (домен панели, например: https://panel.example.com, оставьте пустым если не используете): " REMNAWAVE_BASE_URL
+        read -p "REMNAWAVE_TOKEN (токен для исходящих запросов, оставьте пустым если не используете): " REMNAWAVE_TOKEN
         echo ""
         echo "Опционально (для интеграции с веб-приложением):"
         read -p "BACKEND_BASE_URL (оставьте пустым если не используете): " BACKEND_BASE_URL

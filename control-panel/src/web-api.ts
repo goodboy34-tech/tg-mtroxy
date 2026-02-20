@@ -390,29 +390,14 @@ async function handleActivateByLink(req: IncomingMessage, res: ServerResponse) {
       }
     }
 
-      return json(res, 200, {
-        success: true,
-        hasAccess: true,
-        telegramId: body.telegramId,
-        remnawaveUserId: subInfo.userUuid,
-        remnawaveSubscriptionId: subInfo.subscriptionId,
-        expireAt: subInfo.expireAt,
-        links: userLinks.map(x => x.link),
-      });
-    }
-
-    // Если нет telegramId - возвращаем общие ссылки подписки
-    const { SubscriptionManager } = await import('./subscription-manager');
-    const proxies = await SubscriptionManager.getSubscriptionProxies(localSubId);
-    const links = SubscriptionManager.generateSubscriptionLinks(proxies);
-
     return json(res, 200, {
       success: true,
       hasAccess: true,
+      telegramId: telegramId,
       remnawaveUserId: subInfo.userUuid,
       remnawaveSubscriptionId: subInfo.subscriptionId,
       expireAt: subInfo.expireAt,
-      links,
+      links: userLinks.map(x => x.link),
     });
   } catch (err: any) {
     logger.error('[Web API] activate-by-link error:', err);
@@ -610,29 +595,14 @@ async function handleActivateByUsername(req: IncomingMessage, res: ServerRespons
       }
     }
 
-      return json(res, 200, {
-        success: true,
-        hasAccess: true,
-        telegramId,
-        remnawaveUserId: user.uuid,
-        remnawaveSubscriptionId,
-        expireAt: user.expireAt,
-        links: userLinks.map(x => x.link),
-      });
-    }
-
-    // Если нет telegramId - возвращаем общие ссылки подписки
-    const { SubscriptionManager } = await import('./subscription-manager');
-    const proxies = await SubscriptionManager.getSubscriptionProxies(localSubId);
-    const links = SubscriptionManager.generateSubscriptionLinks(proxies);
-
     return json(res, 200, {
       success: true,
       hasAccess: true,
+      telegramId,
       remnawaveUserId: user.uuid,
       remnawaveSubscriptionId,
       expireAt: user.expireAt,
-      links,
+      links: userLinks.map(x => x.link),
     });
   } catch (err: any) {
     logger.error('[Web API] activate-by-username error:', err);

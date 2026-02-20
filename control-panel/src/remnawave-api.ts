@@ -166,9 +166,15 @@ export function startRemnawaveApi() {
   const server = http.createServer(async (req, res) => {
     try {
       if (!req.url || !req.method) return json(res, 400, { error: 'Bad request' });
-      if (!assertAuth(req, res)) return;
 
       const { url, method } = req;
+
+      // Healthcheck endpoint (без аутентификации)
+      if (method === 'GET' && url === '/health') {
+        return json(res, 200, { status: 'ok', service: 'remnawave-api' });
+      }
+
+      if (!assertAuth(req, res)) return;
 
       if (method === 'POST' && url === '/api/remnawave/authorize') {
         const body = await readJsonBody(req) as {

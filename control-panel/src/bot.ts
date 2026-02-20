@@ -733,6 +733,45 @@ bot.action('cancel', async (ctx) => {
   await ctx.editMessageText('❌ Операция отменена');
 });
 
+// Обработчик кнопки добавления ноды
+bot.action('node_add', async (ctx) => {
+  try {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:731',message:'node_add action called',data:{userId:ctx.from?.id},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('🔙 К нодам', 'menu_nodes')],
+    ]);
+
+    await ctx.editMessageText(
+      '➕ <b>Добавление новой ноды</b>\n\n' +
+      'Отправьте данные ноды в формате:\n\n' +
+      '<code>\n' +
+      'name: My Node 1\n' +
+      'domain: proxy1.example.com\n' +
+      'ip: 1.2.3.4\n' +
+      'api_url: https://proxy1.example.com:8080\n' +
+      'api_token: your-api-token\n' +
+      'mtproto_port: 443\n' +
+      'socks5_port: 1080\n' +
+      'workers: 4\n' +
+      'cpu_cores: 4\n' +
+      'ram_mb: 2048\n' +
+      '</code>\n\n' +
+      'Или используйте команду /add_node для интерактивного добавления.',
+      { parse_mode: 'HTML', ...keyboard }
+    );
+    await ctx.answerCbQuery();
+  } catch (error: any) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:755',message:'node_add error',data:{error:error?.message,stack:error?.stack,name:error?.name},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    logger.error('Ошибка в node_add:', error);
+    await ctx.answerCbQuery('Ошибка при открытии формы добавления ноды', { show_alert: true });
+  }
+});
+
 // ═══════════════════════════════════════════════
 // ПОЛУЧЕНИЕ ДОСТУПОВ
 // ═══════════════════════════════════════════════

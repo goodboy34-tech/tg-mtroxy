@@ -19,8 +19,19 @@ const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(id => parseInt(id
 const YOOMONEY_TOKEN = process.env.YOOMONEY_TOKEN || '';
 const YOOMONEY_WALLET = process.env.YOOMONEY_WALLET || '';
 
+console.log('[DEBUG] bot.ts: Checking BOT_TOKEN and ADMIN_IDS');
+console.log('[DEBUG] BOT_TOKEN:', BOT_TOKEN ? 'SET (length: ' + BOT_TOKEN.length + ')' : 'NOT SET');
+console.log('[DEBUG] ADMIN_IDS:', ADMIN_IDS.length > 0 ? 'SET (' + ADMIN_IDS.join(', ') + ')' : 'NOT SET');
+
 if (!BOT_TOKEN || ADMIN_IDS.length === 0) {
-  logger.error('❌ BOT_TOKEN и ADMIN_IDS обязательны в .env');
+  console.error('[FATAL] BOT_TOKEN и ADMIN_IDS обязательны в .env');
+  console.error('[FATAL] BOT_TOKEN:', BOT_TOKEN ? 'SET' : 'NOT SET');
+  console.error('[FATAL] ADMIN_IDS:', ADMIN_IDS.length > 0 ? 'SET' : 'NOT SET');
+  try {
+    logger.error('❌ BOT_TOKEN и ADMIN_IDS обязательны в .env');
+  } catch (e) {
+    console.error('[FATAL] Logger failed:', e);
+  }
   process.exit(1);
 }
 

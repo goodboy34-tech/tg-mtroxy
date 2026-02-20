@@ -294,10 +294,13 @@ if (!db) {
   throw new Error('Database not initialized');
 }
 
-export const queries: Record<string, any> = {
-  // ═══ Ноды ═══
-  getAllNodes: db.prepare(`SELECT * FROM nodes ORDER BY created_at DESC`),
-  getActiveNodes: db.prepare(`SELECT * FROM nodes WHERE is_active = 1 ORDER BY name`),
+let queries: Record<string, any>;
+try {
+  console.log('[DEBUG] database.ts: Starting to prepare queries object...');
+  queries = {
+    // ═══ Ноды ═══
+    getAllNodes: db.prepare(`SELECT * FROM nodes ORDER BY created_at DESC`),
+    getActiveNodes: db.prepare(`SELECT * FROM nodes WHERE is_active = 1 ORDER BY name`),
   getNodeById: db.prepare(`SELECT * FROM nodes WHERE id = ?`),
   getNodeByDomain: db.prepare(`SELECT * FROM nodes WHERE domain = ?`),
   
@@ -682,9 +685,16 @@ export const queries: Record<string, any> = {
   deleteOldMetrics: db.prepare(`
     DELETE FROM node_metrics WHERE created_at < ?
   `),
-  getAllOrders: db.prepare(`SELECT * FROM orders ORDER BY created_at DESC`),
-};
-console.log('[DEBUG] database.ts: Queries prepared successfully');
+    getAllOrders: db.prepare(`SELECT * FROM orders ORDER BY created_at DESC`),
+  };
+  console.log('[DEBUG] database.ts: Queries prepared successfully');
+} catch (error) {
+  console.error('[FATAL] database.ts: Failed to prepare queries:', error);
+  console.error('[FATAL] Error stack:', error instanceof Error ? error.stack : 'No stack');
+  throw error;
+}
+
+export { queries };
 console.log('[DEBUG] database.ts: Database module fully initialized');
 
 export default db;

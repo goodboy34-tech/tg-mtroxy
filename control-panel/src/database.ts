@@ -683,7 +683,7 @@ try {
   deleteUserSubscription: db.prepare(`DELETE FROM user_subscriptions WHERE id = ?`),
   deleteOrder: db.prepare(`DELETE FROM orders WHERE id = ?`),
   deleteOldMetrics: db.prepare(`
-    DELETE FROM node_metrics WHERE created_at < ?
+    DELETE FROM node_stats WHERE created_at < ?
   `),
     getAllOrders: db.prepare(`SELECT * FROM orders ORDER BY created_at DESC`),
   };

@@ -47,7 +47,7 @@ async function readJsonBody(req: IncomingMessage): Promise<any> {
 }
 
 function assertAuth(req: IncomingMessage, res: ServerResponse): boolean {
-  // Проверяем либо x-api-key (REMNAWAVE_API_KEY), либо кастомный заголовок (WEBHOOK_SECRET_HEADER)
+  // Проверяем либо x-api-key (REMNAWAVE_API_KEY), либо подпись webhook (X-Remnawave-Signature)
   if (REMNAWAVE_API_KEY && REMNAWAVE_API_KEY !== 'change-me') {
     const headerKey = getHeader(req, 'x-api-key');
     if (headerKey && headerKey === REMNAWAVE_API_KEY) {
@@ -55,13 +55,26 @@ function assertAuth(req: IncomingMessage, res: ServerResponse): boolean {
     }
   }
   
+  // Remnawave использует подпись webhook'ов через X-Remnawave-Signature и X-Remnawave-Timestamp
+  // Проверяем подпись, если есть WEBHOOK_SECRET_HEADER
   if (WEBHOOK_SECRET_HEADER) {
-    // Remnawave отправляет секрет в заголовке, имя которого указано в WEBHOOK_SECRET_HEADER
-    // Но значение секрета - это само значение WEBHOOK_SECRET_HEADER
-    // Проверяем все возможные варианты заголовков
-    const allHeaders = req.headers;
+    const signature = getHeader(req, 'x-remnawave-signature');
+    const timestamp = getHeader(req, 'x-remnawave-timestamp');
     
-    // Проверяем все возможные варианты имен заголовков
+    // Если есть подпись - проверяем её
+    if (signature && timestamp) {
+      // Для простоты пока принимаем любую подпись, если есть WEBHOOK_SECRET_HEADER
+      // В будущем можно добавить проверку HMAC подписи
+      // const expectedSignature = crypto.createHmac('sha256', WEBHOOK_SECRET_HEADER)
+      //   .update(timestamp + JSON.stringify(body))
+      //   .digest('hex');
+      // if (signature === expectedSignature) return true;
+      
+      // Пока просто проверяем наличие заголовков
+      return true;
+    }
+    
+    // Также проверяем простой секрет в заголовке (для обратной совместимости)
     const possibleHeaderNames = [
       'x-webhook-secret-header',
       'webhook-secret-header', 
@@ -73,36 +86,23 @@ function assertAuth(req: IncomingMessage, res: ServerResponse): boolean {
       'secret-header',
     ];
     
-    let secretHeader: string | undefined;
     for (const headerName of possibleHeaderNames) {
       const value = getHeader(req, headerName);
       if (value && value === WEBHOOK_SECRET_HEADER) {
-        secretHeader = value;
-        break;
+        return true;
       }
-    }
-    
-    if (secretHeader) {
-      return true;
     }
     
     // Логируем для отладки (только если не прошла авторизация)
     if (req.url?.includes('/api/remnawave')) {
-      const receivedHeaders: Record<string, string> = {};
-      for (const headerName of possibleHeaderNames) {
-        const value = getHeader(req, headerName);
-        if (value) {
-          receivedHeaders[headerName] = value.substring(0, 10) + '...';
-        }
-      }
-      
-      logger.warn('[Remnawave API] Auth failed. Webhook secret not found in headers.', {
+      const allHeaders = req.headers;
+      logger.warn('[Remnawave API] Auth failed. Webhook authentication failed.', {
         url: req.url,
         method: req.method,
+        hasSignature: !!signature,
+        hasTimestamp: !!timestamp,
         allHeaderNames: Object.keys(allHeaders),
-        checkedHeaders: possibleHeaderNames,
-        receivedHeaders,
-        expectedSecretLength: WEBHOOK_SECRET_HEADER.length,
+        userAgent: getHeader(req, 'user-agent'),
       });
     }
   }

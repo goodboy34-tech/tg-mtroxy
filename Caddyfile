@@ -21,7 +21,7 @@
 
     # Remnawave API webhook'и
     handle /api/remnawave/* {
-        reverse_proxy mtproxy-control:8081 {
+        reverse_proxy control-panel:8081 {
             # Передаем все заголовки для webhook аутентификации
             header_up X-Forwarded-Proto {scheme}
             header_up X-Forwarded-Host {host}
@@ -30,12 +30,12 @@
 
     # Web API
     handle /api/web/* {
-        reverse_proxy mtproxy-control:8082
+        reverse_proxy control-panel:8082
     }
 
     # Все остальные запросы проксируем на Remnawave API
     handle {
-        reverse_proxy mtproxy-control:8081
+        reverse_proxy control-panel:8081
     }
 }
 

@@ -17,6 +17,9 @@
       - mtproxy-network
     environment:
       - ACME_AGREE=${ACME_AGREE:-true}
+    depends_on:
+      control-panel:
+        condition: service_healthy
     logging:
       driver: json-file
       options:

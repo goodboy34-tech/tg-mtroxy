@@ -454,7 +454,8 @@ bot.action('menu_main', async (ctx) => {
 // Меню нод
 bot.action('menu_nodes', async (ctx) => {
   // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:455',message:'menu_nodes action called',data:{userId:ctx.from?.id,callbackData:ctx.callbackQuery?.data},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+  const callbackData = ctx.callbackQuery && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
+  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:455',message:'menu_nodes action called',data:{userId:ctx.from?.id,callbackData},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
   // #endregion
   try {
     // #region agent log
@@ -2701,9 +2702,10 @@ export function startBot() {
   }
 
   // Глобальный обработчик ошибок для callback_query
-  bot.catch((err, ctx) => {
+  bot.catch((err: any, ctx) => {
     // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2669',message:'bot.catch triggered',data:{error:err?.message,stack:err?.stack,name:err?.name,hasCallbackQuery:!!ctx?.callbackQuery,callbackData:ctx?.callbackQuery?.data},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
+    const callbackData = ctx?.callbackQuery && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2669',message:'bot.catch triggered',data:{error:err?.message,stack:err?.stack,name:err?.name,hasCallbackQuery:!!ctx?.callbackQuery,callbackData},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
     // #endregion
     logger.error('Ошибка в обработчике бота:', err);
     if (ctx.callbackQuery) {

@@ -56,13 +56,54 @@ function assertAuth(req: IncomingMessage, res: ServerResponse): boolean {
   }
   
   if (WEBHOOK_SECRET_HEADER) {
-    // Remnawave может отправлять секрет в кастомном заголовке
-    // Проверяем все возможные заголовки
-    const secretHeader = getHeader(req, 'x-webhook-secret') || 
-                         getHeader(req, 'webhook-secret') ||
-                         getHeader(req, 'x-remnawave-secret');
-    if (secretHeader && secretHeader === WEBHOOK_SECRET_HEADER) {
+    // Remnawave отправляет секрет в заголовке, имя которого указано в WEBHOOK_SECRET_HEADER
+    // Но значение секрета - это само значение WEBHOOK_SECRET_HEADER
+    // Проверяем все возможные варианты заголовков
+    const allHeaders = req.headers;
+    
+    // Проверяем все возможные варианты имен заголовков
+    const possibleHeaderNames = [
+      'x-webhook-secret-header',
+      'webhook-secret-header', 
+      'x-webhook-secret',
+      'webhook-secret',
+      'x-remnawave-secret',
+      'remnawave-secret',
+      'x-secret-header',
+      'secret-header',
+    ];
+    
+    let secretHeader: string | undefined;
+    for (const headerName of possibleHeaderNames) {
+      const value = getHeader(req, headerName);
+      if (value && value === WEBHOOK_SECRET_HEADER) {
+        secretHeader = value;
+        break;
+      }
+    }
+    
+    if (secretHeader) {
       return true;
+    }
+    
+    // Логируем для отладки (только если не прошла авторизация)
+    if (req.url?.includes('/api/remnawave')) {
+      const receivedHeaders: Record<string, string> = {};
+      for (const headerName of possibleHeaderNames) {
+        const value = getHeader(req, headerName);
+        if (value) {
+          receivedHeaders[headerName] = value.substring(0, 10) + '...';
+        }
+      }
+      
+      logger.warn('[Remnawave API] Auth failed. Webhook secret not found in headers.', {
+        url: req.url,
+        method: req.method,
+        allHeaderNames: Object.keys(allHeaders),
+        checkedHeaders: possibleHeaderNames,
+        receivedHeaders,
+        expectedSecretLength: WEBHOOK_SECRET_HEADER.length,
+      });
     }
   }
   

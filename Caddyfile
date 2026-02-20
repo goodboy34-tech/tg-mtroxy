@@ -6,7 +6,7 @@
 # 3. Если используете localhost - закомментируйте строку с доменом и раскомментируйте блок localhost
 
 # Для продакшена - укажите ваш домен:
-example.com {
+3ctpsipkgzwm4eca.ookcdn.ru {
     # Логирование
     log {
         output file /var/log/caddy/access.log
@@ -21,7 +21,11 @@ example.com {
 
     # Remnawave API webhook'и
     handle /api/remnawave/* {
-        reverse_proxy mtproxy-control:8081
+        reverse_proxy mtproxy-control:8081 {
+            # Передаем все заголовки для webhook аутентификации
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+        }
     }
 
     # Web API

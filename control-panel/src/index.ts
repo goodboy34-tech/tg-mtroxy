@@ -4,9 +4,17 @@ console.log('[DEBUG] NODE_ENV:', process.env.NODE_ENV);
 console.log('[DEBUG] Current directory:', process.cwd());
 console.log('[DEBUG] Files in current directory:', require('fs').readdirSync(process.cwd()).join(', '));
 
+// dotenv не нужен в Docker - переменные передаются через docker-compose environment
+// Загружаем только если файл существует (для локальной разработки)
 import dotenv from 'dotenv';
-const dotenvResult = dotenv.config();
-console.log('[DEBUG] dotenv.config() result:', dotenvResult.error ? dotenvResult.error.message : 'success');
+const dotenvResult = dotenv.config({ errorOnMissingFile: false });
+if (dotenvResult.error && dotenvResult.error.code !== 'ENOENT') {
+  console.warn('[WARN] dotenv.config() error (non-critical):', dotenvResult.error.message);
+} else if (!dotenvResult.error) {
+  console.log('[DEBUG] dotenv.config() loaded .env file');
+} else {
+  console.log('[DEBUG] dotenv.config() skipped (no .env file, using Docker environment variables)');
+}
 console.log('[DEBUG] BOT_TOKEN exists:', !!process.env.BOT_TOKEN);
 console.log('[DEBUG] ADMIN_IDS exists:', !!process.env.ADMIN_IDS);
 console.log('[DEBUG] REDIS_HOST:', process.env.REDIS_HOST || 'not set');
@@ -14,11 +22,28 @@ console.log('[DEBUG] REDIS_PORT:', process.env.REDIS_PORT || 'not set');
 
 import { logger } from './logger';
 console.log('[DEBUG] Logger initialized');
+
+console.log('[DEBUG] About to import redis-client...');
 import { initRedis, closeRedis } from './redis-client';
+console.log('[DEBUG] redis-client imported');
+
+console.log('[DEBUG] About to import bot...');
 import { startBot } from './bot';
+console.log('[DEBUG] bot imported');
+
+console.log('[DEBUG] About to import remnawave-api...');
 import { startRemnawaveApi } from './remnawave-api';
+console.log('[DEBUG] remnawave-api imported');
+
+console.log('[DEBUG] About to import web-api...');
 import { startWebApi } from './web-api';
+console.log('[DEBUG] web-api imported');
+
+console.log('[DEBUG] About to import cleanup...');
 import { startCleanupTasks } from './cleanup';
+console.log('[DEBUG] cleanup imported');
+
+console.log('[DEBUG] All imports completed, about to set up error handlers');
 
 // Обработка необработанных ошибок
 process.on('uncaughtException', (error) => {
@@ -111,6 +136,17 @@ async function main() {
   }
 }
 
-main();
+console.log('[DEBUG] About to call main()...');
+main().catch((error) => {
+  console.error('[FATAL] main() promise rejected:', error);
+  console.error('[FATAL] Error stack:', error instanceof Error ? error.stack : 'No stack');
+  try {
+    logger.error('Ошибка в main():', error);
+  } catch (e) {
+    console.error('[FATAL] Logger failed:', e);
+  }
+  process.exit(1);
+});
+console.log('[DEBUG] main() called (async)');
 
 

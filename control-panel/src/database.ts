@@ -1,20 +1,49 @@
+console.log('[DEBUG] database.ts: Starting import...');
 import Database from 'better-sqlite3';
+console.log('[DEBUG] database.ts: better-sqlite3 imported');
 import path from 'path';
 import fs from 'fs';
 
+console.log('[DEBUG] database.ts: About to set DB_PATH...');
 const DB_PATH = path.join(__dirname, '..', 'data', 'proxy.db');
+console.log('[DEBUG] database.ts: DB_PATH =', DB_PATH);
 
 // Убедимся что папка data существует
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+console.log('[DEBUG] database.ts: About to create data directory...');
+try {
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  console.log('[DEBUG] database.ts: Data directory created');
+} catch (error) {
+  console.error('[FATAL] database.ts: Failed to create data directory:', error);
+  throw error;
+}
 
-const db: InstanceType<typeof Database> = new Database(DB_PATH);
+console.log('[DEBUG] database.ts: About to create Database instance...');
+let db: InstanceType<typeof Database>;
+try {
+  db = new Database(DB_PATH);
+  console.log('[DEBUG] database.ts: Database instance created');
+} catch (error) {
+  console.error('[FATAL] database.ts: Failed to create Database instance:', error);
+  throw error;
+}
 
 // WAL mode — быстрее для чтения, безопаснее
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+console.log('[DEBUG] database.ts: About to set pragmas...');
+try {
+  db.pragma('journal_mode = WAL');
+  console.log('[DEBUG] database.ts: WAL mode set');
+  db.pragma('foreign_keys = ON');
+  console.log('[DEBUG] database.ts: Foreign keys enabled');
+} catch (error) {
+  console.error('[FATAL] database.ts: Failed to set pragmas:', error);
+  throw error;
+}
 
 // ─── Инициализация таблиц ───
-db.exec(`
+console.log('[DEBUG] database.ts: About to execute SQL for table creation...');
+try {
+  db.exec(`
   -- Таблица серверных нод
   CREATE TABLE IF NOT EXISTS nodes (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,8 +234,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_stats_node ON node_stats(node_id);
   CREATE INDEX IF NOT EXISTS idx_stats_date ON node_stats(created_at);
 `);
+  console.log('[DEBUG] database.ts: SQL executed successfully, tables created');
+} catch (error) {
+  console.error('[FATAL] database.ts: Failed to execute SQL:', error);
+  throw error;
+}
 
 // ─── Подготовленные запросы ───
+console.log('[DEBUG] database.ts: About to prepare queries...');
 
 export const queries: Record<string, any> = {
   // ═══ Ноды ═══
@@ -598,5 +633,7 @@ export const queries: Record<string, any> = {
   `),
   getAllOrders: db.prepare(`SELECT * FROM orders ORDER BY created_at DESC`),
 };
+console.log('[DEBUG] database.ts: Queries prepared successfully');
+console.log('[DEBUG] database.ts: Database module fully initialized');
 
 export default db;

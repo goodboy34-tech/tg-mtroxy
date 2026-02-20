@@ -114,6 +114,44 @@ export class RemnawaveClient {
     const nodes = await this.getAccessibleNodes(userUuid);
     return Array.isArray(nodes) && nodes.length > 0;
   }
+
+  /**
+   * Получить информацию о подписке по ссылке или ID.
+   * Извлекает subscription ID из ссылки и получает информацию о пользователе.
+   */
+  async getSubscriptionInfo(subscriptionLinkOrId: string): Promise<{
+    subscriptionId: string;
+    userUuid: string;
+    expireAt?: string | null;
+    telegramId?: number | null;
+    username?: string;
+  } | null> {
+    try {
+      // Извлекаем subscription ID из ссылки (если это ссылка)
+      const subscriptionId = subscriptionLinkOrId.includes('/') 
+        ? subscriptionLinkOrId.split('/').pop() || subscriptionLinkOrId
+        : subscriptionLinkOrId;
+
+      // Пробуем получить информацию о подписке через API
+      // Формат может быть разным в зависимости от Remnawave API
+      const result = await this.request<any>('GET', `/api/subscriptions/${encodeURIComponent(subscriptionId)}`);
+      
+      if (result && result.userUuid) {
+        return {
+          subscriptionId,
+          userUuid: result.userUuid,
+          expireAt: result.expireAt || result.expiresAt || null,
+          telegramId: result.telegramId || null,
+          username: result.username || null,
+        };
+      }
+
+      return null;
+    } catch (err: any) {
+      console.warn(`[Remnawave] Subscription info lookup failed: ${err.message}`);
+      return null;
+    }
+  }
 }
 
 /**

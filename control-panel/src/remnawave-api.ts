@@ -1,4 +1,5 @@
 import http, { IncomingMessage, ServerResponse } from 'http';
+import crypto from 'crypto';
 import { queries } from './database';
 import { SubscriptionManager } from './subscription-manager';
 import { getBackendClientFromEnv } from './backend-client';
@@ -38,15 +39,69 @@ function json(res: ServerResponse, status: number, body: any) {
   res.end(data);
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<any> {
+async function readBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c)));
-  const raw = Buffer.concat(chunks).toString('utf8').trim();
+  return Buffer.concat(chunks);
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<any> {
+  const raw = (await readBody(req)).toString('utf8').trim();
   if (!raw) return {};
   return JSON.parse(raw);
 }
 
-function assertAuth(req: IncomingMessage, res: ServerResponse): boolean {
+/**
+ * Проверка HMAC подписи для Remnawave webhook
+ * Согласно документации: https://docs.rw/docs/features/webhooks/#verify-webhook
+ * Подпись создается как: HMAC-SHA256(JSON.stringify(body), secret)
+ * 
+ * Важно: используем raw body (как приходит), а не распарсенный объект,
+ * чтобы избежать проблем с порядком ключей и форматированием JSON
+ */
+function verifyWebhookSignature(
+  signature: string,
+  body: Buffer | string,
+  secret: string
+): boolean {
+  try {
+    // Преобразуем тело в строку (используем raw body, как приходит)
+    const bodyStr = typeof body === 'string' ? body : body.toString('utf8');
+    
+    // Создаем HMAC подпись из raw body
+    // Согласно документации: createHmac('sha256', secret).update(JSON.stringify(body)).digest('hex')
+    // Но так как body уже строка JSON, используем его напрямую
+    const expectedSignature = crypto.createHmac('sha256', secret)
+      .update(bodyStr)
+      .digest('hex');
+    
+    // Сравниваем подписи безопасным способом (constant-time comparison)
+    // Согласно документации, подпись создается как hex строка (digest('hex'))
+    if (signature.length !== expectedSignature.length) {
+      return false;
+    }
+    
+    // Используем timing-safe comparison для безопасности
+    // Обе подписи в hex формате, преобразуем в Buffer для сравнения
+    try {
+      return crypto.timingSafeEqual(
+        Buffer.from(signature, 'hex'),
+        Buffer.from(expectedSignature, 'hex')
+      );
+    } catch (e: any) {
+      // Если не удалось преобразовать в hex - сравниваем как строки (fallback)
+      return crypto.timingSafeEqual(
+        Buffer.from(signature, 'utf8'),
+        Buffer.from(expectedSignature, 'utf8')
+      );
+    }
+  } catch (e: any) {
+    logger.error('[verifyWebhookSignature] Error:', e);
+    return false;
+  }
+}
+
+async function assertAuth(req: IncomingMessage, res: ServerResponse, body?: Buffer): Promise<boolean> {
   // #region agent log
   fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:49',message:'assertAuth called',data:{url:req.url,method:req.method,hasRemnawaveApiKey:!!REMNAWAVE_API_KEY,hasWebhookSecretHeader:!!WEBHOOK_SECRET_HEADER,allHeaderNames:Object.keys(req.headers)},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
   // #endregion
@@ -67,20 +122,18 @@ function assertAuth(req: IncomingMessage, res: ServerResponse): boolean {
     const signature = getHeader(req, 'x-remnawave-signature');
     const timestamp = getHeader(req, 'x-remnawave-timestamp');
     // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:62',message:'Checking webhook signature',data:{hasSignature:!!signature,hasTimestamp:!!timestamp},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:62',message:'Checking webhook signature',data:{hasSignature:!!signature,hasTimestamp:!!timestamp,hasBody:!!body},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
     // #endregion
     
-    // Если есть подпись - проверяем её
-    if (signature && timestamp) {
-      // Для простоты пока принимаем любую подпись, если есть WEBHOOK_SECRET_HEADER
-      // В будущем можно добавить проверку HMAC подписи
-      // const expectedSignature = crypto.createHmac('sha256', WEBHOOK_SECRET_HEADER)
-      //   .update(timestamp + JSON.stringify(body))
-      //   .digest('hex');
-      // if (signature === expectedSignature) return true;
-      
-      // Пока просто проверяем наличие заголовков
-      return true;
+    // Если есть подпись - проверяем HMAC подпись (только по телу, без timestamp)
+    if (signature && body) {
+      const isValid = verifyWebhookSignature(signature, body, WEBHOOK_SECRET_HEADER);
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:75',message:'HMAC signature verification result',data:{isValid,hasSignature:!!signature,hasBody:!!body},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+      if (isValid) {
+        return true;
+      }
     }
     
     // Также проверяем простой секрет в заголовке (для обратной совместимости)
@@ -174,7 +227,18 @@ export function startRemnawaveApi() {
         return json(res, 200, { status: 'ok', service: 'remnawave-api' });
       }
 
-      if (!assertAuth(req, res)) return;
+      // Для webhook endpoints нужно сначала прочитать тело для проверки подписи
+      let bodyBuffer: Buffer | undefined;
+      if (method === 'POST' && url?.includes('/api/remnawave')) {
+        try {
+          bodyBuffer = await readBody(req);
+        } catch (e: any) {
+          logger.error('[Remnawave API] Failed to read body:', e);
+          return json(res, 400, { error: 'Failed to read request body' });
+        }
+      }
+
+      if (!(await assertAuth(req, res, bodyBuffer))) return;
 
       if (method === 'POST' && url === '/api/remnawave/authorize') {
         const body = await readJsonBody(req) as {
@@ -331,24 +395,180 @@ export function startRemnawaveApi() {
 
       if (method === 'POST' && url === '/api/remnawave/subscriptions/status') {
         // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:280',message:'webhook subscriptions/status received',data:{url:req.url,method:req.method,allHeaderNames:Object.keys(req.headers)},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:332',message:'webhook subscriptions/status received',data:{url:req.url,method:req.method,allHeaderNames:Object.keys(req.headers)},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
         // #endregion
-        const items = await readJsonBody(req) as Array<{ remnawaveSubscriptionId: string; status: 'active' | 'expired' | 'cancelled' }>;
+        const items = bodyBuffer ? JSON.parse(bodyBuffer.toString('utf8')) : await readJsonBody(req) as Array<{ remnawaveSubscriptionId: string; status: 'active' | 'expired' | 'cancelled' }>;
         // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:283',message:'webhook body parsed',data:{itemsCount:items?.length || 0},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:335',message:'webhook body parsed',data:{itemsCount:items?.length || 0},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
         // #endregion
         if (!Array.isArray(items) || items.length === 0) {
           return json(res, 400, { error: 'Body must be a non-empty array' });
         }
+        
         for (const item of items) {
           if (!item?.remnawaveSubscriptionId || !item?.status) continue;
+          
+          // Обновляем статус в БД
           queries.updateRemnawaveStatus.run({
             status: item.status,
             remnawave_subscription_id: item.remnawaveSubscriptionId,
           });
+          
+          // Если подписка истекла или отменена - удаляем MTProto секреты
+          if (item.status === 'expired' || item.status === 'cancelled') {
+            const bindings = queries.getRemnawaveBindingsBySubscriptionId.all(item.remnawaveSubscriptionId) as any[];
+            for (const binding of bindings) {
+              if (binding.telegram_id) {
+                const userId = binding.telegram_id;
+                const activeSubs = queries.getActiveUserSubscriptions.all(userId) as any[];
+                const otherRemnawaveBindings = queries.getRemnawaveBindingsByTelegramId.all(userId) as any[];
+                const hasOtherActive = activeSubs.length > 0 || otherRemnawaveBindings.some(b => 
+                  b.id !== binding.id && b.status === 'active' && b.remnawave_subscription_id !== item.remnawaveSubscriptionId
+                );
+                
+                // Если нет других активных подписок - полностью удаляем MTProto
+                if (!hasOtherActive) {
+                  logger.info(`[Remnawave API] Полное удаление MTProto для пользователя ${userId} (webhook: ${item.status})`);
+                  await MtprotoUserManager.deleteUserCompletely(userId);
+                  
+                  // Удаляем user_subscription для этой подписки
+                  const userSubs = queries.getUserSubscriptions.all(userId) as any[];
+                  for (const userSub of userSubs) {
+                    if (userSub.local_subscription_id === binding.local_subscription_id) {
+                      queries.deleteUserSubscription.run(userSub.id);
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
         logger.info(`[Remnawave API] Updated ${items.length} subscription statuses`);
         return json(res, 200, { success: true, updated: items.length });
+      }
+      
+      // Обработка webhook событий Remnawave (user.deleted, user.expired и т.д.)
+      // Согласно документации: https://docs.rw/docs/features/webhooks/
+      // Remnawave отправляет события в формате: { scope, event, timestamp, data }
+      // Webhook может приходить на любой endpoint, указанный в WEBHOOK_URL
+      // Поэтому проверяем все POST запросы на /api/remnawave/* endpoints
+      if (method === 'POST' && url?.startsWith('/api/remnawave/')) {
+        // Пытаемся распарсить как событие Remnawave
+        let eventData: any;
+        try {
+          eventData = bodyBuffer ? JSON.parse(bodyBuffer.toString('utf8')) : await readJsonBody(req);
+        } catch (e: any) {
+          // Если не JSON - это не событие Remnawave, пропускаем
+          eventData = null;
+        }
+        
+        // Если это событие Remnawave (имеет scope и event) - обрабатываем его
+        if (eventData && eventData.scope && eventData.event) {
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:450',message:'webhook event received',data:{url:req.url,scope:eventData.scope,event:eventData.event},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+          // #endregion
+          
+          // Обрабатываем события пользователя
+          if (eventData.scope === 'user' && eventData.data) {
+            const { uuid, telegramId, status } = eventData.data;
+            
+            // События удаления или истечения пользователя
+            if (eventData.event === 'user.deleted' || eventData.event === 'user.expired' || eventData.event === 'user.revoked') {
+              if (telegramId) {
+                logger.info(`[Remnawave API] Webhook: ${eventData.event} для пользователя ${telegramId}`);
+                
+                // Находим все привязки для этого пользователя
+                const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+                
+                // Проверяем, есть ли другие активные подписки
+                const activeSubs = queries.getActiveUserSubscriptions.all(telegramId) as any[];
+                const hasOtherActive = activeSubs.length > 0 || bindings.some(b => b.status === 'active');
+                
+                // Если нет других активных подписок - полностью удаляем MTProto
+                if (!hasOtherActive) {
+                  logger.info(`[Remnawave API] Полное удаление MTProto для пользователя ${telegramId} (webhook: ${eventData.event})`);
+                  await MtprotoUserManager.deleteUserCompletely(telegramId);
+                  
+                  // Удаляем все user_subscription для этого пользователя
+                  const userSubs = queries.getUserSubscriptions.all(telegramId) as any[];
+                  for (const userSub of userSubs) {
+                    queries.deleteUserSubscription.run(userSub.id);
+                  }
+                }
+                
+                // Помечаем все привязки как expired
+                for (const binding of bindings) {
+                  queries.updateRemnawaveStatus.run({
+                    status: 'expired',
+                    remnawave_subscription_id: binding.remnawave_subscription_id,
+                  });
+                }
+              }
+            }
+          }
+          
+          return json(res, 200, { success: true, event: eventData.event });
+        }
+        
+        // Если это не событие Remnawave - продолжаем обработку других endpoints
+      }
+      
+      // Обработка webhook событий на отдельном endpoint (для обратной совместимости)
+      if (method === 'POST' && url === '/api/remnawave/webhook') {
+        const event = bodyBuffer ? JSON.parse(bodyBuffer.toString('utf8')) : await readJsonBody(req) as {
+          scope?: string;
+          event?: string;
+          timestamp?: string;
+          data?: {
+            uuid?: string;
+            telegramId?: number;
+            status?: string;
+            expireAt?: string;
+            subscriptionUrl?: string;
+            [key: string]: any;
+          };
+        };
+        
+        // Обрабатываем события пользователя
+        if (event.scope === 'user' && event.data) {
+          const { uuid, telegramId, status } = event.data;
+          
+          // События удаления или истечения пользователя
+          if (event.event === 'user.deleted' || event.event === 'user.expired' || event.event === 'user.revoked') {
+            if (telegramId) {
+              logger.info(`[Remnawave API] Webhook: ${event.event} для пользователя ${telegramId}`);
+              
+              // Находим все привязки для этого пользователя
+              const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+              
+              // Проверяем, есть ли другие активные подписки
+              const activeSubs = queries.getActiveUserSubscriptions.all(telegramId) as any[];
+              const hasOtherActive = activeSubs.length > 0 || bindings.some(b => b.status === 'active');
+              
+              // Если нет других активных подписок - полностью удаляем MTProto
+              if (!hasOtherActive) {
+                logger.info(`[Remnawave API] Полное удаление MTProto для пользователя ${telegramId} (webhook: ${event.event})`);
+                await MtprotoUserManager.deleteUserCompletely(telegramId);
+                
+                // Удаляем все user_subscription для этого пользователя
+                const userSubs = queries.getUserSubscriptions.all(telegramId) as any[];
+                for (const userSub of userSubs) {
+                  queries.deleteUserSubscription.run(userSub.id);
+                }
+              }
+              
+              // Помечаем все привязки как expired
+              for (const binding of bindings) {
+                queries.updateRemnawaveStatus.run({
+                  status: 'expired',
+                  remnawave_subscription_id: binding.remnawave_subscription_id,
+                });
+              }
+            }
+          }
+        }
+        
+        return json(res, 200, { success: true });
       }
 
       return json(res, 404, { error: 'Not found' });

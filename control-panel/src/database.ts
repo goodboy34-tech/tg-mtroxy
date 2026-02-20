@@ -321,6 +321,11 @@ export const queries: Record<string, any> = {
     WHERE telegram_id = ?
   `),
 
+  deleteUserMtprotoSecrets: db.prepare(`
+    DELETE FROM user_mtproto_secrets
+    WHERE telegram_id = ?
+  `),
+
   // ═══ SOCKS5 аккаунты ═══
   getNodeSocks5Accounts: db.prepare(`
     SELECT * FROM socks5_accounts 
@@ -577,7 +582,7 @@ export const queries: Record<string, any> = {
   `),
   getActiveUserSubscriptions: db.prepare(`
     SELECT * FROM user_subscriptions
-    WHERE telegram_id = ? AND status = 'active' AND expires_at > datetime('now')
+    WHERE telegram_id = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > datetime('now'))
     ORDER BY expires_at DESC
   `),
   getUserSubscriptionById: db.prepare(`SELECT * FROM user_subscriptions WHERE id = ?`),
@@ -590,9 +595,14 @@ export const queries: Record<string, any> = {
     SET status = @status, updated_at = datetime('now')
     WHERE id = @id
   `),
+  updateUserSubscriptionExpiresAt: db.prepare(`
+    UPDATE user_subscriptions
+    SET expires_at = @expires_at, updated_at = datetime('now')
+    WHERE id = @id
+  `),
   getExpiredUserSubscriptions: db.prepare(`
     SELECT * FROM user_subscriptions
-    WHERE status = 'active' AND expires_at < datetime('now')
+    WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at < datetime('now')
   `),
   deleteUserSubscription: db.prepare(`DELETE FROM user_subscriptions WHERE id = ?`),
   deleteOrder: db.prepare(`DELETE FROM orders WHERE id = ?`),

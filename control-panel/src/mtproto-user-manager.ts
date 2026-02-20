@@ -71,6 +71,59 @@ export class MtprotoUserManager {
     }
     queries.deactivateUserMtprotoSecrets.run(telegramId);
   }
+
+  /**
+   * Полностью удалить все MTProto секреты пользователя (из БД и с нод).
+   * Используется при истечении подписки, чтобы пользователь мог получить новый MTProto при продлении.
+   * 
+   * Важно: секреты хранятся в БД БЕЗ префикса "dd" (чистый секрет),
+   * node-agent также хранит секреты БЕЗ префикса, но с флагом isFakeTls.
+   * При удалении передаем чистый секрет (без "dd").
+   */
+  static async deleteUserCompletely(telegramId: number): Promise<void> {
+    // Получаем все секреты (включая неактивные)
+    const allSecrets = queries.getAllUserMtprotoSecretsAll.all() as any[];
+    const userSecrets = allSecrets.filter(s => s.telegram_id === telegramId);
+
+    const { logger } = await import('./logger');
+    let deletedFromNodes = 0;
+    let failedNodes: number[] = [];
+
+    for (const row of userSecrets) {
+      const nodeId = row.node_id as number;
+      const secret = row.secret as string; // Чистый секрет без префикса "dd"
+      const isFakeTls = row.is_fake_tls === 1;
+      
+      const client = this.getNodeClient(nodeId);
+      if (client) {
+        try {
+          // Удаляем секрет с ноды (передаем чистый секрет, node-agent сам знает какой это секрет)
+          // node-agent хранит секреты БЕЗ префикса "dd", поэтому передаем чистый секрет
+          await client.removeMtProtoSecret(secret);
+          deletedFromNodes++;
+          logger.debug(`[deleteUserCompletely] Удален секрет с ноды ${nodeId} для пользователя ${telegramId} (fakeTLS: ${isFakeTls})`);
+        } catch (e: any) {
+          // Логируем ошибки, но продолжаем удаление
+          failedNodes.push(nodeId);
+          logger.warn(`[deleteUserCompletely] Не удалось удалить секрет с ноды ${nodeId} для пользователя ${telegramId}: ${e.message}`);
+        }
+      } else {
+        logger.warn(`[deleteUserCompletely] Не удалось получить клиент для ноды ${nodeId}`);
+        failedNodes.push(nodeId);
+      }
+    }
+
+    // Удаляем все секреты из БД (даже если не удалось удалить с некоторых нод)
+    queries.deleteUserMtprotoSecrets.run(telegramId);
+    
+    if (deletedFromNodes > 0) {
+      logger.info(`[deleteUserCompletely] Удалено ${deletedFromNodes} секретов с нод для пользователя ${telegramId}`);
+    }
+    
+    if (failedNodes.length > 0) {
+      logger.warn(`[deleteUserCompletely] Не удалось удалить секреты с нод: ${failedNodes.join(', ')} для пользователя ${telegramId}`);
+    }
+  }
 }
 
 

@@ -22,8 +22,12 @@
     # Remnawave API webhook'и
     handle /api/remnawave/* {
         reverse_proxy control-panel:8081 {
-            # Caddy автоматически передает все заголовки от клиента к upstream
-            # Не добавляем лишние заголовки - Caddy делает это автоматически
+            # Явно передаем заголовки webhook от Remnawave
+            # Caddy передает все заголовки по умолчанию, но для надежности указываем явно
+            header_up X-Remnawave-Signature {http.request.header.X-Remnawave-Signature}
+            header_up X-Remnawave-Timestamp {http.request.header.X-Remnawave-Timestamp}
+            # Также передаем стандартные заголовки для отладки
+            header_up User-Agent {http.request.header.User-Agent}
         }
     }
 

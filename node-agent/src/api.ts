@@ -285,7 +285,6 @@ app.post('/mtproto/restart', async (req, res) => {
 
 async function restartMtProto(): Promise<void> {
     const secrets = loadSecrets();
-    const secretsStr = secrets.map(s => s.secret).join(',');
     
     if (secrets.length === 0) {
         console.log('[MTProto] No secrets, stopping container');
@@ -293,7 +292,15 @@ async function restartMtProto(): Promise<void> {
         return;
     }
     
-    console.log(`[MTProto] Restarting with ${secrets.length} secrets, ${WORKERS} workers`);
+    // Формируем строку секретов для MTProxy
+    // skrashevich/MTProxy требует префикс "dd" для fake TLS секретов
+    // Секреты хранятся БЕЗ префикса, но при передаче в MTProxy нужно добавить "dd" если isFakeTls = true
+    const secretsStr = secrets.map(s => {
+        // Если это fake TLS секрет - добавляем префикс "dd"
+        return s.isFakeTls ? `dd${s.secret}` : s.secret;
+    }).join(',');
+    
+    console.log(`[MTProto] Restarting with ${secrets.length} secrets (${secrets.filter(s => s.isFakeTls).length} fake-TLS), ${WORKERS} workers`);
     
     // Останавливаем старый контейнер
     execSync('docker stop mtproxy || true');

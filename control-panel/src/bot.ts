@@ -6,6 +6,7 @@ import { SubscriptionManager, SubscriptionFormatter } from './subscription-manag
 import cron from 'node-cron';
 import crypto from 'crypto';
 import { getBackendClientFromEnv } from './backend-client';
+import { getRemnawaveClientFromEnv } from './remnawave-client';
 import { MtprotoUserManager } from './mtproto-user-manager';
 import { SalesManager } from './sales-manager';
 import { DEFAULT_PRODUCTS, formatProductList, getProductById } from './products';
@@ -1653,7 +1654,7 @@ bot.action('user_search', async (ctx) => {
     );
     await ctx.answerCbQuery();
     // Устанавливаем состояние ожидания ввода
-    // TODO: Реализовать обработку текстового ввода для поиска
+    (ctx as any).session = { action: 'user_search' };
   } catch (error: any) {
     // #region agent log
     fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:1654',message:'user_search error',data:{error:error?.message,stack:error?.stack,name:error?.name},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
@@ -2034,45 +2035,322 @@ bot.on(message('text'), async (ctx) => {
   const text = ctx.message.text.trim();
 
   try {
-    if (session.action === 'create_mtproto_by_link') {
-      // Извлекаем subscription ID из ссылки или используем как есть
-      const subscriptionId = text.includes('/') ? text.split('/').pop() : text;
+    // Обработка поиска пользователя
+    if (session.action === 'user_search') {
+      await ctx.reply('⏳ Поиск пользователя...');
       
+      const remnawave = getRemnawaveClientFromEnv();
+      const backend = getBackendClientFromEnv();
+      
+      // Пробуем найти по Telegram ID
+      const telegramId = parseInt(text, 10);
+      if (!isNaN(telegramId)) {
+        let userUuid: string | null = null;
+        let userInfo: any = null;
+        
+        // Сначала пробуем Remnawave напрямую
+        if (remnawave) {
+          try {
+            userInfo = await remnawave.getUserByTelegramId(telegramId);
+            if (userInfo) userUuid = userInfo.uuid;
+          } catch (e: any) {
+            logger.debug(`[user_search] Remnawave direct lookup failed: ${e.message}`);
+          }
+        }
+        
+        // Если не нашли через Remnawave, пробуем backend
+        if (!userUuid && backend) {
+          try {
+            const backendUser = await backend.getUserByTelegramId(telegramId);
+            userUuid = backendUser.uuid;
+            userInfo = backendUser;
+          } catch (e: any) {
+            logger.debug(`[user_search] Backend lookup failed: ${e.message}`);
+          }
+        }
+        
+        if (!userUuid) {
+          return ctx.reply('❌ Пользователь не найден в Remnawave.');
+        }
+        
+        // Получаем информацию о подписке
+        const client = remnawave || backend;
+        if (!client) {
+          return ctx.reply('❌ Remnawave API не настроен. Укажите REMNAWAVE_BASE_URL и REMNAWAVE_TOKEN в .env');
+        }
+        
+        const acc = await (client as any).getAccessibleNodes(userUuid);
+        const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+        const hasAccess = Array.isArray(nodes) && nodes.length > 0;
+        
+        // Ищем привязки в базе
+        const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+        const activeBinding = bindings.find(b => b.status === 'active');
+        
+        let resultText = '👤 <b>Информация о пользователе</b>\n\n';
+        resultText += `<b>Telegram ID:</b> ${telegramId}\n`;
+        resultText += `<b>UUID:</b> <code>${userUuid}</code>\n`;
+        if (userInfo?.username) resultText += `<b>Username:</b> @${userInfo.username}\n`;
+        if (userInfo?.expireAt) resultText += `<b>Подписка до:</b> ${userInfo.expireAt}\n`;
+        resultText += `\n<b>Статус подписки:</b> ${hasAccess ? '✅ Активна' : '❌ Неактивна'}\n`;
+        resultText += `<b>Доступных нод:</b> ${nodes.length}\n`;
+        
+        if (activeBinding) {
+          resultText += `\n<b>Привязка:</b> ${activeBinding.remnawave_subscription_id}\n`;
+        }
+        
+        const keyboard = Markup.inlineKeyboard([
+          [Markup.button.callback('👤 Детальная информация', `user_info_${telegramId}`)],
+          [Markup.button.callback('🔙 К пользователям', 'menu_users')],
+        ]);
+        
+        await ctx.reply(resultText, { parse_mode: 'HTML', ...keyboard });
+        (ctx as any).session = null;
+        return;
+      }
+      
+      // Пробуем найти по UUID
+      if (text.includes('-') || text.length > 10) {
+        let userUuid = text;
+        let userInfo: any = null;
+        
+        if (remnawave) {
+          try {
+            userInfo = await remnawave.getUserByShortUuid(text);
+            if (userInfo) userUuid = userInfo.uuid;
+          } catch (e: any) {
+            logger.debug(`[user_search] Remnawave UUID lookup failed: ${e.message}`);
+          }
+        }
+        
+        if (!userInfo && backend) {
+          try {
+            const backendUser = await backend.getUserByShortUuid(text);
+            userUuid = backendUser.uuid || text;
+            userInfo = backendUser;
+          } catch (e: any) {
+            logger.debug(`[user_search] Backend UUID lookup failed: ${e.message}`);
+          }
+        }
+        
+        const client = remnawave || backend;
+        if (!client) {
+          return ctx.reply('❌ Remnawave API не настроен.');
+        }
+        
+        const acc = await (client as any).getAccessibleNodes(userUuid);
+        const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+        const hasAccess = Array.isArray(nodes) && nodes.length > 0;
+        
+        const bindings = queries.getRemnawaveBindingsByUserId.all(userUuid) as any[];
+        
+        let resultText = '👤 <b>Информация о пользователе</b>\n\n';
+        resultText += `<b>UUID:</b> <code>${userUuid}</code>\n`;
+        if (userInfo?.username) resultText += `<b>Username:</b> @${userInfo.username}\n`;
+        if (userInfo?.telegramId) resultText += `<b>Telegram ID:</b> ${userInfo.telegramId}\n`;
+        if (userInfo?.expireAt) resultText += `<b>Подписка до:</b> ${userInfo.expireAt}\n`;
+        resultText += `\n<b>Статус подписки:</b> ${hasAccess ? '✅ Активна' : '❌ Неактивна'}\n`;
+        resultText += `<b>Доступных нод:</b> ${nodes.length}\n`;
+        
+        if (bindings.length > 0) {
+          resultText += `\n<b>Привязки:</b>\n`;
+          for (const b of bindings) {
+            resultText += `• ${b.remnawave_subscription_id} (${b.status})\n`;
+          }
+        }
+        
+        await ctx.reply(resultText, { parse_mode: 'HTML' });
+        (ctx as any).session = null;
+        return;
+      }
+      
+      // Пробуем найти по секрету
+      const bySecret = queries.getUserMtprotoSecretBySecret.get(text) as any;
+      if (bySecret) {
+        const telegramId = bySecret.telegram_id;
+        const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+        
+        let resultText = '🔍 <b>Найден по секрету</b>\n\n';
+        resultText += `<b>Telegram ID:</b> ${telegramId}\n`;
+        resultText += `<b>Секрет:</b> <code>${text}</code>\n`;
+        
+        if (bindings.length > 0) {
+          resultText += `\n<b>Привязки Remnawave:</b>\n`;
+          for (const b of bindings) {
+            resultText += `• ${b.remnawave_subscription_id} (${b.status})\n`;
+          }
+        }
+        
+        const keyboard = Markup.inlineKeyboard([
+          [Markup.button.callback('👤 Информация о пользователе', `user_info_${telegramId}`)],
+          [Markup.button.callback('🔙 К пользователям', 'menu_users')],
+        ]);
+        
+        await ctx.reply(resultText, { parse_mode: 'HTML', ...keyboard });
+        (ctx as any).session = null;
+        return;
+      }
+      
+      return ctx.reply('❌ Пользователь не найден. Попробуйте Telegram ID, UUID или секрет.');
+    }
+    
+    // Обработка создания MTProto
+    if (session.action === 'create_mtproto_by_link') {
       await ctx.reply('⏳ Обработка...');
       
-      // Ищем подписку в базе
-      const binding = queries.getRemnawaveBindingBySubscriptionId.get(subscriptionId) as any;
-      if (!binding) {
-        return ctx.reply('❌ Подписка не найдена в базе. Сначала создайте привязку через API или выберите локальную подписку.');
+      const remnawave = getRemnawaveClientFromEnv();
+      if (!remnawave) {
+        return ctx.reply('❌ Remnawave API не настроен. Укажите REMNAWAVE_BASE_URL и REMNAWAVE_TOKEN в .env');
       }
 
-      const sub = queries.getSubscriptionById.get(binding.local_subscription_id) as any;
-      if (!sub) {
-        return ctx.reply('❌ Локальная подписка не найдена.');
+      // Получаем информацию о подписке из Remnawave
+      const subInfo = await remnawave.getSubscriptionInfo(text);
+      if (!subInfo) {
+        return ctx.reply('❌ Подписка не найдена в Remnawave. Проверьте ссылку.');
       }
 
-      if (!binding.telegram_id) {
-        return ctx.reply('❌ У этой подписки нет привязанного Telegram ID. Используйте создание по Telegram ID.');
+      // Проверяем активные подписки
+      const nodes = await remnawave.getAccessibleNodes(subInfo.userUuid);
+      if (nodes.length === 0) {
+        return ctx.reply('❌ Подписка неактивна или истекла.');
       }
 
-      const nodeIds = JSON.parse(sub.node_ids || '[]') as number[];
+      // Получаем все активные ноды из нашей БД
+      const activeNodes = queries.getActiveNodes.all() as any[];
+      if (activeNodes.length === 0) {
+        return ctx.reply('❌ Нет доступных нод в системе.');
+      }
+
+      // Если есть telegramId - проверяем правило "1 Telegram ID = 1 MTProxy подписка"
+      const telegramId = subInfo.telegramId;
+      if (!telegramId) {
+        return ctx.reply('❌ У подписки нет привязанного Telegram ID. Используйте создание по Telegram ID или username.');
+      }
+
+      // Проверяем, есть ли уже активная MTProxy подписка для этого пользователя
+      const existingSubs = queries.getActiveUserSubscriptions.all(telegramId) as any[];
+      const existingBindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+      const hasActiveSub = existingSubs.length > 0 || existingBindings.some(b => b.status === 'active');
+
+      let localSubId: number;
+      const existingBinding = queries.getRemnawaveBindingBySubscriptionId.get(subInfo.subscriptionId) as any;
+      
+      if (existingBinding) {
+        localSubId = existingBinding.local_subscription_id;
+      } else if (hasActiveSub) {
+        // Если уже есть активная подписка - используем её
+        if (existingSubs.length > 0) {
+          localSubId = existingSubs[0].local_subscription_id;
+        } else if (existingBindings.length > 0) {
+          localSubId = existingBindings.find(b => b.status === 'active')?.local_subscription_id;
+        } else {
+          // Fallback: создаём новую подписку
+          const { SubscriptionManager } = await import('./subscription-manager');
+          const nodeIds = activeNodes.map(n => n.id);
+          localSubId = await SubscriptionManager.createSubscription(
+            `Remnawave: ${subInfo.subscriptionId}`,
+            `Подписка из Remnawave для пользователя ${subInfo.userUuid}`,
+            nodeIds,
+            true, // includeMtproto
+            false // includeSocks5
+          );
+        }
+
+        // Создаём привязку для новой Remnawave подписки к существующей локальной подписке
+        queries.upsertRemnawaveBinding.run({
+          telegram_id: telegramId,
+          remnawave_user_id: subInfo.userUuid,
+          remnawave_subscription_id: subInfo.subscriptionId,
+          local_subscription_id: localSubId,
+          status: 'active',
+        });
+      } else {
+        // Создаём новую подписку
+        const { SubscriptionManager } = await import('./subscription-manager');
+        const nodeIds = activeNodes.map(n => n.id);
+        localSubId = await SubscriptionManager.createSubscription(
+          `Remnawave: ${subInfo.subscriptionId}`,
+          `Подписка из Remnawave для пользователя ${subInfo.userUuid}`,
+          nodeIds,
+          true, // includeMtproto
+          false // includeSocks5
+        );
+
+        queries.upsertRemnawaveBinding.run({
+          telegram_id: telegramId,
+          remnawave_user_id: subInfo.userUuid,
+          remnawave_subscription_id: subInfo.subscriptionId,
+          local_subscription_id: localSubId,
+          status: 'active',
+        });
+      }
+
+      const nodeIds = activeNodes.map(n => n.id);
       const userLinks = await MtprotoUserManager.ensureUserSecretsOnNodes({
-        telegramId: binding.telegram_id,
+        telegramId,
         nodeIds,
         isFakeTls: true,
       });
 
-      let resultText = '✅ *MTProto создан!*\n\n';
-      resultText += `*Telegram ID:* ${binding.telegram_id}\n`;
-      resultText += `*Подписка:* ${binding.remnawave_subscription_id}\n`;
-      resultText += `*Секретов:* ${userLinks.length}\n\n`;
-      resultText += '*Ссылки:*\n';
+      // Обновляем привязку с telegramId если его не было
+      if (!existingBinding || !existingBinding.telegram_id) {
+        queries.upsertRemnawaveBinding.run({
+          telegram_id: telegramId,
+          remnawave_user_id: subInfo.userUuid,
+          remnawave_subscription_id: subInfo.subscriptionId,
+          local_subscription_id: localSubId,
+          status: 'active',
+        });
+      }
+
+      // Создаем user_subscription с правильной датой окончания (или бесконечную подписку)
+      const products = queries.getAllProducts.all() as any[];
+      const productId = products.length > 0 ? products[0].id : 0;
+      const currentSubs = queries.getActiveUserSubscriptions.all(telegramId) as any[];
+      const hasRemnawaveSub = currentSubs.some(s => s.local_subscription_id === localSubId);
+
+      if (!hasRemnawaveSub) {
+        // Если expireAt = null - создаём бесконечную подписку
+        const expiresAt = subInfo.expireAt || null;
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2285',message:'create_by_link: creating user_subscription',data:{telegramId,localSubId,expiresAt,isInfinite:!expiresAt},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        queries.insertUserSubscription.run({
+          telegram_id: telegramId,
+          product_id: productId,
+          order_id: null,
+          local_subscription_id: localSubId,
+          status: 'active',
+          expires_at: expiresAt, // null = бесконечная подписка
+        });
+      } else if (subInfo.expireAt) {
+        // Обновляем дату окончания существующей подписки, если новая дата позже
+        const existingSub = currentSubs.find(s => s.local_subscription_id === localSubId);
+        if (existingSub) {
+          const existingExpiresAt = existingSub.expires_at ? new Date(existingSub.expires_at) : null;
+          const newExpiresAt = new Date(subInfo.expireAt);
+          if (!existingExpiresAt || newExpiresAt > existingExpiresAt) {
+            queries.updateUserSubscriptionExpiresAt.run({
+              id: existingSub.id,
+              expires_at: subInfo.expireAt,
+            });
+          }
+        }
+      }
+
+      let resultText = '✅ <b>MTProto создан!</b>\n\n';
+      resultText += `<b>Telegram ID:</b> ${telegramId}\n`;
+      resultText += `<b>UUID:</b> <code>${subInfo.userUuid}</code>\n`;
+      resultText += `<b>Подписка:</b> ${subInfo.subscriptionId}\n`;
+      if (subInfo.expireAt) resultText += `<b>Действует до:</b> ${subInfo.expireAt}\n`;
+      resultText += `\n<b>Секретов:</b> ${userLinks.length}\n\n`;
+      resultText += '<b>Ссылки:</b>\n';
       for (const link of userLinks) {
-        resultText += `\`${link.link}\`\n`;
+        resultText += `<code>${escapeHtml(link.link)}</code>\n`;
       }
 
       const keyboard = Markup.inlineKeyboard([
-        [Markup.button.callback('👤 Информация о пользователе', `user_info_${binding.telegram_id}`)],
+        [Markup.button.callback('👤 Информация о пользователе', `user_info_${telegramId}`)],
         [Markup.button.callback('🔙 Главное меню', 'menu_main')],
       ]);
 
@@ -2087,53 +2365,163 @@ bot.on(message('text'), async (ctx) => {
 
       await ctx.reply('⏳ Обработка...');
 
+      const remnawave = getRemnawaveClientFromEnv();
       const backend = getBackendClientFromEnv();
-      if (!backend) {
-        return ctx.reply('❌ Backend не настроен. Укажите BACKEND_BASE_URL и BACKEND_TOKEN в .env');
-      }
-      const backendUser = await backend.getUserByTelegramId(telegramId);
-      const userUuid = backendUser.uuid;
       
-      if (!userUuid) {
-        return ctx.reply('❌ Пользователь не найден в backend.');
+      if (!remnawave && !backend) {
+        return ctx.reply('❌ Remnawave API не настроен. Укажите REMNAWAVE_BASE_URL и REMNAWAVE_TOKEN в .env');
       }
 
-      const acc = await backend.getAccessibleNodes(userUuid);
-      const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
-      const hasAccess = Array.isArray(nodes) && nodes.length > 0;
+      // Пробуем найти пользователя через Remnawave или backend
+      let user: any = null;
+      let userUuid: string | null = null;
 
-      if (!hasAccess) {
+      if (remnawave) {
+        try {
+          user = await remnawave.getUserByTelegramId(telegramId);
+          if (user) userUuid = user.uuid;
+        } catch (e: any) {
+          logger.debug(`[create_mtproto_by_tgid] Remnawave lookup failed: ${e.message}`);
+        }
+      }
+
+      if (!userUuid && backend) {
+        try {
+          const backendUser = await backend.getUserByTelegramId(telegramId);
+          userUuid = backendUser.uuid;
+          user = backendUser;
+        } catch (e: any) {
+          logger.debug(`[create_mtproto_by_tgid] Backend lookup failed: ${e.message}`);
+        }
+      }
+
+      if (!userUuid) {
+        return ctx.reply('❌ Пользователь не найден в Remnawave.');
+      }
+
+      // Проверяем активные подписки
+      const client = remnawave || backend;
+      if (!client) {
+        return ctx.reply('❌ API не настроен.');
+      }
+
+      const acc = await (client as any).getAccessibleNodes(userUuid);
+      const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+      if (nodes.length === 0) {
         return ctx.reply('❌ У пользователя нет активных подписок в Remnawave.');
       }
 
-      // Ищем активную привязку
-      const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
-      const activeBinding = bindings.find(b => b.status === 'active');
-
-      if (!activeBinding) {
-        return ctx.reply('❌ Нет активной привязки подписки. Сначала создайте привязку через API.');
+      // Получаем все активные ноды из нашей БД
+      const activeNodes = queries.getActiveNodes.all() as any[];
+      if (activeNodes.length === 0) {
+        return ctx.reply('❌ Нет доступных нод в системе.');
       }
 
-      const sub = queries.getSubscriptionById.get(activeBinding.local_subscription_id) as any;
-      if (!sub) {
-        return ctx.reply('❌ Локальная подписка не найдена.');
+      // Проверяем правило "1 Telegram ID = 1 MTProxy подписка"
+      const existingSubs = queries.getActiveUserSubscriptions.all(telegramId) as any[];
+      const existingBindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+      const hasActiveSub = existingSubs.length > 0 || existingBindings.some(b => b.status === 'active');
+
+      let localSubId: number;
+      let remnawaveSubscriptionId: string;
+
+      if (hasActiveSub) {
+        // Если уже есть активная подписка - используем её
+        remnawaveSubscriptionId = `user_${userUuid}`;
+        if (existingSubs.length > 0) {
+          localSubId = existingSubs[0].local_subscription_id;
+        } else if (existingBindings.length > 0) {
+          const activeBinding = existingBindings.find(b => b.status === 'active');
+          localSubId = activeBinding?.local_subscription_id || existingSubs[0]?.local_subscription_id;
+          remnawaveSubscriptionId = activeBinding?.remnawave_subscription_id || remnawaveSubscriptionId;
+        } else {
+          // Fallback: создаём новую подписку
+          const { SubscriptionManager } = await import('./subscription-manager');
+          const nodeIds = activeNodes.map(n => n.id);
+          localSubId = await SubscriptionManager.createSubscription(
+            `Remnawave: ${telegramId}`,
+            `Подписка из Remnawave для пользователя ${userUuid}`,
+            nodeIds,
+            true, // includeMtproto
+            false // includeSocks5
+          );
+        }
+        queries.upsertRemnawaveBinding.run({
+          telegram_id: telegramId,
+          remnawave_user_id: userUuid,
+          remnawave_subscription_id: remnawaveSubscriptionId,
+          local_subscription_id: localSubId,
+          status: 'active',
+        });
+      } else {
+        // Создаём новую подписку
+        const { SubscriptionManager } = await import('./subscription-manager');
+        const nodeIds = activeNodes.map(n => n.id);
+        localSubId = await SubscriptionManager.createSubscription(
+          `Remnawave: ${telegramId}`,
+          `Подписка из Remnawave для пользователя ${userUuid}`,
+          nodeIds,
+          true, // includeMtproto
+          false // includeSocks5
+        );
+
+        remnawaveSubscriptionId = `user_${userUuid}`;
+        queries.upsertRemnawaveBinding.run({
+          telegram_id: telegramId,
+          remnawave_user_id: userUuid,
+          remnawave_subscription_id: remnawaveSubscriptionId,
+          local_subscription_id: localSubId,
+          status: 'active',
+        });
       }
 
-      const nodeIds = JSON.parse(sub.node_ids || '[]') as number[];
+      const nodeIds = activeNodes.map(n => n.id);
       const userLinks = await MtprotoUserManager.ensureUserSecretsOnNodes({
         telegramId,
         nodeIds,
         isFakeTls: true,
       });
 
-      let resultText = '✅ *MTProto создан!*\n\n';
-      resultText += `*Telegram ID:* ${telegramId}\n`;
-      resultText += `*UUID:* ${userUuid}\n`;
-      resultText += `*Подписка:* ${activeBinding.remnawave_subscription_id}\n`;
-      resultText += `*Секретов:* ${userLinks.length}\n\n`;
-      resultText += '*Ссылки:*\n';
+      // Создаем user_subscription с правильной датой окончания (или бесконечную подписку)
+      const products = queries.getAllProducts.all() as any[];
+      const productId = products.length > 0 ? products[0].id : 0;
+      const currentSubs = queries.getActiveUserSubscriptions.all(telegramId) as any[];
+      const hasRemnawaveSub = currentSubs.some(s => s.local_subscription_id === localSubId);
+
+      if (!hasRemnawaveSub) {
+        // Если expireAt = null - создаём бесконечную подписку
+        queries.insertUserSubscription.run({
+          telegram_id: telegramId,
+          product_id: productId,
+          order_id: null,
+          local_subscription_id: localSubId,
+          status: 'active',
+          expires_at: user?.expireAt || null, // null = бесконечная подписка
+        });
+      } else if (user?.expireAt) {
+        // Обновляем дату окончания существующей подписки, если новая дата позже
+        const existingSub = currentSubs.find(s => s.local_subscription_id === localSubId);
+        if (existingSub) {
+          const existingExpiresAt = existingSub.expires_at ? new Date(existingSub.expires_at) : null;
+          const newExpiresAt = new Date(user.expireAt);
+          if (!existingExpiresAt || newExpiresAt > existingExpiresAt) {
+            queries.updateUserSubscriptionExpiresAt.run({
+              id: existingSub.id,
+              expires_at: user.expireAt,
+            });
+          }
+        }
+      }
+
+      let resultText = '✅ <b>MTProto создан!</b>\n\n';
+      resultText += `<b>Telegram ID:</b> ${telegramId}\n`;
+      resultText += `<b>UUID:</b> <code>${userUuid}</code>\n`;
+      resultText += `<b>Подписка:</b> ${remnawaveSubscriptionId}\n`;
+      if (user?.expireAt) resultText += `<b>Действует до:</b> ${user.expireAt}\n`;
+      resultText += `\n<b>Секретов:</b> ${userLinks.length}\n\n`;
+      resultText += '<b>Ссылки:</b>\n';
       for (const link of userLinks) {
-        resultText += `\`${link.link}\`\n`;
+        resultText += `<code>${escapeHtml(link.link)}</code>\n`;
       }
 
       const keyboard = Markup.inlineKeyboard([
@@ -2148,57 +2536,168 @@ bot.on(message('text'), async (ctx) => {
       const username = text.replace('@', '');
       await ctx.reply('⏳ Обработка...');
 
+      const remnawave = getRemnawaveClientFromEnv();
       const backend = getBackendClientFromEnv();
-      if (!backend) {
-        return ctx.reply('❌ Backend не настроен. Укажите BACKEND_BASE_URL и BACKEND_TOKEN в .env');
-      }
-      const backendUser = await backend.getUserByUsername(username);
-      const userUuid = backendUser.uuid;
       
-      if (!userUuid) {
-        return ctx.reply('❌ Пользователь не найден в backend.');
+      if (!remnawave && !backend) {
+        return ctx.reply('❌ Remnawave API не настроен. Укажите REMNAWAVE_BASE_URL и REMNAWAVE_TOKEN в .env');
       }
 
-      const telegramId = backendUser.telegramId;
+      // Пробуем найти пользователя через Remnawave или backend
+      let user: any = null;
+      let userUuid: string | null = null;
+
+      if (remnawave) {
+        try {
+          user = await remnawave.getUserByUsername(username);
+          if (user) userUuid = user.uuid;
+        } catch (e: any) {
+          logger.debug(`[create_mtproto_by_username] Remnawave lookup failed: ${e.message}`);
+        }
+      }
+
+      if (!userUuid && backend) {
+        try {
+          const backendUser = await backend.getUserByUsername(username);
+          userUuid = backendUser.uuid;
+          user = backendUser;
+        } catch (e: any) {
+          logger.debug(`[create_mtproto_by_username] Backend lookup failed: ${e.message}`);
+        }
+      }
+
+      if (!userUuid) {
+        return ctx.reply('❌ Пользователь не найден в Remnawave.');
+      }
+
+      const telegramId = user?.telegramId;
       if (!telegramId) {
         return ctx.reply('❌ У пользователя нет привязанного Telegram ID.');
       }
 
-      const acc = await backend.getAccessibleNodes(userUuid);
-      const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
-      const hasAccess = Array.isArray(nodes) && nodes.length > 0;
+      // Проверяем активные подписки
+      const client = remnawave || backend;
+      if (!client) {
+        return ctx.reply('❌ API не настроен.');
+      }
 
-      if (!hasAccess) {
+      const acc = await (client as any).getAccessibleNodes(userUuid);
+      const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+      if (nodes.length === 0) {
         return ctx.reply('❌ У пользователя нет активных подписок в Remnawave.');
       }
 
-      const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
-      const activeBinding = bindings.find(b => b.status === 'active');
-
-      if (!activeBinding) {
-        return ctx.reply('❌ Нет активной привязки подписки. Сначала создайте привязку через API.');
+      // Получаем все активные ноды из нашей БД
+      const activeNodes = queries.getActiveNodes.all() as any[];
+      if (activeNodes.length === 0) {
+        return ctx.reply('❌ Нет доступных нод в системе.');
       }
 
-      const sub = queries.getSubscriptionById.get(activeBinding.local_subscription_id) as any;
-      if (!sub) {
-        return ctx.reply('❌ Локальная подписка не найдена.');
+      // Проверяем правило "1 Telegram ID = 1 MTProxy подписка"
+      const existingSubs = queries.getActiveUserSubscriptions.all(telegramId) as any[];
+      const existingBindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+      const hasActiveSub = existingSubs.length > 0 || existingBindings.some(b => b.status === 'active');
+
+      let localSubId: number;
+      let remnawaveSubscriptionId = `user_${userUuid}`;
+
+      if (hasActiveSub) {
+        // Если уже есть активная подписка - используем её
+        if (existingSubs.length > 0) {
+          localSubId = existingSubs[0].local_subscription_id;
+        } else if (existingBindings.length > 0) {
+          const activeBinding = existingBindings.find(b => b.status === 'active');
+          localSubId = activeBinding?.local_subscription_id || existingSubs[0]?.local_subscription_id;
+          remnawaveSubscriptionId = activeBinding?.remnawave_subscription_id || remnawaveSubscriptionId;
+        } else {
+          // Fallback: создаём новую подписку
+          const { SubscriptionManager } = await import('./subscription-manager');
+          const nodeIds = activeNodes.map(n => n.id);
+          localSubId = await SubscriptionManager.createSubscription(
+            `Remnawave: ${username}`,
+            `Подписка из Remnawave для пользователя ${userUuid}`,
+            nodeIds,
+            true, // includeMtproto
+            false // includeSocks5
+          );
+        }
+
+        // Создаём привязку для новой Remnawave подписки к существующей локальной подписке
+        queries.upsertRemnawaveBinding.run({
+          telegram_id: telegramId,
+          remnawave_user_id: userUuid,
+          remnawave_subscription_id: remnawaveSubscriptionId,
+          local_subscription_id: localSubId,
+          status: 'active',
+        });
+      } else {
+        // Создаём новую подписку
+        const { SubscriptionManager } = await import('./subscription-manager');
+        const nodeIds = activeNodes.map(n => n.id);
+        localSubId = await SubscriptionManager.createSubscription(
+          `Remnawave: ${username}`,
+          `Подписка из Remnawave для пользователя ${userUuid}`,
+          nodeIds,
+          true, // includeMtproto
+          false // includeSocks5
+        );
+
+        queries.upsertRemnawaveBinding.run({
+          telegram_id: telegramId,
+          remnawave_user_id: userUuid,
+          remnawave_subscription_id: remnawaveSubscriptionId,
+          local_subscription_id: localSubId,
+          status: 'active',
+        });
       }
 
-      const nodeIds = JSON.parse(sub.node_ids || '[]') as number[];
+      const nodeIds = activeNodes.map(n => n.id);
       const userLinks = await MtprotoUserManager.ensureUserSecretsOnNodes({
         telegramId,
         nodeIds,
         isFakeTls: true,
       });
 
-      let resultText = '✅ *MTProto создан!*\n\n';
-      resultText += `*Username:* @${username}\n`;
-      resultText += `*Telegram ID:* ${telegramId}\n`;
-      resultText += `*UUID:* ${userUuid}\n`;
-      resultText += `*Секретов:* ${userLinks.length}\n\n`;
-      resultText += '*Ссылки:*\n';
+      // Создаем user_subscription с правильной датой окончания (или бесконечную подписку)
+      const products = queries.getAllProducts.all() as any[];
+      const productId = products.length > 0 ? products[0].id : 0;
+      const currentSubs = queries.getActiveUserSubscriptions.all(telegramId) as any[];
+      const hasRemnawaveSub = currentSubs.some(s => s.local_subscription_id === localSubId);
+
+      if (!hasRemnawaveSub) {
+        // Если expireAt = null - создаём бесконечную подписку
+        queries.insertUserSubscription.run({
+          telegram_id: telegramId,
+          product_id: productId,
+          order_id: null,
+          local_subscription_id: localSubId,
+          status: 'active',
+          expires_at: user?.expireAt || null, // null = бесконечная подписка
+        });
+      } else if (user?.expireAt) {
+        // Обновляем дату окончания существующей подписки, если новая дата позже
+        const existingSub = currentSubs.find(s => s.local_subscription_id === localSubId);
+        if (existingSub) {
+          const existingExpiresAt = existingSub.expires_at ? new Date(existingSub.expires_at) : null;
+          const newExpiresAt = new Date(user.expireAt);
+          if (!existingExpiresAt || newExpiresAt > existingExpiresAt) {
+            queries.updateUserSubscriptionExpiresAt.run({
+              id: existingSub.id,
+              expires_at: user.expireAt,
+            });
+          }
+        }
+      }
+
+      let resultText = '✅ <b>MTProto создан!</b>\n\n';
+      resultText += `<b>Username:</b> @${username}\n`;
+      resultText += `<b>Telegram ID:</b> ${telegramId}\n`;
+      resultText += `<b>UUID:</b> <code>${userUuid}</code>\n`;
+      if (user?.expireAt) resultText += `<b>Действует до:</b> ${user.expireAt}\n`;
+      resultText += `\n<b>Секретов:</b> ${userLinks.length}\n\n`;
+      resultText += '<b>Ссылки:</b>\n';
       for (const link of userLinks) {
-        resultText += `\`${link.link}\`\n`;
+        resultText += `<code>${escapeHtml(link.link)}</code>\n`;
       }
 
       const keyboard = Markup.inlineKeyboard([
@@ -2212,52 +2711,164 @@ bot.on(message('text'), async (ctx) => {
     } else if (session.action === 'create_mtproto_by_uuid') {
       await ctx.reply('⏳ Обработка...');
 
+      const remnawave = getRemnawaveClientFromEnv();
       const backend = getBackendClientFromEnv();
-      if (!backend) {
-        return ctx.reply('❌ Backend не настроен. Укажите BACKEND_BASE_URL и BACKEND_TOKEN в .env');
-      }
-      const backendUser = await backend.getUserByShortUuid(text);
-      const userUuid = backendUser.uuid || text;
       
-      const acc = await backend.getAccessibleNodes(userUuid);
-      const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
-      const hasAccess = Array.isArray(nodes) && nodes.length > 0;
+      if (!remnawave && !backend) {
+        return ctx.reply('❌ Remnawave API не настроен. Укажите REMNAWAVE_BASE_URL и REMNAWAVE_TOKEN в .env');
+      }
 
-      if (!hasAccess) {
+      // Пробуем найти пользователя через Remnawave или backend
+      let user: any = null;
+      let userUuid = text;
+
+      if (remnawave) {
+        try {
+          user = await remnawave.getUserByShortUuid(text);
+          if (user) userUuid = user.uuid;
+        } catch (e: any) {
+          logger.debug(`[create_mtproto_by_uuid] Remnawave lookup failed: ${e.message}`);
+        }
+      }
+
+      if (!user && backend) {
+        try {
+          const backendUser = await backend.getUserByShortUuid(text);
+          userUuid = backendUser.uuid || text;
+          user = backendUser;
+        } catch (e: any) {
+          logger.debug(`[create_mtproto_by_uuid] Backend lookup failed: ${e.message}`);
+        }
+      }
+
+      // Проверяем активные подписки
+      const client = remnawave || backend;
+      if (!client) {
+        return ctx.reply('❌ API не настроен.');
+      }
+
+      const acc = await (client as any).getAccessibleNodes(userUuid);
+      const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+      if (nodes.length === 0) {
         return ctx.reply('❌ У пользователя нет активных подписок в Remnawave.');
       }
 
-      const telegramId = backendUser.telegramId;
+      const telegramId = user?.telegramId;
       if (!telegramId) {
-        return ctx.reply('❌ У пользователя нет привязанного Telegram ID. Используйте создание по Telegram ID.');
+        return ctx.reply('❌ У пользователя нет привязанного Telegram ID. Используйте создание по Telegram ID или username.');
       }
 
-      const bindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
-      const activeBinding = bindings.find(b => b.status === 'active');
-
-      if (!activeBinding) {
-        return ctx.reply('❌ Нет активной привязки подписки. Сначала создайте привязку через API.');
+      // Получаем все активные ноды из нашей БД
+      const activeNodes = queries.getActiveNodes.all() as any[];
+      if (activeNodes.length === 0) {
+        return ctx.reply('❌ Нет доступных нод в системе.');
       }
 
-      const sub = queries.getSubscriptionById.get(activeBinding.local_subscription_id) as any;
-      if (!sub) {
-        return ctx.reply('❌ Локальная подписка не найдена.');
+      // Проверяем правило "1 Telegram ID = 1 MTProxy подписка"
+      const existingSubs = queries.getActiveUserSubscriptions.all(telegramId) as any[];
+      const existingBindings = queries.getRemnawaveBindingsByTelegramId.all(telegramId) as any[];
+      const hasActiveSub = existingSubs.length > 0 || existingBindings.some(b => b.status === 'active');
+
+      let localSubId: number;
+      let remnawaveSubscriptionId = `user_${userUuid}`;
+
+      if (hasActiveSub) {
+        // Если уже есть активная подписка - используем её
+        if (existingSubs.length > 0) {
+          localSubId = existingSubs[0].local_subscription_id;
+        } else if (existingBindings.length > 0) {
+          const activeBinding = existingBindings.find(b => b.status === 'active');
+          localSubId = activeBinding?.local_subscription_id || existingSubs[0]?.local_subscription_id;
+          remnawaveSubscriptionId = activeBinding?.remnawave_subscription_id || remnawaveSubscriptionId;
+        } else {
+          // Fallback: создаём новую подписку
+          const { SubscriptionManager } = await import('./subscription-manager');
+          const nodeIds = activeNodes.map(n => n.id);
+          localSubId = await SubscriptionManager.createSubscription(
+            `Remnawave: ${userUuid}`,
+            `Подписка из Remnawave для пользователя ${userUuid}`,
+            nodeIds,
+            true, // includeMtproto
+            false // includeSocks5
+          );
+        }
+
+        // Создаём привязку для новой Remnawave подписки к существующей локальной подписке
+        queries.upsertRemnawaveBinding.run({
+          telegram_id: telegramId,
+          remnawave_user_id: userUuid,
+          remnawave_subscription_id: remnawaveSubscriptionId,
+          local_subscription_id: localSubId,
+          status: 'active',
+        });
+      } else {
+        // Создаём новую подписку
+        const { SubscriptionManager } = await import('./subscription-manager');
+        const nodeIds = activeNodes.map(n => n.id);
+        localSubId = await SubscriptionManager.createSubscription(
+          `Remnawave: ${userUuid}`,
+          `Подписка из Remnawave для пользователя ${userUuid}`,
+          nodeIds,
+          true, // includeMtproto
+          false // includeSocks5
+        );
+
+        queries.upsertRemnawaveBinding.run({
+          telegram_id: telegramId,
+          remnawave_user_id: userUuid,
+          remnawave_subscription_id: remnawaveSubscriptionId,
+          local_subscription_id: localSubId,
+          status: 'active',
+        });
       }
 
-      const nodeIds = JSON.parse(sub.node_ids || '[]') as number[];
+      const nodeIds = activeNodes.map(n => n.id);
       const userLinks = await MtprotoUserManager.ensureUserSecretsOnNodes({
         telegramId,
         nodeIds,
         isFakeTls: true,
       });
 
-      let resultText = '✅ *MTProto создан!*\n\n';
-      resultText += `*UUID:* ${userUuid}\n`;
-      resultText += `*Telegram ID:* ${telegramId}\n`;
-      resultText += `*Секретов:* ${userLinks.length}\n\n`;
-      resultText += '*Ссылки:*\n';
+      // Создаем user_subscription с правильной датой окончания (или бесконечную подписку)
+      const products = queries.getAllProducts.all() as any[];
+      const productId = products.length > 0 ? products[0].id : 0;
+      const currentSubs = queries.getActiveUserSubscriptions.all(telegramId) as any[];
+      const hasRemnawaveSub = currentSubs.some(s => s.local_subscription_id === localSubId);
+
+      if (!hasRemnawaveSub) {
+        // Если expireAt = null - создаём бесконечную подписку
+        queries.insertUserSubscription.run({
+          telegram_id: telegramId,
+          product_id: productId,
+          order_id: null,
+          local_subscription_id: localSubId,
+          status: 'active',
+          expires_at: user?.expireAt || null, // null = бесконечная подписка
+        });
+      } else if (user?.expireAt) {
+        // Обновляем дату окончания существующей подписки, если новая дата позже
+        const existingSub = currentSubs.find(s => s.local_subscription_id === localSubId);
+        if (existingSub) {
+          const existingExpiresAt = existingSub.expires_at ? new Date(existingSub.expires_at) : null;
+          const newExpiresAt = new Date(user.expireAt);
+          if (!existingExpiresAt || newExpiresAt > existingExpiresAt) {
+            queries.updateUserSubscriptionExpiresAt.run({
+              id: existingSub.id,
+              expires_at: user.expireAt,
+            });
+          }
+        }
+      }
+
+      let resultText = '✅ <b>MTProto создан!</b>\n\n';
+      resultText += `<b>UUID:</b> <code>${userUuid}</code>\n`;
+      resultText += `<b>Telegram ID:</b> ${telegramId}\n`;
+      resultText += `<b>Подписка:</b> ${remnawaveSubscriptionId}\n`;
+      if (user?.expireAt) resultText += `<b>Действует до:</b> ${user.expireAt}\n`;
+      resultText += `\n<b>Секретов:</b> ${userLinks.length}\n\n`;
+      resultText += '<b>Ссылки:</b>\n';
       for (const link of userLinks) {
-        resultText += `\`${link.link}\`\n`;
+        resultText += `<code>${escapeHtml(link.link)}</code>\n`;
       }
 
       const keyboard = Markup.inlineKeyboard([
@@ -2496,43 +3107,34 @@ cron.schedule('*/5 * * * *', async () => {
 cron.schedule('*/30 * * * *', async () => {
   logger.info('[Cron] Проверка статусов Remnawave подписок...');
   const activeBindings = queries.getActiveRemnawaveBindings.all() as any[];
+  const remnawave = getRemnawaveClientFromEnv();
   const backend = getBackendClientFromEnv();
   
-  if (!backend) {
-    logger.warn('[Cron] Backend не настроен, пропускаем проверку статусов Remnawave подписок');
+  if (!remnawave && !backend) {
+    logger.warn('[Cron] Remnawave API не настроен, пропускаем проверку статусов Remnawave подписок');
     return;
   }
+  
+  const client = remnawave || backend;
 
   // Функция для обеспечения доступа пользователя к MTProto через Remnawave
   async function ensureRemnawaveUserAccess(telegramId: number, userUuid: string): Promise<void> {
-    if (!backend) return;
+    if (!client) return;
     try {
-      const acc = await backend.getAccessibleNodes(userUuid);
+      const acc = await (client as any).getAccessibleNodes(userUuid);
       const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
       if (nodes.length === 0) return;
       
-      // Получаем ID нод из базы данных по их UUID или имени
-      const nodeIds: number[] = [];
-      for (const node of nodes) {
-        const nodeId = node.id || node.nodeId;
-        const nodeName = node.name || node.nodeName;
-        if (nodeId) {
-          // Если есть ID, ищем ноду в базе
-          const dbNode = queries.getNodeById.get(nodeId) as any;
-          if (dbNode) nodeIds.push(dbNode.id);
-        } else if (nodeName) {
-          // Если есть имя, ищем по домену или имени
-          const dbNode = queries.getNodeByDomain.get(nodeName) as any;
-          if (dbNode) nodeIds.push(dbNode.id);
-        }
-      }
+      // Получаем все активные ноды из нашей БД (используем все доступные ноды)
+      const activeNodes = queries.getActiveNodes.all() as any[];
+      if (activeNodes.length === 0) return;
       
-      if (nodeIds.length > 0) {
-        await MtprotoUserManager.ensureUserSecretsOnNodes({
-          telegramId,
-          nodeIds,
-        });
-      }
+      const nodeIds = activeNodes.map(n => n.id);
+      await MtprotoUserManager.ensureUserSecretsOnNodes({
+        telegramId,
+        nodeIds,
+        isFakeTls: true,
+      });
     } catch (e: any) {
       logger.error(`[ensureRemnawaveUserAccess] Ошибка для пользователя ${telegramId}:`, e);
     }
@@ -2546,7 +3148,7 @@ cron.schedule('*/30 * * * *', async () => {
         continue;
       }
 
-      const acc = await backend.getAccessibleNodes(userUuid);
+      const acc = await (client as any).getAccessibleNodes(userUuid);
       const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
       const hasAccess = Array.isArray(nodes) && nodes.length > 0;
 
@@ -2556,13 +3158,23 @@ cron.schedule('*/30 * * * *', async () => {
           await ensureRemnawaveUserAccess(binding.telegram_id, userUuid);
         }
       } else if (!hasAccess && binding.status === 'active') {
-        // Проверяем, есть ли купленные подписки
+        // Подписка истекла - полностью удаляем MTProto
         if (binding.telegram_id) {
-          const userSubs = SalesManager.getUserSubscriptions(binding.telegram_id);
+          const userId = binding.telegram_id;
+          const userSubs = SalesManager.getUserSubscriptions(userId);
           if (userSubs.length === 0) {
-            // Нет купленных подписок - отключаем MTProto
-            logger.info(`[Cron] Пользователь ${binding.telegram_id} (${userUuid}) потерял доступ. Отключаем MTProto.`);
-            await MtprotoUserManager.disableUser(binding.telegram_id);
+            // Нет купленных подписок - полностью удаляем MTProto
+            logger.info(`[Cron] Полное удаление MTProto для пользователя ${userId} (истекла Remnawave подписка ${binding.remnawave_subscription_id})`);
+            await MtprotoUserManager.deleteUserCompletely(userId);
+            
+            // Удаляем user_subscription для этой подписки
+            const userSubsForBinding = queries.getUserSubscriptions.all(userId) as any[];
+            for (const userSub of userSubsForBinding) {
+              if (userSub.local_subscription_id === binding.local_subscription_id) {
+                queries.deleteUserSubscription.run(userSub.id);
+              }
+            }
+            
             queries.updateRemnawaveStatus.run({
               status: 'expired',
               remnawave_subscription_id: binding.remnawave_subscription_id,
@@ -2809,38 +3421,119 @@ export function startBot() {
 
   // HTTP API для интеграции с Remnawave запускается в index.ts
 
-  // Каждую минуту проверяем истекшие подписки продаж
+  // Каждую минуту проверяем истекшие подписки продаж и Remnawave
   cron.schedule('*/1 * * * *', async () => {
     const expiredSubs = queries.getExpiredUserSubscriptions.all() as any[];
-    if (expiredSubs.length === 0) return;
-
-    for (const sub of expiredSubs) {
-      queries.updateUserSubscriptionStatus.run({
-        id: sub.id,
-        status: 'expired',
-      });
-
-      // Проверяем, есть ли другие активные подписки или Remnawave
-      const userId = sub.telegram_id;
-      const activeSubs = queries.getActiveUserSubscriptions.all(userId) as any[];
-      const remnawaveBindings = queries.getRemnawaveBindingsByTelegramId.all(userId) as any[];
-      const hasRemnawave = remnawaveBindings.some(b => b.status === 'active');
-
-      // Если нет других активных подписок и нет Remnawave - отключаем MTProto
-      if (activeSubs.length === 0 && !hasRemnawave) {
-        await MtprotoUserManager.disableUser(userId);
+    
+    // Проверяем истекшие Remnawave подписки через API
+    const remnawave = getRemnawaveClientFromEnv();
+    const backend = getBackendClientFromEnv();
+    const activeBindings = queries.getActiveRemnawaveBindings.all() as any[];
+    
+    for (const binding of activeBindings) {
+      if (!binding.remnawave_user_id) continue;
+      
+      const client = remnawave || backend;
+      if (client) {
+        try {
+          const acc = await (client as any).getAccessibleNodes(binding.remnawave_user_id);
+          const nodes = (acc?.nodes || acc?.data?.nodes || acc?.accessibleNodes || []) as any[];
+          
+          // Если нет активных подписок - Remnawave удалил подписку, помечаем как expired
+          if (nodes.length === 0) {
+            queries.updateRemnawaveStatus.run({
+              status: 'expired',
+              remnawave_subscription_id: binding.remnawave_subscription_id,
+            });
+            
+            // Если есть telegramId - полностью удаляем MTProto секреты
+            if (binding.telegram_id) {
+              const userId = binding.telegram_id;
+              const activeSubs = queries.getActiveUserSubscriptions.all(userId) as any[];
+              const otherRemnawaveBindings = queries.getRemnawaveBindingsByTelegramId.all(userId) as any[];
+              const hasOtherActive = activeSubs.length > 0 || otherRemnawaveBindings.some(b => b.id !== binding.id && b.status === 'active');
+              
+              // Если нет других активных подписок - полностью удаляем MTProto
+              if (!hasOtherActive) {
+                logger.info(`[Cron] Полное удаление MTProto для пользователя ${userId} (истекла Remnawave подписка)`);
+                await MtprotoUserManager.deleteUserCompletely(userId);
+                
+                // Удаляем user_subscription для этой подписки
+                const userSubs = queries.getUserSubscriptions.all(userId) as any[];
+                for (const userSub of userSubs) {
+                  if (userSub.local_subscription_id === binding.local_subscription_id) {
+                    queries.deleteUserSubscription.run(userSub.id);
+                  }
+                }
+              }
+            }
+          }
+        } catch (e: any) {
+          // Если ошибка 404 или пользователь не найден - Remnawave удалил подписку
+          if (e.message?.includes('404') || e.message?.includes('not found') || e.message?.includes('Not Found')) {
+            logger.info(`[Cron] Remnawave удалил подписку ${binding.remnawave_subscription_id} (пользователь не найден)`);
+            queries.updateRemnawaveStatus.run({
+              status: 'expired',
+              remnawave_subscription_id: binding.remnawave_subscription_id,
+            });
+            
+            // Если есть telegramId - полностью удаляем MTProto секреты
+            if (binding.telegram_id) {
+              const userId = binding.telegram_id;
+              const activeSubs = queries.getActiveUserSubscriptions.all(userId) as any[];
+              const otherRemnawaveBindings = queries.getRemnawaveBindingsByTelegramId.all(userId) as any[];
+              const hasOtherActive = activeSubs.length > 0 || otherRemnawaveBindings.some(b => b.id !== binding.id && b.status === 'active');
+              
+              if (!hasOtherActive) {
+                logger.info(`[Cron] Полное удаление MTProto для пользователя ${userId} (Remnawave удалил подписку)`);
+                await MtprotoUserManager.deleteUserCompletely(userId);
+                
+                const userSubs = queries.getUserSubscriptions.all(userId) as any[];
+                for (const userSub of userSubs) {
+                  if (userSub.local_subscription_id === binding.local_subscription_id) {
+                    queries.deleteUserSubscription.run(userSub.id);
+                  }
+                }
+              }
+            }
+          } else {
+            logger.error(`[Cron] Ошибка проверки Remnawave подписки ${binding.remnawave_subscription_id}:`, e);
+          }
+        }
       }
-
-      // Уведомляем пользователя
-      try {
-        await bot.telegram.sendMessage(
-          userId,
-          '⏰ Ваша подписка истекла.\n\nПродлите чтобы продолжить пользоваться:\n/tariffs'
-        );
-      } catch {}
     }
 
-    logger.info(`[Cron] Истекло подписок продаж: ${expiredSubs.length}`);
+    // Обрабатываем истекшие подписки продаж
+    if (expiredSubs.length > 0) {
+      for (const sub of expiredSubs) {
+        queries.updateUserSubscriptionStatus.run({
+          id: sub.id,
+          status: 'expired',
+        });
+
+        // Проверяем, есть ли другие активные подписки или Remnawave
+        const userId = sub.telegram_id;
+        const activeSubs = queries.getActiveUserSubscriptions.all(userId) as any[];
+        const remnawaveBindings = queries.getRemnawaveBindingsByTelegramId.all(userId) as any[];
+        const hasRemnawave = remnawaveBindings.some(b => b.status === 'active');
+
+        // Если нет других активных подписок и нет Remnawave - полностью удаляем MTProto
+        if (activeSubs.length === 0 && !hasRemnawave) {
+          logger.info(`[Cron] Полное удаление MTProto для пользователя ${userId} (истекла подписка продаж)`);
+          await MtprotoUserManager.deleteUserCompletely(userId);
+        }
+
+        // Уведомляем пользователя
+        try {
+          await bot.telegram.sendMessage(
+            userId,
+            '⏰ Ваша подписка истекла.\n\nПродлите чтобы продолжить пользоваться:\n/tariffs'
+          );
+        } catch {}
+      }
+
+      logger.info(`[Cron] Истекло подписок продаж: ${expiredSubs.length}`);
+    }
   });
 
   // Каждые 30 минут проверяем активные MTProto-доступы и снимаем их при отсутствии подписок
@@ -2930,3 +3623,5 @@ export function startBot() {
   process.once('SIGINT', () => bot.stop('SIGINT'));
   process.once('SIGTERM', () => bot.stop('SIGTERM'));
 }
+
+

@@ -330,7 +330,13 @@ export function startRemnawaveApi() {
       }
 
       if (method === 'POST' && url === '/api/remnawave/subscriptions/status') {
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:280',message:'webhook subscriptions/status received',data:{url:req.url,method:req.method,allHeaderNames:Object.keys(req.headers)},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
         const items = await readJsonBody(req) as Array<{ remnawaveSubscriptionId: string; status: 'active' | 'expired' | 'cancelled' }>;
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:283',message:'webhook body parsed',data:{itemsCount:items?.length || 0},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
         if (!Array.isArray(items) || items.length === 0) {
           return json(res, 400, { error: 'Body must be a non-empty array' });
         }
@@ -341,6 +347,7 @@ export function startRemnawaveApi() {
             remnawave_subscription_id: item.remnawaveSubscriptionId,
           });
         }
+        logger.info(`[Remnawave API] Updated ${items.length} subscription statuses`);
         return json(res, 200, { success: true, updated: items.length });
       }
 

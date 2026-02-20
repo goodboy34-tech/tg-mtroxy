@@ -1643,6 +1643,9 @@ bot.action('menu_users', async (ctx) => {
 
 // Поиск пользователя
 bot.action('user_search', async (ctx) => {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:1645',message:'user_search action called',data:{userId:ctx.from?.id},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   try {
     await ctx.editMessageText(
       '🔍 <b>Поиск пользователя</b>\n\nОтправьте секрет, Telegram ID или UUID пользователя для поиска.',
@@ -1651,7 +1654,10 @@ bot.action('user_search', async (ctx) => {
     await ctx.answerCbQuery();
     // Устанавливаем состояние ожидания ввода
     // TODO: Реализовать обработку текстового ввода для поиска
-  } catch (error) {
+  } catch (error: any) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:1654',message:'user_search error',data:{error:error?.message,stack:error?.stack,name:error?.name},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     logger.error('Ошибка в user_search:', error);
     await ctx.answerCbQuery('Ошибка при открытии поиска', { show_alert: true });
   }
@@ -1930,36 +1936,58 @@ async function handleLink(ctx: any) {
 
 // Меню создания MTProto
 bot.action('menu_create_mtproto', async (ctx) => {
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('🔗 По ссылке Remnawave', 'create_by_link')],
-    [Markup.button.callback('🆔 По Telegram ID', 'create_by_tgid')],
-    [Markup.button.callback('👤 По Username', 'create_by_username')],
-    [Markup.button.callback('🆔 По UUID', 'create_by_uuid')],
-    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
-  ]);
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:1932',message:'menu_create_mtproto action called',data:{userId:ctx.from?.id},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  try {
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('🔗 По ссылке Remnawave', 'create_by_link')],
+      [Markup.button.callback('🆔 По Telegram ID', 'create_by_tgid')],
+      [Markup.button.callback('👤 По Username', 'create_by_username')],
+      [Markup.button.callback('🆔 По UUID', 'create_by_uuid')],
+      [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+    ]);
 
-  await ctx.editMessageText(
-    '➕ <b>Создание MTProto</b>\n\nВыберите способ:\n\n' +
-    '• По ссылке Remnawave — вставьте ссылку на подписку\n' +
-    '• По Telegram ID — введите Telegram ID пользователя\n' +
-    '• По Username — введите @username\n' +
-    '• По UUID — введите UUID пользователя',
-    { parse_mode: 'HTML', ...keyboard }
-  );
-  await ctx.answerCbQuery();
+    await ctx.editMessageText(
+      '➕ <b>Создание MTProto</b>\n\nВыберите способ:\n\n' +
+      '• По ссылке Remnawave — вставьте ссылку на подписку\n' +
+      '• По Telegram ID — введите Telegram ID пользователя\n' +
+      '• По Username — введите @username\n' +
+      '• По UUID — введите UUID пользователя',
+      { parse_mode: 'HTML', ...keyboard }
+    );
+    await ctx.answerCbQuery();
+  } catch (error: any) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:1949',message:'menu_create_mtproto error',data:{error:error?.message,stack:error?.stack,name:error?.name},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    logger.error('Ошибка в menu_create_mtproto:', error);
+    await ctx.answerCbQuery('Ошибка при открытии меню создания MTProto', { show_alert: true });
+  }
 });
 
 // Создание MTProto по ссылке
 bot.action('create_by_link', async (ctx) => {
-  await ctx.editMessageText(
-    '🔗 <b>Создание MTProto по ссылке Remnawave</b>\n\n' +
-    'Отправьте ссылку на подписку Remnawave.\n\n' +
-    'Пример: https://panel.example.com/subscription/abc123',
-    { parse_mode: 'HTML' }
-  );
-  await ctx.answerCbQuery();
-  // Сохраняем состояние для следующего сообщения
-  (ctx as any).session = { action: 'create_mtproto_by_link' };
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:1953',message:'create_by_link action called',data:{userId:ctx.from?.id},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  try {
+    await ctx.editMessageText(
+      '🔗 <b>Создание MTProto по ссылке Remnawave</b>\n\n' +
+      'Отправьте ссылку на подписку Remnawave.\n\n' +
+      'Пример: https://panel.example.com/subscription/abc123',
+      { parse_mode: 'HTML' }
+    );
+    await ctx.answerCbQuery();
+    // Сохраняем состояние для следующего сообщения
+    (ctx as any).session = { action: 'create_mtproto_by_link' };
+  } catch (error: any) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:1963',message:'create_by_link error',data:{error:error?.message,stack:error?.stack,name:error?.name},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    logger.error('Ошибка в create_by_link:', error);
+    await ctx.answerCbQuery('Ошибка при открытии формы создания по ссылке', { show_alert: true });
+  }
 });
 
 // Создание MTProto по Telegram ID

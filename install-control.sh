@@ -322,21 +322,9 @@ if [ ! -f .env ]; then
             fi
             # Обновляем Caddyfile с доменом
             if [ -f Caddyfile ]; then
-                # #region agent log
-                echo "{\"id\":\"install_update_caddyfile\",\"timestamp\":$(date +%s000),\"location\":\"install-control.sh:324\",\"message\":\"Updating Caddyfile\",\"data\":{\"domain\":\"$DOMAIN\",\"caddyfile_exists\":true},\"runId\":\"install_run\",\"hypothesisId\":\"G\"}" >> "$LOG_FILE"
-                # #endregion
-                
                 # Заменяем домен в Caddyfile (ищем строку с доменом в начале блока)
                 sed -i "s|^[a-zA-Z0-9.-]* {|$DOMAIN_ESC {|" Caddyfile
                 sed -i "s|^example.com|$DOMAIN_ESC|g" Caddyfile
-                
-                # #region agent log
-                echo "{\"id\":\"install_caddyfile_updated\",\"timestamp\":$(date +%s000),\"location\":\"install-control.sh:330\",\"message\":\"Caddyfile updated\",\"data\":{\"first_line\":\"$(head -n 1 Caddyfile)\"},\"runId\":\"install_run\",\"hypothesisId\":\"G\"}" >> "$LOG_FILE"
-                # #endregion
-            else
-                # #region agent log
-                echo "{\"id\":\"install_caddyfile_missing\",\"timestamp\":$(date +%s000),\"location\":\"install-control.sh:333\",\"message\":\"Caddyfile not found\",\"data\":{},\"runId\":\"install_run\",\"hypothesisId\":\"G\"}" >> "$LOG_FILE"
-                # #endregion
             fi
         fi
         
@@ -413,18 +401,7 @@ fi
 
 # Проверка обязательных переменных
 info "Проверка переменных окружения..."
-
-# #region agent log
-LOG_FILE=".cursor/debug.log"
-mkdir -p "$(dirname "$LOG_FILE")"
-echo "{\"id\":\"install_env_check\",\"timestamp\":$(date +%s000),\"location\":\"install-control.sh:403\",\"message\":\"Checking env file\",\"data\":{\"env_exists\":\"$([ -f .env ] && echo true || echo false)\",\"pwd\":\"$(pwd)\"},\"runId\":\"install_run\",\"hypothesisId\":\"F\"}" >> "$LOG_FILE"
-# #endregion
-
 source .env 2>/dev/null || true
-
-# #region agent log
-echo "{\"id\":\"install_env_sourced\",\"timestamp\":$(date +%s000),\"location\":\"install-control.sh:410\",\"message\":\"Env file sourced\",\"data\":{\"bot_token_set\":\"$([ -n \"\${BOT_TOKEN:-}\" ] && echo true || echo false)\",\"admin_ids_set\":\"$([ -n \"\${ADMIN_IDS:-}\" ] && echo true || echo false)\",\"domain_set\":\"$([ -n \"\${DOMAIN:-}\" ] && echo true || echo false)\"},\"runId\":\"install_run\",\"hypothesisId\":\"F\"}" >> "$LOG_FILE"
-# #endregion
 
 MISSING_VARS=()
 
@@ -510,16 +487,7 @@ fi
 echo ""
 info "Запуск Control Panel..."
 info "Сборка может занять несколько минут..."
-
-# #region agent log
-echo "{\"id\":\"install_start_services\",\"timestamp\":$(date +%s000),\"location\":\"install-control.sh:490\",\"message\":\"Starting services\",\"data\":{\"pwd\":\"$(pwd)\",\"manage_script_exists\":\"$([ -f ./scripts/manage-control.sh ] && echo true || echo false)\"},\"runId\":\"install_run\",\"hypothesisId\":\"C\"}" >> "$LOG_FILE"
-# #endregion
-
 ./scripts/manage-control.sh start
-
-# #region agent log
-echo "{\"id\":\"install_services_started\",\"timestamp\":$(date +%s000),\"location\":\"install-control.sh:496\",\"message\":\"Services start command completed\",\"data\":{\"exit_code\":\"$?\"},\"runId\":\"install_run\",\"hypothesisId\":\"C\"}" >> "$LOG_FILE"
-# #endregion
 
 echo ""
 echo "═══════════════════════════════════════"

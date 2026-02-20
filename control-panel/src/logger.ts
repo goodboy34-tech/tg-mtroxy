@@ -9,13 +9,7 @@ import path from 'path';
 import fs from 'fs';
 
 const LOGS_DIR = path.join(__dirname, '..', 'data', 'logs');
-try {
-  fs.mkdirSync(LOGS_DIR, { recursive: true });
-  console.log('[DEBUG] Logger: Created logs directory:', LOGS_DIR);
-} catch (error) {
-  console.error('[FATAL] Logger: Failed to create logs directory:', error);
-  // Продолжаем работу, но логи могут не записываться
-}
+fs.mkdirSync(LOGS_DIR, { recursive: true });
 
 // Формат логов
 const logFormat = winston.format.combine(

@@ -18,19 +18,8 @@ const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(id => parseInt(id
 const YOOMONEY_TOKEN = process.env.YOOMONEY_TOKEN || '';
 const YOOMONEY_WALLET = process.env.YOOMONEY_WALLET || '';
 
-console.log('[DEBUG] bot.ts: Checking BOT_TOKEN and ADMIN_IDS');
-console.log('[DEBUG] BOT_TOKEN:', BOT_TOKEN ? 'SET (length: ' + BOT_TOKEN.length + ')' : 'NOT SET');
-console.log('[DEBUG] ADMIN_IDS:', ADMIN_IDS.length > 0 ? 'SET (' + ADMIN_IDS.join(', ') + ')' : 'NOT SET');
-
 if (!BOT_TOKEN || ADMIN_IDS.length === 0) {
-  console.error('[FATAL] BOT_TOKEN и ADMIN_IDS обязательны в .env');
-  console.error('[FATAL] BOT_TOKEN:', BOT_TOKEN ? 'SET' : 'NOT SET');
-  console.error('[FATAL] ADMIN_IDS:', ADMIN_IDS.length > 0 ? 'SET' : 'NOT SET');
-  try {
-    logger.error('❌ BOT_TOKEN и ADMIN_IDS обязательны в .env');
-  } catch (e) {
-    console.error('[FATAL] Logger failed:', e);
-  }
+  logger.error('❌ BOT_TOKEN и ADMIN_IDS обязательны в .env');
   process.exit(1);
 }
 
@@ -1577,45 +1566,137 @@ bot.action(/^sub_delete_confirm_(\d+)$/, async (ctx) => {
 
 // Меню пользователей MTProto
 bot.action('menu_users', async (ctx) => {
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('🔍 Поиск по секрету/ID/UUID', 'user_search')],
-    [Markup.button.callback('📊 Статистика пользователей', 'user_stats')],
-    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
-  ]);
+  try {
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('🔍 Поиск по секрету/ID/UUID', 'user_search')],
+      [Markup.button.callback('📊 Статистика пользователей', 'user_stats')],
+      [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+    ]);
 
-  await ctx.editMessageText(
-    '👤 <b>Пользователи MTProto</b>\n\nВыберите действие:',
-    { parse_mode: 'HTML', ...keyboard }
-  );
-  await ctx.answerCbQuery();
+    await ctx.editMessageText(
+      '👤 <b>Пользователи MTProto</b>\n\nВыберите действие:',
+      { parse_mode: 'HTML', ...keyboard }
+    );
+    await ctx.answerCbQuery();
+  } catch (error) {
+    logger.error('Ошибка в menu_users:', error);
+    await ctx.answerCbQuery('Ошибка при открытии меню пользователей', { show_alert: true });
+  }
+});
+
+// Поиск пользователя
+bot.action('user_search', async (ctx) => {
+  try {
+    await ctx.editMessageText(
+      '🔍 <b>Поиск пользователя</b>\n\nОтправьте секрет, Telegram ID или UUID пользователя для поиска.',
+      { parse_mode: 'HTML' }
+    );
+    await ctx.answerCbQuery();
+    // Устанавливаем состояние ожидания ввода
+    // TODO: Реализовать обработку текстового ввода для поиска
+  } catch (error) {
+    logger.error('Ошибка в user_search:', error);
+    await ctx.answerCbQuery('Ошибка при открытии поиска', { show_alert: true });
+  }
+});
+
+// Статистика пользователей
+bot.action('user_stats', async (ctx) => {
+  try {
+    const activeUsers = queries.getActiveRemnawaveBindings?.all?.() as any[] || [];
+    const totalSecrets = queries.getAllUserMtprotoSecrets?.all?.() as any[] || [];
+    const activeSecrets = totalSecrets.filter(s => s.is_active === 1);
+    const allSubs = queries.getActiveUserSubscriptions?.all?.() as any[] || [];
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('🔄 Обновить', 'user_stats')],
+      [Markup.button.callback('🔙 К пользователям', 'menu_users')],
+    ]);
+
+    let text = '📊 <b>Статистика пользователей</b>\n\n';
+    text += `<b>Привязки Remnawave:</b>\n`;
+    text += `Активных: ${activeUsers.length}\n\n`;
+    text += `<b>MTProto секреты:</b>\n`;
+    text += `Всего: ${totalSecrets.length}\n`;
+    text += `Активных: ${activeSecrets.length}\n\n`;
+    text += `<b>Подписки:</b>\n`;
+    text += `Активных: ${allSubs.length}`;
+
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+    await ctx.answerCbQuery();
+  } catch (error) {
+    logger.error('Ошибка в user_stats:', error);
+    await ctx.answerCbQuery('Ошибка при получении статистики пользователей', { show_alert: true });
+  }
+});
+
+// Заказы
+bot.action('sales_orders', async (ctx) => {
+  try {
+    if (!isAdmin(ctx.from.id)) {
+      await ctx.answerCbQuery('Доступно только админам');
+      return;
+    }
+
+    const orders = queries.getAllOrders?.all?.() as any[] || [];
+    const recentOrders = orders.slice(0, 10);
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('🔄 Обновить', 'sales_orders')],
+      [Markup.button.callback('🔙 К продажам', 'menu_sales')],
+    ]);
+
+    let text = '📦 <b>Заказы</b>\n\n';
+    if (recentOrders.length === 0) {
+      text += 'Заказов пока нет.';
+    } else {
+      text += `Всего заказов: ${orders.length}\n\n`;
+      text += '<b>Последние заказы:</b>\n';
+      for (const order of recentOrders) {
+        const status = order.status === 'completed' ? '✅' : order.status === 'pending' ? '⏳' : '❌';
+        text += `${status} Заказ #${order.id} — ${order.amount} ₽ (${order.status})\n`;
+      }
+    }
+
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+    await ctx.answerCbQuery();
+  } catch (error) {
+    logger.error('Ошибка в sales_orders:', error);
+    await ctx.answerCbQuery('Ошибка при получении заказов', { show_alert: true });
+  }
 });
 
 // Меню продаж
 bot.action('menu_sales', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) {
-    await ctx.answerCbQuery('Доступно только админам');
-    return;
+  try {
+    if (!isAdmin(ctx.from.id)) {
+      await ctx.answerCbQuery('Доступно только админам');
+      return;
+    }
+
+    const products = queries.getAllProducts?.all?.() as any[] || [];
+    const payStats = queries.getPaymentStats?.get?.() as any;
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('📋 Тарифы', 'sales_products')],
+      [Markup.button.callback('💰 Статистика продаж', 'sales_stats')],
+      [Markup.button.callback('📦 Заказы', 'sales_orders')],
+      [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+    ]);
+
+    let text = '💰 <b>Продажи MTProxy</b>\n\n';
+    text += '<b>Статистика:</b>\n';
+    text += `Всего платежей: ${payStats?.total_payments || 0}\n`;
+    text += `Всего выручка: ${payStats?.total_amount || 0} ₽\n`;
+    text += `Сегодня: ${payStats?.today_payments || 0} платежей (${payStats?.today_amount || 0} ₽)\n\n`;
+    text += `Активных тарифов: ${products.length}`;
+
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+    await ctx.answerCbQuery();
+  } catch (error) {
+    logger.error('Ошибка в menu_sales:', error);
+    await ctx.answerCbQuery('Ошибка при открытии меню продаж', { show_alert: true });
   }
-
-  const products = queries.getAllProducts.all() as any[];
-  const payStats = queries.getPaymentStats.get() as any;
-
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('📋 Тарифы', 'sales_products')],
-    [Markup.button.callback('💰 Статистика продаж', 'sales_stats')],
-    [Markup.button.callback('📦 Заказы', 'sales_orders')],
-    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
-  ]);
-
-  let text = '💰 <b>Продажи MTProxy</b>\n\n';
-  text += `<b>Статистика:</b>\n`;
-  text += `Всего платежей: ${payStats?.total_payments || 0}\n`;
-  text += `Всего выручка: ${payStats?.total_amount || 0} ₽\n`;
-  text += `Сегодня: ${payStats?.today_payments || 0} платежей (${payStats?.today_amount || 0} ₽)\n\n`;
-  text += `Активных тарифов: ${products.length}`;
-
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
-  await ctx.answerCbQuery();
 });
 
 // Команда тарифов для пользователей
@@ -2110,127 +2191,147 @@ bot.on(message('text'), async (ctx) => {
 
 // Меню продаж для админа
 bot.action('sales_products', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) {
-    await ctx.answerCbQuery('Доступно только админам');
-    return;
+  try {
+    if (!isAdmin(ctx.from.id)) {
+      await ctx.answerCbQuery('Доступно только админам');
+      return;
+    }
+
+    const products = queries.getAllProducts?.all?.() as any[] || [];
+    
+    const buttons = products.map(product => {
+      const status = product.is_active ? '🟢' : '🔴';
+      return [Markup.button.callback(
+        `${status} ${product.emoji} ${product.name} — ${product.price} ₽`,
+        `product_info_${product.id}`
+      )];
+    });
+
+    const keyboard = Markup.inlineKeyboard([
+      ...buttons,
+      [Markup.button.callback('➕ Добавить тариф', 'product_add')],
+      [Markup.button.callback('🔙 К продажам', 'menu_sales')],
+    ]);
+
+    let text = '📋 <b>Тарифы</b>\n\n';
+    for (const product of products) {
+      const status = product.is_active ? '🟢' : '🔴';
+      text += `${status} <b>${product.emoji} ${product.name}</b>\n`;
+      text += `   Цена: ${product.price} ₽ | Дни: ${product.days || product.minutes + ' мин'}\n`;
+      text += `   Нод: ${product.node_count}\n\n`;
+    }
+
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+    await ctx.answerCbQuery();
+  } catch (error) {
+    logger.error('Ошибка в sales_products:', error);
+    await ctx.answerCbQuery('Ошибка при получении тарифов', { show_alert: true });
   }
-
-  const products = queries.getAllProducts.all() as any[];
-  
-  const buttons = products.map(product => {
-    const status = product.is_active ? '🟢' : '🔴';
-    return [Markup.button.callback(
-      `${status} ${product.emoji} ${product.name} — ${product.price} ₽`,
-      `product_info_${product.id}`
-    )];
-  });
-
-  const keyboard = Markup.inlineKeyboard([
-    ...buttons,
-    [Markup.button.callback('➕ Добавить тариф', 'product_add')],
-    [Markup.button.callback('🔙 К продажам', 'menu_sales')],
-  ]);
-
-  let text = '📋 *Тарифы*\n\n';
-  for (const product of products) {
-    const status = product.is_active ? '🟢' : '🔴';
-    text += `${status} *${product.emoji} ${product.name}*\n`;
-    text += `   Цена: ${product.price} ₽ | Дни: ${product.days || product.minutes + ' мин'}\n`;
-    text += `   Нод: ${product.node_count}\n\n`;
-  }
-
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
-  await ctx.answerCbQuery();
 });
 
 bot.action('sales_stats', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) {
-    await ctx.answerCbQuery('Доступно только админам');
-    return;
+  try {
+    if (!isAdmin(ctx.from.id)) {
+      await ctx.answerCbQuery('Доступно только админам');
+      return;
+    }
+
+    const payStats = queries.getPaymentStats?.get?.() as any;
+    const activeSubs = queries.getActiveUserSubscriptions?.all?.() as any[] || [];
+    const totalOrders = (queries.getOrdersByTelegramId?.all?.(0) || []) as any[];
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('🔄 Обновить', 'sales_stats')],
+      [Markup.button.callback('🔙 К продажам', 'menu_sales')],
+    ]);
+
+    let text = '💰 <b>Статистика продаж</b>\n\n';
+    text += '<b>Платежи:</b>\n';
+    text += `Всего: ${payStats?.total_payments || 0} (${payStats?.total_amount || 0} ₽)\n`;
+    text += `Сегодня: ${payStats?.today_payments || 0} (${payStats?.today_amount || 0} ₽)\n\n`;
+    text += '<b>Подписки:</b>\n';
+    text += `Активных: ${activeSubs.length}\n`;
+    text += `Всего заказов: ${totalOrders.length || 0}`;
+
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+    await ctx.answerCbQuery();
+  } catch (error) {
+    logger.error('Ошибка в sales_stats:', error);
+    await ctx.answerCbQuery('Ошибка при получении статистики', { show_alert: true });
   }
-
-  const payStats = queries.getPaymentStats.get() as any;
-  const activeSubs = queries.getActiveUserSubscriptions.all() as any[];
-  const totalOrders = (queries.getOrdersByTelegramId?.all?.(0) || []) as any[];
-
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('🔄 Обновить', 'sales_stats')],
-    [Markup.button.callback('🔙 К продажам', 'menu_sales')],
-  ]);
-
-  let text = '💰 *Статистика продаж*\n\n';
-  text += `*Платежи:*\n`;
-  text += `Всего: ${payStats?.total_payments || 0} (${payStats?.total_amount || 0} ₽)\n`;
-  text += `Сегодня: ${payStats?.today_payments || 0} (${payStats?.today_amount || 0} ₽)\n\n`;
-  text += `*Подписки:*\n`;
-  text += `Активных: ${activeSubs.length}\n`;
-  text += `Всего заказов: ${totalOrders.length || 0}`;
-
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
-  await ctx.answerCbQuery();
 });
 
 // Меню статистики
 bot.action('menu_stats', async (ctx) => {
-  const nodes = queries.getActiveNodes.all() as any[];
-  const allStats = queries.getAllNodesLatestStats.all() as any[];
-  
-  let text = '📊 *Общая статистика*\n\n';
-  text += `Нод активно: ${nodes.length}\n\n`;
-
-  let totalMtprotoConnections = 0;
-  let totalSocks5Connections = 0;
-  let totalNetworkIn = 0;
-  let totalNetworkOut = 0;
-
-  for (const stat of allStats) {
-    totalMtprotoConnections += stat.mtproto_connections || 0;
-    totalSocks5Connections += stat.socks5_connections || 0;
-    totalNetworkIn += stat.network_in_mb || 0;
-    totalNetworkOut += stat.network_out_mb || 0;
+  try {
+    const nodes = queries.getActiveNodes?.all?.() as any[] || [];
+    const allStats = queries.getAllNodesLatestStats?.all?.() as any[] || [];
     
-    text += `*${stat.node_name}*\n`;
-    text += `  MTProto: ${stat.mtproto_connections}/${stat.mtproto_max}\n`;
-    text += `  SOCKS5: ${stat.socks5_connections}\n`;
-    text += `  CPU: ${stat.cpu_usage?.toFixed(1)}% | RAM: ${stat.ram_usage?.toFixed(1)}%\n`;
-    text += `  Трафик: ↓${(stat.network_in_mb || 0).toFixed(2)}MB ↑${(stat.network_out_mb || 0).toFixed(2)}MB\n\n`;
+    let text = '📊 <b>Общая статистика</b>\n\n';
+    text += `Нод активно: ${nodes.length}\n\n`;
+
+    let totalMtprotoConnections = 0;
+    let totalSocks5Connections = 0;
+    let totalNetworkIn = 0;
+    let totalNetworkOut = 0;
+
+    for (const stat of allStats) {
+      totalMtprotoConnections += stat.mtproto_connections || 0;
+      totalSocks5Connections += stat.socks5_connections || 0;
+      totalNetworkIn += stat.network_in_mb || 0;
+      totalNetworkOut += stat.network_out_mb || 0;
+      
+      text += `<b>${stat.node_name}</b>\n`;
+      text += `  MTProto: ${stat.mtproto_connections}/${stat.mtproto_max}\n`;
+      text += `  SOCKS5: ${stat.socks5_connections}\n`;
+      text += `  CPU: ${stat.cpu_usage?.toFixed(1)}% | RAM: ${stat.ram_usage?.toFixed(1)}%\n`;
+      text += `  Трафик: ↓${(stat.network_in_mb || 0).toFixed(2)}MB ↑${(stat.network_out_mb || 0).toFixed(2)}MB\n\n`;
+    }
+
+    text += `<b>Итого:</b>\n`;
+    text += `MTProto подключений: ${totalMtprotoConnections}\n`;
+    text += `SOCKS5 подключений: ${totalSocks5Connections}\n`;
+    text += `Трафик: ↓${totalNetworkIn.toFixed(2)}MB ↑${totalNetworkOut.toFixed(2)}MB\n`;
+
+    const activeUsers = queries.getActiveRemnawaveBindings?.all?.() as any[] || [];
+    const totalSecrets = queries.getAllUserMtprotoSecrets?.all?.() as any[] || [];
+    const activeSecrets = totalSecrets.filter(s => s.is_active === 1);
+
+    text += `\n<b>Пользователи:</b>\n`;
+    text += `Активных привязок: ${activeUsers.length}\n`;
+    text += `Активных секретов: ${activeSecrets.length}\n`;
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('🔄 Обновить', 'menu_stats')],
+      [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+    ]);
+
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+    await ctx.answerCbQuery();
+  } catch (error) {
+    logger.error('Ошибка в menu_stats:', error);
+    await ctx.answerCbQuery('Ошибка при получении статистики', { show_alert: true });
   }
-
-  text += `*Итого:*\n`;
-  text += `MTProto подключений: ${totalMtprotoConnections}\n`;
-  text += `SOCKS5 подключений: ${totalSocks5Connections}\n`;
-  text += `Трафик: ↓${totalNetworkIn.toFixed(2)}MB ↑${totalNetworkOut.toFixed(2)}MB\n`;
-
-  const activeUsers = queries.getActiveRemnawaveBindings.all() as any[];
-  const totalSecrets = queries.getAllUserMtprotoSecrets.all() as any[];
-  const activeSecrets = totalSecrets.filter(s => s.is_active === 1);
-
-  text += `\n*Пользователи:*\n`;
-  text += `Активных привязок: ${activeUsers.length}\n`;
-  text += `Активных секретов: ${activeSecrets.length}\n`;
-
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('🔄 Обновить', 'menu_stats')],
-    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
-  ]);
-
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
-  await ctx.answerCbQuery();
 });
 
 // Меню настроек
 bot.action('menu_settings', async (ctx) => {
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('🏥 Здоровье нод', 'health_check')],
-    [Markup.button.callback('📋 Логи', 'logs_menu')],
-    [Markup.button.callback('🔙 Главное меню', 'menu_main')],
-  ]);
+  try {
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('🏥 Здоровье нод', 'health_check')],
+      [Markup.button.callback('📋 Логи', 'logs_menu')],
+      [Markup.button.callback('🔙 Главное меню', 'menu_main')],
+    ]);
 
-  await ctx.editMessageText(
-    '⚙️ *Настройки*\n\nВыберите действие:',
-    { parse_mode: 'HTML', ...keyboard }
-  );
-  await ctx.answerCbQuery();
+    await ctx.editMessageText(
+      '⚙️ <b>Настройки</b>\n\nВыберите действие:',
+      { parse_mode: 'HTML', ...keyboard }
+    );
+    await ctx.answerCbQuery();
+  } catch (error) {
+    logger.error('Ошибка в menu_settings:', error);
+    await ctx.answerCbQuery('Ошибка при открытии настроек', { show_alert: true });
+  }
 });
 
 // ═══════════════════════════════════════════════
@@ -2543,10 +2644,6 @@ async function handleFreeTrial(ctx: any, product: any) {
 }
 
 export function startBot() {
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2535',message:'startBot called',data:{botToken:!!BOT_TOKEN,adminIdsCount:ADMIN_IDS.length},timestamp:Date.now(),runId:'bot_start',hypothesisId:'D'})}).catch(()=>{});
-  // #endregion
-  
   // Регистрация команд для удобства (все действия доступны через кнопки)
   bot.telegram.setMyCommands([
     { command: 'start', description: 'Главное меню' },
@@ -2568,20 +2665,16 @@ export function startBot() {
     ], { scope: { type: 'chat', chat_id: ADMIN_IDS[0] } }).catch(() => {});
   }
 
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2557',message:'Calling bot.launch',data:{},timestamp:Date.now(),runId:'bot_start',hypothesisId:'D'})}).catch(()=>{});
-  // #endregion
-  
+  // Глобальный обработчик ошибок для callback_query
+  bot.catch((err, ctx) => {
+    logger.error('Ошибка в обработчике бота:', err);
+    if (ctx.callbackQuery) {
+      ctx.answerCbQuery('Произошла ошибка. Попробуйте позже.', { show_alert: true }).catch(() => {});
+    }
+  });
+
   bot.launch({
     dropPendingUpdates: true,
-  }).then(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2562',message:'bot.launch completed successfully',data:{},timestamp:Date.now(),runId:'bot_start',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
-  }).catch((error) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2565',message:'bot.launch failed',data:{error:String(error)},timestamp:Date.now(),runId:'bot_start',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
   });
 
   // Инициализация дефолтных продуктов при первом запуске

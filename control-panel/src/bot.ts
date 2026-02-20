@@ -5,7 +5,6 @@ import { NodeApiClient, ProxyLinkGenerator, SecretGenerator } from './node-clien
 import { SubscriptionManager, SubscriptionFormatter } from './subscription-manager';
 import cron from 'node-cron';
 import crypto from 'crypto';
-import { startRemnawaveApi } from './remnawave-api';
 import { getBackendClientFromEnv } from './backend-client';
 import { MtprotoUserManager } from './mtproto-user-manager';
 import { SalesManager } from './sales-manager';
@@ -2608,8 +2607,7 @@ export function startBot() {
   // Запуск поллинга платежей
   startPaymentPolling(bot);
 
-  // Поднимаем HTTP API для интеграции с Remnawave
-  startRemnawaveApi();
+  // HTTP API для интеграции с Remnawave запускается в index.ts
 
   // Каждую минуту проверяем истекшие подписки продаж
   cron.schedule('*/1 * * * *', async () => {

@@ -600,6 +600,14 @@ export const queries: Record<string, any> = {
     DELETE FROM node_stats WHERE created_at < ?
   `),
   getAllOrders: db.prepare(`SELECT * FROM orders ORDER BY created_at DESC`),
+  
+  // Запросы для статистики (без параметров)
+  getAllActiveUserSubscriptions: db.prepare(`
+    SELECT * FROM user_subscriptions
+    WHERE status = 'active' AND expires_at > datetime('now')
+    ORDER BY expires_at DESC
+  `),
+  getAllUserMtprotoSecretsAll: db.prepare(`SELECT * FROM user_mtproto_secrets ORDER BY created_at DESC`),
 };
 
 export default db;

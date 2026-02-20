@@ -1011,7 +1011,7 @@ bot.command('stats', async (ctx) => {
 
   // Статистика по пользователям
   const activeUsers = queries.getActiveRemnawaveBindings.all() as any[];
-  const totalSecrets = queries.getAllUserMtprotoSecrets.all() as any[];
+  const totalSecrets = queries.getAllUserMtprotoSecretsAll.all() as any[];
   const activeSecrets = totalSecrets.filter(s => s.is_active === 1);
 
   text += `\n<b>Пользователи:</b>\n`;
@@ -1604,9 +1604,9 @@ bot.action('user_search', async (ctx) => {
 bot.action('user_stats', async (ctx) => {
   try {
     const activeUsers = queries.getActiveRemnawaveBindings?.all?.() as any[] || [];
-    const totalSecrets = queries.getAllUserMtprotoSecrets?.all?.() as any[] || [];
+    const totalSecrets = queries.getAllUserMtprotoSecretsAll?.all?.() as any[] || [];
     const activeSecrets = totalSecrets.filter(s => s.is_active === 1);
-    const allSubs = queries.getActiveUserSubscriptions?.all?.() as any[] || [];
+    const allSubs = queries.getAllActiveUserSubscriptions?.all?.() as any[] || [];
 
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('🔄 Обновить', 'user_stats')],
@@ -2237,8 +2237,8 @@ bot.action('sales_stats', async (ctx) => {
     }
 
     const payStats = queries.getPaymentStats?.get?.() as any;
-    const activeSubs = queries.getActiveUserSubscriptions?.all?.() as any[] || [];
-    const totalOrders = (queries.getOrdersByTelegramId?.all?.(0) || []) as any[];
+    const activeSubs = queries.getAllActiveUserSubscriptions?.all?.() as any[] || [];
+    const totalOrders = queries.getAllOrders?.all?.() as any[] || [];
 
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('🔄 Обновить', 'sales_stats')],
@@ -2294,7 +2294,7 @@ bot.action('menu_stats', async (ctx) => {
     text += `Трафик: ↓${totalNetworkIn.toFixed(2)}MB ↑${totalNetworkOut.toFixed(2)}MB\n`;
 
     const activeUsers = queries.getActiveRemnawaveBindings?.all?.() as any[] || [];
-    const totalSecrets = queries.getAllUserMtprotoSecrets?.all?.() as any[] || [];
+    const totalSecrets = queries.getAllUserMtprotoSecretsAll?.all?.() as any[] || [];
     const activeSecrets = totalSecrets.filter(s => s.is_active === 1);
 
     text += `\n<b>Пользователи:</b>\n`;

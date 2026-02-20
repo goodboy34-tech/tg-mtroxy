@@ -22,9 +22,13 @@
     # Remnawave API webhook'и
     handle /api/remnawave/* {
         reverse_proxy control-panel:8081 {
-            # Передаем все заголовки для webhook аутентификации
+            # Caddy автоматически передает все заголовки от клиента к upstream
+            # Добавляем только стандартные заголовки для проксирования
             header_up X-Forwarded-Proto {scheme}
             header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-For {remote_host}
+            # Убеждаемся, что все заголовки передаются (Caddy делает это автоматически)
+            # Не удаляем заголовки от клиента
         }
     }
 

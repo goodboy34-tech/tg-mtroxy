@@ -47,9 +47,15 @@ async function readJsonBody(req: IncomingMessage): Promise<any> {
 }
 
 function assertAuth(req: IncomingMessage, res: ServerResponse): boolean {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:49',message:'assertAuth called',data:{url:req.url,method:req.method,hasRemnawaveApiKey:!!REMNAWAVE_API_KEY,hasWebhookSecretHeader:!!WEBHOOK_SECRET_HEADER,allHeaderNames:Object.keys(req.headers)},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
   // Проверяем либо x-api-key (REMNAWAVE_API_KEY), либо подпись webhook (X-Remnawave-Signature)
   if (REMNAWAVE_API_KEY && REMNAWAVE_API_KEY !== 'change-me') {
     const headerKey = getHeader(req, 'x-api-key');
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:53',message:'Checking x-api-key',data:{hasHeaderKey:!!headerKey,matches:headerKey === REMNAWAVE_API_KEY},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     if (headerKey && headerKey === REMNAWAVE_API_KEY) {
       return true;
     }
@@ -60,6 +66,9 @@ function assertAuth(req: IncomingMessage, res: ServerResponse): boolean {
   if (WEBHOOK_SECRET_HEADER) {
     const signature = getHeader(req, 'x-remnawave-signature');
     const timestamp = getHeader(req, 'x-remnawave-timestamp');
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:62',message:'Checking webhook signature',data:{hasSignature:!!signature,hasTimestamp:!!timestamp},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     
     // Если есть подпись - проверяем её
     if (signature && timestamp) {
@@ -84,26 +93,60 @@ function assertAuth(req: IncomingMessage, res: ServerResponse): boolean {
       'remnawave-secret',
       'x-secret-header',
       'secret-header',
+      'authorization', // Стандартный заголовок авторизации
+      'x-authorization',
     ];
     
     for (const headerName of possibleHeaderNames) {
       const value = getHeader(req, headerName);
-      if (value && value === WEBHOOK_SECRET_HEADER) {
-        return true;
+      // #region agent log
+      if (value) fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:89',message:'Checking secret header',data:{headerName,hasValue:!!value,matches:value === WEBHOOK_SECRET_HEADER},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+      if (value) {
+        // Проверяем прямое совпадение
+        if (value === WEBHOOK_SECRET_HEADER) {
+          return true;
+        }
+        // Проверяем формат "Bearer <token>"
+        if (value.startsWith('Bearer ')) {
+          const token = value.substring(7);
+          if (token === WEBHOOK_SECRET_HEADER) {
+            return true;
+          }
+        }
+        // Проверяем формат "Basic <token>" или другие форматы
+        if (value.includes(' ')) {
+          const parts = value.split(' ');
+          if (parts.length > 1 && parts[parts.length - 1] === WEBHOOK_SECRET_HEADER) {
+            return true;
+          }
+        }
       }
     }
     
     // Логируем для отладки (только если не прошла авторизация)
     if (req.url?.includes('/api/remnawave')) {
       const allHeaders = req.headers;
+      // Собираем все заголовки с их значениями (первые 50 символов для безопасности)
+      const headerValues: Record<string, string> = {};
+      for (const [key, value] of Object.entries(allHeaders)) {
+        const val = Array.isArray(value) ? value[0] : value;
+        headerValues[key] = typeof val === 'string' ? val.substring(0, 50) : String(val).substring(0, 50);
+      }
+      
       logger.warn('[Remnawave API] Auth failed. Webhook authentication failed.', {
         url: req.url,
         method: req.method,
         hasSignature: !!signature,
         hasTimestamp: !!timestamp,
         allHeaderNames: Object.keys(allHeaders),
+        headerValues: headerValues,
+        expectedSecretHeader: WEBHOOK_SECRET_HEADER ? WEBHOOK_SECRET_HEADER.substring(0, 20) + '...' : 'not set',
         userAgent: getHeader(req, 'user-agent'),
       });
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:107',message:'Auth failed - logging details',data:{url:req.url,allHeaderNames:Object.keys(allHeaders),headerValues:headerValues,hasSignature:!!signature,hasTimestamp:!!timestamp,expectedSecretHeader:WEBHOOK_SECRET_HEADER ? WEBHOOK_SECRET_HEADER.substring(0,20) + '...' : 'not set'},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
     }
   }
   
@@ -112,6 +155,9 @@ function assertAuth(req: IncomingMessage, res: ServerResponse): boolean {
     return false;
   }
   
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'remnawave-api.ts:115',message:'Auth failed - returning 401',data:{url:req.url},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
   json(res, 401, { error: 'Unauthorized' });
   return false;
 }

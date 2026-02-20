@@ -453,9 +453,19 @@ bot.action('menu_main', async (ctx) => {
 
 // Меню нод
 bot.action('menu_nodes', async (ctx) => {
-  const nodes = queries.getAllNodes.all() as any[];
-  
-  if (nodes.length === 0) {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:455',message:'menu_nodes action called',data:{userId:ctx.from?.id,callbackData:ctx.callbackQuery?.data},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  try {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:457',message:'Checking queries.getAllNodes',data:{hasGetAllNodes:!!queries.getAllNodes,type:typeof queries.getAllNodes},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+    const nodes = queries.getAllNodes.all() as any[];
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:460',message:'getAllNodes query executed',data:{nodesCount:nodes?.length || 0},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
+    if (nodes.length === 0) {
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('➕ Добавить ноду', 'node_add')],
       [Markup.button.callback('🔙 Главное меню', 'menu_main')],
@@ -483,17 +493,24 @@ bot.action('menu_nodes', async (ctx) => {
     [Markup.button.callback('🔙 Главное меню', 'menu_main')],
   ]);
 
-  let text = '📡 <b>Список нод:</b>\n\n';
-  for (const node of nodes) {
-    const statusEmoji = node.status === 'online' ? '🟢' : 
-                       node.status === 'offline' ? '🔴' : '🟡';
-    text += `${statusEmoji} <b>${escapeHtml(node.name)}</b>\n`;
-    text += `   Домен: <code>${escapeHtml(node.domain)}</code>\n`;
-    text += `   Статус: ${node.status}\n\n`;
-  }
+    let text = '📡 <b>Список нод:</b>\n\n';
+    for (const node of nodes) {
+      const statusEmoji = node.status === 'online' ? '🟢' : 
+                         node.status === 'offline' ? '🔴' : '🟡';
+      text += `${statusEmoji} <b>${escapeHtml(node.name)}</b>\n`;
+      text += `   Домен: <code>${escapeHtml(node.domain)}</code>\n`;
+      text += `   Статус: ${node.status}\n\n`;
+    }
 
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
-  await ctx.answerCbQuery();
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+    await ctx.answerCbQuery();
+  } catch (error: any) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:507',message:'menu_nodes error',data:{error:error?.message,stack:error?.stack,name:error?.name},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    logger.error('Ошибка в menu_nodes:', error);
+    await ctx.answerCbQuery('Ошибка при получении списка нод', { show_alert: true }).catch(() => {});
+  }
 });
 
 bot.command('nodes', async (ctx) => {
@@ -2230,15 +2247,30 @@ bot.action('sales_products', async (ctx) => {
 });
 
 bot.action('sales_stats', async (ctx) => {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2232',message:'sales_stats action called',data:{userId:ctx.from?.id},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   try {
     if (!isAdmin(ctx.from.id)) {
       await ctx.answerCbQuery('Доступно только админам');
       return;
     }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2239',message:'Checking queries before execution',data:{hasGetPaymentStats:!!queries.getPaymentStats,hasGetAllActiveUserSubscriptions:!!queries.getAllActiveUserSubscriptions,hasGetAllOrders:!!queries.getAllOrders},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     const payStats = queries.getPaymentStats?.get?.() as any;
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2242',message:'getPaymentStats executed',data:{payStats:payStats ? 'exists' : 'null'},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     const activeSubs = queries.getAllActiveUserSubscriptions?.all?.() as any[] || [];
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2243',message:'getAllActiveUserSubscriptions executed',data:{activeSubsCount:activeSubs?.length || 0},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     const totalOrders = queries.getAllOrders?.all?.() as any[] || [];
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2244',message:'getAllOrders executed',data:{totalOrdersCount:totalOrders?.length || 0},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
 
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('🔄 Обновить', 'sales_stats')],
@@ -2255,7 +2287,10 @@ bot.action('sales_stats', async (ctx) => {
 
     await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
     await ctx.answerCbQuery();
-  } catch (error) {
+  } catch (error: any) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2258',message:'sales_stats error',data:{error:error?.message,stack:error?.stack,name:error?.name},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     logger.error('Ошибка в sales_stats:', error);
     await ctx.answerCbQuery('Ошибка при получении статистики', { show_alert: true });
   }
@@ -2667,6 +2702,9 @@ export function startBot() {
 
   // Глобальный обработчик ошибок для callback_query
   bot.catch((err, ctx) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/42ca0ed9-7c0b-4e4a-941b-40dc83c65ad2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:2669',message:'bot.catch triggered',data:{error:err?.message,stack:err?.stack,name:err?.name,hasCallbackQuery:!!ctx?.callbackQuery,callbackData:ctx?.callbackQuery?.data},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
     logger.error('Ошибка в обработчике бота:', err);
     if (ctx.callbackQuery) {
       ctx.answerCbQuery('Произошла ошибка. Попробуйте позже.', { show_alert: true }).catch(() => {});

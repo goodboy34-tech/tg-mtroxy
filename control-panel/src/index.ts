@@ -7,17 +7,22 @@ console.log('[DEBUG] Files in current directory:', require('fs').readdirSync(pro
 // dotenv не нужен в Docker - переменные передаются через docker-compose environment
 // Загружаем только если файл существует (для локальной разработки)
 import dotenv from 'dotenv';
-const dotenvResult = dotenv.config();
-if (dotenvResult.error) {
-  // Проверяем, является ли ошибка отсутствием файла (не критично)
-  const error = dotenvResult.error as NodeJS.ErrnoException;
-  if (error.code === 'ENOENT') {
-    console.log('[DEBUG] dotenv.config() skipped (no .env file, using Docker environment variables)');
+try {
+  const dotenvResult = dotenv.config();
+  if (dotenvResult.error) {
+    // Проверяем, является ли ошибка отсутствием файла (не критично)
+    const error = dotenvResult.error as any;
+    if (error.code === 'ENOENT') {
+      console.log('[DEBUG] dotenv.config() skipped (no .env file, using Docker environment variables)');
+    } else {
+      console.warn('[WARN] dotenv.config() error (non-critical):', error.message);
+    }
   } else {
-    console.warn('[WARN] dotenv.config() error (non-critical):', error.message);
+    console.log('[DEBUG] dotenv.config() loaded .env file');
   }
-} else {
-  console.log('[DEBUG] dotenv.config() loaded .env file');
+} catch (error) {
+  // Игнорируем ошибки dotenv - переменные уже переданы через Docker
+  console.log('[DEBUG] dotenv.config() skipped (error caught, using Docker environment variables)');
 }
 console.log('[DEBUG] BOT_TOKEN exists:', !!process.env.BOT_TOKEN);
 console.log('[DEBUG] ADMIN_IDS exists:', !!process.env.ADMIN_IDS);

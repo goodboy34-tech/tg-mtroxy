@@ -4,48 +4,91 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
+// Первая строка кода после импортов - должна выполниться, если импорты успешны
 console.log('[DEBUG] database.ts: Module started, imports completed');
-console.log('[DEBUG] database.ts: __dirname =', __dirname);
+console.log('[DEBUG] database.ts: __dirname type =', typeof __dirname);
+console.log('[DEBUG] database.ts: __dirname =', typeof __dirname !== 'undefined' ? __dirname : 'UNDEFINED (ES modules?)');
 console.log('[DEBUG] database.ts: process.cwd() =', process.cwd());
+console.log('[DEBUG] database.ts: __filename =', typeof __filename !== 'undefined' ? __filename : 'UNDEFINED');
 
-console.log('[DEBUG] database.ts: About to set DB_PATH...');
-const DB_PATH = path.join(__dirname, '..', 'data', 'proxy.db');
-console.log('[DEBUG] database.ts: DB_PATH =', DB_PATH);
+// Откладываем инициализацию базы данных, чтобы ошибки не ломали импорт модуля
+let db: InstanceType<typeof Database> | null = null;
 
-// Убедимся что папка data существует
-console.log('[DEBUG] database.ts: About to create data directory...');
+// Определяем путь к базе данных с проверкой __dirname
+let DB_PATH: string;
 try {
-  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-  console.log('[DEBUG] database.ts: Data directory created');
+  if (typeof __dirname !== 'undefined') {
+    DB_PATH = path.join(__dirname, '..', 'data', 'proxy.db');
+    console.log('[DEBUG] database.ts: Using __dirname for DB_PATH');
+  } else {
+    // Fallback для ES modules или если __dirname не определен
+    DB_PATH = path.join(process.cwd(), 'data', 'proxy.db');
+    console.log('[DEBUG] database.ts: Using process.cwd() for DB_PATH (__dirname not available)');
+  }
+  console.log('[DEBUG] database.ts: DB_PATH =', DB_PATH);
 } catch (error) {
-  console.error('[FATAL] database.ts: Failed to create data directory:', error);
+  console.error('[FATAL] database.ts: Failed to set DB_PATH:', error);
   throw error;
 }
 
-console.log('[DEBUG] database.ts: About to create Database instance...');
-let db: InstanceType<typeof Database>;
-try {
-  db = new Database(DB_PATH);
-  console.log('[DEBUG] database.ts: Database instance created');
-} catch (error) {
-  console.error('[FATAL] database.ts: Failed to create Database instance:', error);
-  throw error;
+function initDatabase() {
+  if (db) return db; // Уже инициализирована
+  
+  console.log('[DEBUG] database.ts: initDatabase() called');
+  console.log('[DEBUG] database.ts: DB_PATH =', DB_PATH);
+
+  // Убедимся что папка data существует
+  console.log('[DEBUG] database.ts: About to create data directory...');
+  try {
+    fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+    console.log('[DEBUG] database.ts: Data directory created');
+  } catch (error) {
+    console.error('[FATAL] database.ts: Failed to create data directory:', error);
+    throw error;
+  }
+
+  console.log('[DEBUG] database.ts: About to create Database instance...');
+  try {
+    db = new Database(DB_PATH);
+    console.log('[DEBUG] database.ts: Database instance created');
+  } catch (error) {
+    console.error('[FATAL] database.ts: Failed to create Database instance:', error);
+    throw error;
+  }
+  
+  // WAL mode — быстрее для чтения, безопаснее
+  console.log('[DEBUG] database.ts: About to set pragmas...');
+  try {
+    db.pragma('journal_mode = WAL');
+    console.log('[DEBUG] database.ts: WAL mode set');
+    db.pragma('foreign_keys = ON');
+    console.log('[DEBUG] database.ts: Foreign keys enabled');
+  } catch (error) {
+    console.error('[FATAL] database.ts: Failed to set pragmas:', error);
+    throw error;
+  }
+  
+  return db;
 }
 
-// WAL mode — быстрее для чтения, безопаснее
-console.log('[DEBUG] database.ts: About to set pragmas...');
+// Инициализируем базу данных сразу
+console.log('[DEBUG] database.ts: About to initialize database...');
 try {
-  db.pragma('journal_mode = WAL');
-  console.log('[DEBUG] database.ts: WAL mode set');
-  db.pragma('foreign_keys = ON');
-  console.log('[DEBUG] database.ts: Foreign keys enabled');
+  db = initDatabase();
+  console.log('[DEBUG] database.ts: Database initialized successfully');
 } catch (error) {
-  console.error('[FATAL] database.ts: Failed to set pragmas:', error);
-  throw error;
+  console.error('[FATAL] database.ts: Failed to initialize database:', error);
+  console.error('[FATAL] Error stack:', error instanceof Error ? error.stack : 'No stack');
+  // Не бросаем ошибку здесь, чтобы модуль мог быть импортирован
+  // Ошибка будет выброшена при попытке использовать db
 }
 
 // ─── Инициализация таблиц ───
 console.log('[DEBUG] database.ts: About to execute SQL for table creation...');
+if (!db) {
+  console.error('[FATAL] database.ts: Database not initialized, cannot execute SQL');
+  throw new Error('Database not initialized');
+}
 try {
   db.exec(`
   -- Таблица серверных нод
@@ -246,6 +289,10 @@ try {
 
 // ─── Подготовленные запросы ───
 console.log('[DEBUG] database.ts: About to prepare queries...');
+if (!db) {
+  console.error('[FATAL] database.ts: Database not initialized, cannot prepare queries');
+  throw new Error('Database not initialized');
+}
 
 export const queries: Record<string, any> = {
   // ═══ Ноды ═══

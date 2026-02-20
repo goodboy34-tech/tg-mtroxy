@@ -1,8 +1,12 @@
-console.log('[DEBUG] database.ts: Starting import...');
+// Логирование должно быть самым первым, до любых импортов
+// Но в TypeScript импорты выполняются первыми, поэтому логируем сразу после импортов
 import Database from 'better-sqlite3';
-console.log('[DEBUG] database.ts: better-sqlite3 imported');
 import path from 'path';
 import fs from 'fs';
+
+console.log('[DEBUG] database.ts: Module started, imports completed');
+console.log('[DEBUG] database.ts: __dirname =', __dirname);
+console.log('[DEBUG] database.ts: process.cwd() =', process.cwd());
 
 console.log('[DEBUG] database.ts: About to set DB_PATH...');
 const DB_PATH = path.join(__dirname, '..', 'data', 'proxy.db');
